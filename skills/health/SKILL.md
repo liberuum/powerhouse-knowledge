@@ -1,92 +1,179 @@
 ---
 name: health
-description: Check vault health — orphan notes, dangling links, graph density, processing stats. Use for maintenance, monitoring, or when the user asks about vault status.
+description: Check vault health — orphan notes, dangling links, graph density, processing stats. Saves results to the bai/health-report document for historical tracking. Use for maintenance, monitoring, or when the user asks about vault status.
 ---
 
 # Vault Health Check
 
-Run diagnostics across the knowledge vault and report actionable findings.
+Run diagnostics across the knowledge vault, report actionable findings, and **save results to the `bai/health-report` document** in `/ops/health/`.
 
-## Health check categories
+## Process
 
-### 1. Graph Metrics
-Query the subgraph for real-time stats:
-- **Note count**: Total knowledge notes indexed
-- **Edge count**: Total links between notes
-- **Density**: edges / (nodes * (nodes - 1)) — how interconnected the graph is
-- **Average links per note**: edges / nodes
-- **Orphan count**: Notes with zero incoming links
+### Step 1: Gather metrics
 
-### 2. Orphan Detection
-Find notes with **zero incoming links** — no other note points to them.
-These are disconnected from the knowledge graph and need `/connect`.
-
-### 3. Link Health
-Check all outgoing links resolve to existing documents:
-- Fetch each note's `state.global.links`
-- Verify each `targetDocumentId` exists in the drive
-- Report dangling links (target doesn't exist)
-
-### 4. Status Distribution
-Count notes by status: DRAFT, IN_REVIEW, CANONICAL, ARCHIVED.
-Flag if too many notes are stuck in DRAFT (need processing).
-
-### 5. Type Distribution
-Count notes by noteType. Flag if any type is empty or dominant.
-
-### 6. Pipeline Status
-Check the PipelineQueue for stuck or failed tasks:
-- PENDING tasks waiting too long
-- BLOCKED tasks needing manual intervention
-- FAILED tasks needing retry
-
-## Using the subgraph
-
-The Knowledge Graph subgraph is at `/graphql/knowledgeGraph` (NOT `/graphql/r/`). Use Bash to query it:
+Query the subgraph at `/graphql/knowledgeGraph`:
 
 ```bash
+# Graph stats
 curl -s http://localhost:4001/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphStats(driveId: \"<DRIVE-UUID>\") { nodeCount edgeCount orphanCount } }"}'
+  -d '{"query":"{ knowledgeGraphStats(driveId: \"<UUID>\") { nodeCount edgeCount orphanCount } }"}'
+
+# Density
+curl -s http://localhost:4001/graphql/knowledgeGraph \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ knowledgeGraphDensity(driveId: \"<UUID>\") }"}'
+
+# Orphans
+curl -s http://localhost:4001/graphql/knowledgeGraph \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ knowledgeGraphOrphans(driveId: \"<UUID>\") { documentId title } }"}'
 ```
 
-**Available queries:**
-- `knowledgeGraphStats(driveId)` → { nodeCount, edgeCount, orphanCount }
-- `knowledgeGraphOrphans(driveId)` → [{ documentId, title, noteType }]
-- `knowledgeGraphDensity(driveId)` → Float
-- `knowledgeGraphSearch(driveId, query)` → search results
-- `knowledgeGraphNodesByStatus(driveId, status)` → notes filtered by status
+Also read individual notes via MCP to check:
+- Missing descriptions
+- Missing provenance
+- Missing note types
+- Missing topics
+- Link density per note
 
-For remote Switchboard, replace `localhost:4001` with the remote host.
+### Step 2: Compute checks
 
-## Fallback (no subgraph)
+| Category | PASS | WARN | FAIL |
+|---|---|---|---|
+| ORPHAN_DETECTION | 0 orphans | 1-3 | 4+ |
+| LINK_HEALTH | avg >= 2.0 | avg >= 1.0 | avg < 1.0 |
+| DESCRIPTION_QUALITY | 0 missing | 1-2 missing | 3+ missing |
+| SCHEMA_COMPLIANCE | all have type | some missing | many missing |
+| MOC_COHERENCE | all have topics | some without | many without |
+| PROCESSING_THROUGHPUT | 0 pending obs | some pending | many pending |
+| STALE_NOTES | 0 stale | some stale | many stale |
 
-If the subgraph isn't available, compute from individual document reads:
+### Step 3: Save to bai/health-report document
+
+Find or create the health report document in `/ops/health/`:
+
 ```
-mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
-// Then read each document's state to compute metrics
+mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
+// Find existing: kind="file", documentType="bai/health-report" in /ops/health/
+// Or create new:
+mcp__reactor-mcp__createDocument({
+  documentType: "bai/health-report",
+  driveId: "<drive-uuid>",
+  name: "Health Report",
+  parentFolder: "<ops-health-folder-uuid>"
+})
 ```
 
-## Output format
+**Write the report via GENERATE_REPORT:**
+```
+mcp__reactor-mcp__addActions({
+  documentId: "<health-report-id>",
+  actions: [{
+    type: "GENERATE_REPORT",
+    input: {
+      generatedAt: "<ISO timestamp>",
+      generatedBy: "knowledge-agent",
+      mode: "full",
+      overallStatus: "PASS|WARN|FAIL",
+      graphMetrics: {
+        noteCount: N,
+        mocCount: N,
+        connectionCount: N,
+        density: 0.83,
+        orphanCount: N,
+        danglingLinkCount: N,
+        mocCoverage: 0.75,
+        averageLinksPerNote: 2.5
+      },
+      recommendations: [
+        "Connect 2 orphan notes",
+        "Add descriptions to 3 notes"
+      ]
+    },
+    scope: "global"
+  }]
+})
+```
+
+**Then add individual checks via ADD_CHECK:**
+```
+mcp__reactor-mcp__addActions({
+  documentId: "<health-report-id>",
+  actions: [
+    {
+      type: "ADD_CHECK",
+      input: {
+        id: "<unique-id>",
+        category: "ORPHAN_DETECTION",
+        status: "WARN",
+        message: "2 orphan notes found",
+        affectedItems: ["note-title-1", "note-title-2"]
+      },
+      scope: "global"
+    },
+    {
+      type: "ADD_CHECK",
+      input: {
+        id: "<unique-id>",
+        category: "DESCRIPTION_QUALITY",
+        status: "PASS",
+        message: "All notes have descriptions",
+        affectedItems: []
+      },
+      scope: "global"
+    }
+  ]
+})
+```
+
+**Valid categories:** SCHEMA_COMPLIANCE, ORPHAN_DETECTION, LINK_HEALTH, DESCRIPTION_QUALITY, THREE_SPACE_BOUNDARIES, PROCESSING_THROUGHPUT, STALE_NOTES, MOC_COHERENCE
+
+**Valid statuses:** PASS, WARN, FAIL
+
+### Step 4: Auto-repair (optional)
+
+If `--fix` or the user asks to repair:
+- Missing descriptions → generate and SET_DESCRIPTION
+- Missing provenance → set DERIVED
+- Missing types → infer and SET_NOTE_TYPE
+- Missing topics → identify and ADD_TOPIC
+
+Record repairs in the report recommendations.
+
+### Step 5: Report to user
 
 ```
 === VAULT HEALTH REPORT ===
-Notes: N | Links: N | Density: N%
-Orphans: N (list top 5)
-Dangling links: N
-Status: DRAFT(N) IN_REVIEW(N) CANONICAL(N) ARCHIVED(N)
-Pipeline: N pending, N blocked, N failed
+Saved to: bai/health-report (<doc-id>)
 
-PASS/WARN/FAIL per category
-Recommended actions (ranked by impact)
+Notes: N | Links: N | Density: N%
+Orphans: N | Dangling: N | Avg links: N
+
+PASS  ORPHAN_DETECTION     All notes have incoming links
+WARN  LINK_HEALTH          3 notes have fewer than 2 links
+PASS  DESCRIPTION_QUALITY  All notes have descriptions
+PASS  SCHEMA_COMPLIANCE    All notes have a type
+WARN  MOC_COHERENCE        2 notes without topics
+
+Overall: WARN
+Recommendations:
+  1. Connect 3 under-linked notes via /connect
+  2. Tag 2 notes with topics
 ```
 
-## Thresholds
+## Reading health history
 
-| Check | PASS | WARN | FAIL |
-|---|---|---|---|
-| Orphans | 0 | 1-3 | 4+ |
-| Avg links | >= 2.0 | >= 1.0 | < 1.0 |
-| Density | > 10% | > 5% | < 5% |
-| DRAFT ratio | < 30% | < 60% | >= 60% |
-| Missing descriptions | 0 | 1-2 | 3+ |
+The HealthDashboard in the app reads from the `bai/health-report` document. Each time `/health` runs, it overwrites the report with current data (GENERATE_REPORT resets checks, then ADD_CHECK adds new ones). This gives the app always-current health data without computing it on every render.
+
+Previous health states are preserved in the document's operation history (revision history in Connect).
+
+## Fallback (no subgraph)
+
+If the subgraph isn't available, compute metrics from individual document reads:
+```
+mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
+// Read each bai/knowledge-note document, compute metrics manually
+```
+
+For remote Switchboard, replace `localhost:4001` with the remote host.
