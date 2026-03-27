@@ -4,54 +4,63 @@ Claude Code plugin for the Powerhouse Knowledge Vault. Enables AI agents to quer
 
 ## What it does
 
-This plugin connects Claude Code to a Powerhouse reactor running the Knowledge Vault document models (`bai/knowledge-note`, `bai/research-claim`, and 9 others). It provides 12 skills for knowledge management, an MCP server for direct document access, and an agent definition optimized for knowledge work.
+This plugin connects Claude Code to a Powerhouse reactor running the Knowledge Vault document models (`bai/knowledge-note`, `bai/research-claim`, and 9 others). It provides 13 skills for knowledge management, an MCP server for direct document access, and an agent definition optimized for knowledge work.
 
 ## Prerequisites
 
-- A running Powerhouse reactor with the Knowledge Vault document models deployed
-- For local development: `ph vetra --watch` (serves MCP at `http://localhost:4001/mcp`)
-- For remote: any deployed reactor endpoint
+- **Powerhouse reactor** with the Knowledge Vault document models deployed (the `bai-knowledge-note` Vetra package)
+- **Claude Code** CLI installed
 
 ## Installation
 
-### From a local path
+### Option 1: Clone into your project
+
 ```bash
+cd your-project/
+git clone https://github.com/bai/powerhouse-knowledge .claude/plugins/powerhouse-knowledge
+```
+
+Claude Code auto-discovers plugins in `.claude/plugins/`.
+
+### Option 2: Install as a global plugin
+
+```bash
+git clone https://github.com/bai/powerhouse-knowledge ~/.claude/plugins/powerhouse-knowledge
+```
+
+### Option 3: Use the plugin directory flag
+
+```bash
+git clone https://github.com/bai/powerhouse-knowledge /path/to/powerhouse-knowledge
 claude --plugin-dir /path/to/powerhouse-knowledge
 ```
 
-### From GitHub (when published)
+### Option 4: Add to CLAUDE.md for AI agents
+
+Add this to your project's `CLAUDE.md` so any AI agent session auto-discovers the plugin:
+
+```markdown
+## Plugins
+
+This project uses the powerhouse-knowledge plugin for knowledge vault management.
+Plugin path: .claude/plugins/powerhouse-knowledge
 ```
-/install-plugin github:bai/powerhouse-knowledge
-```
 
-## Configuration
+## Quick Start
 
-The plugin connects to a Powerhouse reactor via MCP. You can run locally or connect to any remote Switchboard instance.
+### 1. Connect to a reactor
 
-### Local reactor (development)
-
-Start the reactor in your project directory, then point the plugin to localhost:
-
+**Local (development):**
 ```bash
+cd your-powerhouse-project/
 ph vetra --watch   # serves MCP at http://localhost:4001/mcp
 ```
 
-`.mcp.json` (default — no changes needed):
-```json
-{
-  "mcpServers": {
-    "reactor-mcp": {
-      "type": "http",
-      "url": "http://localhost:4001/mcp"
-    }
-  }
-}
-```
+The default `.mcp.json` in the plugin points to `localhost:4001` — no changes needed.
 
-### Remote Switchboard (production)
+**Remote (production):**
 
-No local reactor needed. Edit `.mcp.json` to point to the remote instance:
-
+Edit `.mcp.json` in the plugin directory:
 ```json
 {
   "mcpServers": {
@@ -63,7 +72,97 @@ No local reactor needed. Edit `.mcp.json` to point to the remote instance:
 }
 ```
 
-All skills work identically against local or remote reactors — the only difference is the endpoint URL. The remote Switchboard must have the Knowledge Vault document models deployed.
+### 2. Open Claude Code
+
+```bash
+claude   # if plugin is in .claude/plugins/
+# or
+claude --plugin-dir /path/to/powerhouse-knowledge
+```
+
+### 3. Initialize the vault
+
+```
+/powerhouse-knowledge:setup
+```
+
+This imports the Ars Contexta methodology (249 research claims) into the `/research/` folder. Idempotent — skips if already imported.
+
+### 4. Start building knowledge
+
+```
+/powerhouse-knowledge:seed     # paste an article or transcript
+/powerhouse-knowledge:pipeline # extract claims, connect, verify
+/powerhouse-knowledge:health   # check vault quality
+```
+
+## For AI Agents
+
+If you're an AI agent (Claude, Gemini, or other) working in a repo with this plugin:
+
+### Available MCP Tools
+
+The plugin connects to a Powerhouse reactor via MCP. These tools are available:
+
+| Tool | Purpose |
+|------|---------|
+| `mcp__reactor-mcp__getDrives` | List all drives |
+| `mcp__reactor-mcp__getDrive` | Get drive structure (folders, files) |
+| `mcp__reactor-mcp__getDocument` | Read a document's state |
+| `mcp__reactor-mcp__getDocuments` | List documents in a drive |
+| `mcp__reactor-mcp__createDocument` | Create a new document (use `driveId` + `parentFolder`) |
+| `mcp__reactor-mcp__addActions` | Dispatch operations on a document |
+| `mcp__reactor-mcp__deleteDocument` | Delete a document |
+| `mcp__reactor-mcp__getDocumentModelSchema` | Get schema for a document type |
+
+### Key Document Types
+
+| Type | Purpose | Folder |
+|------|---------|--------|
+| `bai/knowledge-note` | Atomic knowledge claims | `/knowledge/notes/` |
+| `bai/source` | Raw input material | `/sources/` |
+| `bai/moc` | Maps of Content (topic navigation) | `/knowledge/` |
+| `bai/research-claim` | Methodology foundation (249 claims) | `/research/` |
+| `bai/pipeline-queue` | Processing pipeline tracker (singleton) | `/ops/queue/` |
+| `bai/health-report` | Vault health diagnostics (singleton) | `/ops/health/` |
+| `bai/vault-config` | Vault configuration (singleton) | `/self/` |
+| `bai/knowledge-graph` | Materialized graph (singleton) | `/self/` |
+
+### Important Patterns
+
+**MCP race condition:** When creating multiple documents, add a 100ms delay between each `createDocument` call. Rapid calls can cause drive file nodes to silently fail.
+
+**Two-batch actions:** Split content actions (SET_TITLE, SET_DESCRIPTION, SET_CONTENT) from provenance actions (SET_PROVENANCE) into separate `addActions` calls. If provenance validation fails, it kills the entire batch.
+
+**Valid sourceOrigin values:** `DERIVED` (extracted from source), `IMPORT` (bulk import), `MANUAL` (user-created), `SESSION_MINE` (session capture).
+
+**Folder placement:** Always read the drive first to find folder UUIDs, then pass `parentFolder` when creating documents.
+
+### Subgraph Queries
+
+The Knowledge Graph subgraph is at `/graphql/knowledgeGraph` (not `/graphql/r/`):
+
+```bash
+curl -s http://localhost:4001/graphql/knowledgeGraph \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ knowledgeGraphStats(driveId: \"<UUID>\") { nodeCount edgeCount orphanCount } }"}'
+```
+
+Available: `knowledgeGraphStats`, `knowledgeGraphNodes`, `knowledgeGraphEdges`, `knowledgeGraphOrphans`, `knowledgeGraphSearch`, `knowledgeGraphTriangles`, `knowledgeGraphBridges`, `knowledgeGraphDensity`, `knowledgeGraphBacklinks`, `knowledgeGraphForwardLinks`, `knowledgeGraphConnections`, `knowledgeGraphDebug`.
+
+### Processing Pipeline
+
+The 6R pipeline: Record -> Reduce -> Reflect -> Reweave -> Verify -> Rethink
+
+```
+Source (article/transcript)
+  -> /seed (creates bai/source in /sources/)
+  -> /extract (creates bai/knowledge-note docs in /knowledge/notes/)
+  -> /connect (adds typed links between notes)
+  -> /synthesize (creates bai/moc docs from topic clusters)
+  -> /verify (auto-repairs missing descriptions/provenance, quality gate)
+  -> /health (writes results to bai/health-report)
+```
 
 ## Skills
 
@@ -83,8 +182,8 @@ All skills work identically against local or remote reactors — the only differ
 | Search | `/powerhouse-knowledge:search <query>` | Find notes by title, type, topic, content |
 | Extract | `/powerhouse-knowledge:extract <source>` | Extract atomic claims from source material |
 | Connect | `/powerhouse-knowledge:connect <note>` | Find and create links between notes |
-| Verify | `/powerhouse-knowledge:verify <note>` | Run quality checks (recite, schema, health) |
-| Health | `/powerhouse-knowledge:health` | Vault health report (orphans, density, stats) |
+| Verify | `/powerhouse-knowledge:verify <note>` | Run quality checks + auto-repair (recite, schema, health) |
+| Health | `/powerhouse-knowledge:health` | Vault health report saved to bai/health-report document |
 | Graph | `/powerhouse-knowledge:graph` | Structural analysis (triangles, bridges, clusters) |
 | Seed | `/powerhouse-knowledge:seed <source>` | Ingest source material for processing |
 
@@ -92,8 +191,8 @@ All skills work identically against local or remote reactors — the only differ
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| Pipeline | `/powerhouse-knowledge:pipeline <source>` | Run the full extract->connect->reweave->verify pipeline |
-| Watch | `/powerhouse-knowledge:watch [drive]` | Real-time vault monitoring via WebSocket |
+| Pipeline | `/powerhouse-knowledge:pipeline` | Run the full extract -> connect -> synthesize -> reweave -> verify flow |
+| Watch | `/powerhouse-knowledge:watch` | Real-time vault monitoring via WebSocket |
 
 ## Agent
 
@@ -102,38 +201,40 @@ The plugin includes a `knowledge-agent` that activates by default. This agent:
 - Follows the 6-phase processing pipeline (Record, Reduce, Reflect, Reweave, Verify, Rethink)
 - Enforces quality principles (atomic claims, articulation test, minimum connectivity)
 - References the Ars Contexta methodology (249 research claims) for design decisions
+- Auto-repairs common issues during verification (missing descriptions, provenance, types)
 - Can analyze graph structure for synthesis opportunities
 
 ## Document Models
 
-| Model | Type | Purpose |
-|-------|------|---------|
-| Knowledge Note | `bai/knowledge-note` | Atomic knowledge claims (26 ops) |
-| Research Claim | `bai/research-claim` | Methodology foundation (4 ops) |
-| Knowledge Graph | `bai/knowledge-graph` | Materialized graph singleton (7 ops) |
-| Map of Content | `bai/moc` | Topic navigation (12 ops) |
-| Source | `bai/source` | Ingested source material (4 ops) |
-| Pipeline Queue | `bai/pipeline-queue` | Processing pipeline state (7 ops) |
-| Observation | `bai/observation` | Operational learning signals (4 ops) |
-| Tension | `bai/tension` | Unresolved contradictions (4 ops) |
-| Vault Config | `bai/vault-config` | Vault configuration (8 ops) |
-| Derivation | `bai/derivation` | Configuration audit trail (4 ops) |
-| Health Report | `bai/health-report` | Point-in-time diagnostics (2 ops) |
+| Model | Type | Operations | Purpose |
+|-------|------|-----------|---------|
+| Knowledge Note | `bai/knowledge-note` | 26 | Atomic knowledge claims |
+| Research Claim | `bai/research-claim` | 4 | Methodology foundation |
+| Knowledge Graph | `bai/knowledge-graph` | 7 | Materialized graph singleton |
+| Map of Content | `bai/moc` | 12 | Topic navigation |
+| Source | `bai/source` | 4 | Ingested source material |
+| Pipeline Queue | `bai/pipeline-queue` | 7 | Processing pipeline state |
+| Observation | `bai/observation` | 4 | Operational learning signals |
+| Tension | `bai/tension` | 4 | Unresolved contradictions |
+| Vault Config | `bai/vault-config` | 8 | Vault configuration |
+| Derivation | `bai/derivation` | 4 | Configuration audit trail |
+| Health Report | `bai/health-report` | 2 | Point-in-time diagnostics |
 
 ## Architecture
 
 ```
-Claude Code Session
-  |
-  +-- powerhouse-knowledge plugin
-  |     |-- skills/ (12 knowledge management skills)
-  |     |-- agents/ (knowledge-agent with pipeline awareness)
-  |     +-- .mcp.json -> reactor-mcp
-  |
-  +-- reactor-mcp (Powerhouse Reactor)
-        |-- 11 document models (82 operations)
-        |-- graph-indexer (processor, server-side sync)
-        +-- knowledgeGraph (subgraph, GraphQL API)
+User (Connect App)                    AI Agent (Claude Code)
+  |                                     |
+  +-- Knowledge Vault App               +-- powerhouse-knowledge plugin
+  |     |-- Notes, Graph, Sources        |     |-- 13 skills
+  |     |-- Pipeline, Health, Config     |     |-- knowledge-agent
+  |     +-- Source editor (Queue)        |     +-- .mcp.json
+  |                                     |
+  +--------- Powerhouse Reactor --------+
+              |-- 11 document models (82 operations)
+              |-- Graph Indexer processor
+              |-- Knowledge Graph subgraph (12 queries)
+              +-- MCP server (localhost:4001/mcp)
 ```
 
 ## License
