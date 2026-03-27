@@ -53,7 +53,9 @@ mcp__reactor-mcp__createDocument({
 
 **CRITICAL: Add a 100ms delay between each createDocument call** to avoid the MCP race condition where drive file nodes silently fail to register.
 
-Then populate the note:
+Then populate the note in **two separate batches** (never mix provenance with content — if provenance fails with an invalid enum value, it kills the entire batch):
+
+**Batch 1 — Content (must succeed):**
 ```
 mcp__reactor-mcp__addActions({
   documentId: "<new-note-id>",
@@ -62,13 +64,24 @@ mcp__reactor-mcp__addActions({
     { type: "SET_DESCRIPTION", input: { description: "<~150 char summary>", updatedAt: "<ISO>" }, scope: "global" },
     { type: "SET_NOTE_TYPE", input: { noteType: "<concept|pattern|architecture|decision|...>", updatedAt: "<ISO>" }, scope: "global" },
     { type: "SET_CONTENT", input: { content: "<full markdown body>", updatedAt: "<ISO>" }, scope: "global" },
-    { type: "SET_PROVENANCE", input: { author: "<agent-name>", sourceOrigin: "DERIVED", createdAt: "<ISO>" }, scope: "global" },
     { type: "ADD_TOPIC", input: { id: "<unique-id>", name: "<topic>" }, scope: "global" }
   ]
 })
 ```
 
-**Valid sourceOrigin values:** `DERIVED` (extracted from source), `IMPORT` (bulk import), `MANUAL` (user-created), `SESSION_MINE` (session capture). For extraction, always use `DERIVED`.
+**Batch 2 — Provenance (separate so failures don't lose content):**
+```
+mcp__reactor-mcp__addActions({
+  documentId: "<new-note-id>",
+  actions: [
+    { type: "SET_PROVENANCE", input: { author: "<agent-name>", sourceOrigin: "DERIVED", createdAt: "<ISO>" }, scope: "global" }
+  ]
+})
+```
+
+**CRITICAL: Why two batches?** If ANY action in a batch fails validation, ALL actions in that batch are rejected. Provenance has a strict enum (`DERIVED`, `IMPORT`, `MANUAL`, `SESSION_MINE`) — a typo kills the entire batch including title, description, and content. By separating them, content is always saved even if provenance fails.
+
+**CRITICAL: Every note MUST have a description.** Descriptions enable progressive disclosure (title -> description -> content). A note without a description fails health checks and is invisible to scanning workflows. The description should be ~150 chars and add information beyond the title.
 
 ### Step 5: Verify drive nodes
 

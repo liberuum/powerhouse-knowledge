@@ -1,100 +1,133 @@
 ---
 name: pipeline
-description: Run the knowledge processing pipeline on a source or batch of notes. Chains extract → connect → reweave → verify phases with handoff tracking. Use when processing source material end-to-end or advancing notes through the pipeline.
+description: Run the knowledge processing pipeline on a source or batch of notes. Chains extract -> connect -> reweave -> verify phases with handoff tracking. Use when processing source material end-to-end or advancing notes through the pipeline.
 ---
 
 # Processing Pipeline
 
-Run the 6R processing pipeline (Record → Reduce → Reflect → Reweave → Verify → Rethink) on source material or individual notes.
+Run the 6R processing pipeline on source material or individual notes.
 
 ## Pipeline Phases
 
 ```
-Source → EXTRACT claims → CONNECT to graph → REWEAVE old notes → VERIFY quality
+Source -> CREATE (extract claims) -> REFLECT (connect) -> REWEAVE (update old notes) -> VERIFY (quality gate + auto-repair)
 ```
 
 Each phase is tracked in the `bai/pipeline-queue` singleton document.
 
 ## Full Pipeline Run
 
-### Step 1: Find the pipeline queue
+### Step 1: Find pending tasks
+
 ```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-id>" })
+mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
 // Find the bai/pipeline-queue document (singleton in /ops/queue/)
+mcp__reactor-mcp__getDocument({ id: "<pipeline-queue-id>" })
+// Check state.global.tasks for PENDING or IN_PROGRESS tasks
 ```
 
-### Step 2: Add a task to the queue
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<pipeline-queue-id>",
-  actions: [{
-    type: "ADD_TASK",
-    input: {
-      id: "<generate-unique-id>",
-      taskType: "claim",
-      target: "<source-title or note-title>",
-      documentRef: "<source-or-note-document-id>",
-      createdAt: "<ISO-timestamp>"
-    },
-    scope: "global"
-  }]
-})
-```
+If there are PENDING tasks with a `documentRef`, process them. The source document always has the latest content regardless of how many edits the user made.
 
-### Step 3: Process each phase
+**Important:** Don't create duplicate tasks. Check if a task already exists for the same `documentRef` before creating a new one.
 
-For each phase (create/reflect/reweave/verify):
+### Step 2: Phase 1 — CREATE (Extract)
 
-1. **Do the work** — extract claims, find connections, update older notes, run quality checks
-2. **Record the handoff**:
+Use `/powerhouse-knowledge:extract` on the source document:
+- Read the source content
+- Extract atomic claims as `bai/knowledge-note` documents
+- **100ms delay between each createDocument call** (MCP race condition)
+- **Verify all notes appear in the drive tree** after creation
+- Update the source: SET_SOURCE_STATUS to EXTRACTED, ADD_EXTRACTED_CLAIM for each note, RECORD_EXTRACTION_STATS
+- **Split actions into two batches**: content first (title, description, noteType, content, topics), provenance second — so a provenance validation error doesn't kill content
+
+Record handoff:
 ```
 mcp__reactor-mcp__addActions({
   documentId: "<pipeline-queue-id>",
-  actions: [{
-    type: "ADVANCE_PHASE",
-    input: {
+  actions: [
+    { type: "ASSIGN_TASK", input: { taskId: "<task-id>", assignedTo: "knowledge-agent", updatedAt: "<ISO>" }, scope: "global" },
+    { type: "ADVANCE_PHASE", input: {
       taskId: "<task-id>",
-      updatedAt: "<ISO-timestamp>",
-      handoff: {
-        id: "<generate-unique-id>",
-        phase: "create",
-        workDone: "Extracted 5 claims from source",
-        filesModified: ["<note-id-1>", "<note-id-2>"],
-        completedAt: "<ISO-timestamp>"
-      }
-    },
-    scope: "global"
-  }]
+      handoff: { id: "<uid>", phase: "create", workDone: "Extracted N claims. 0% skip rate.", filesModified: ["<note-ids>"], completedAt: "<ISO>", completedBy: "knowledge-agent" },
+      updatedAt: "<ISO>"
+    }, scope: "global" }
+  ]
 })
 ```
 
-The reducer automatically advances to the next phase. On the final phase (verify), the task is auto-completed.
+### Step 3: Phase 2 — REFLECT (Connect)
 
-### Step 4: Handle failures
+Use `/powerhouse-knowledge:connect` on each extracted note:
+- Find related notes (both new and existing) via search and graph queries
+- Apply articulation test: explain WHY each link exists
+- Create typed links (RELATES_TO, BUILDS_ON, CONTRADICTS, SUPERSEDES, DERIVED_FROM)
+- Also connect to research claims in /research/ when relevant
+- Target: >= 2 links per note, no orphans
+
+Record handoff with `ADVANCE_PHASE`.
+
+### Step 4: Phase 3 — REWEAVE (Update older notes)
+
+Check if existing notes need updating given the new claims:
+- Search for notes that reference similar topics
+- If a new claim supersedes, contradicts, or extends an old one, add links
+- Update old note content if needed (add "See also" references)
+
+Record handoff with `ADVANCE_PHASE`.
+
+### Step 5: Phase 4 — VERIFY (Quality gate + auto-repair)
+
+Use `/powerhouse-knowledge:verify` on all notes from this pipeline run:
+- Run recite test on each note
+- **Auto-repair missing descriptions** (generate from title + content)
+- **Auto-repair missing provenance** (set sourceOrigin: DERIVED)
+- **Auto-repair missing note types** (infer from content)
+- **Auto-repair missing topics** (identify from content)
+- Check link density (>= 2 per note)
+- Report remaining issues that need human judgment
+
+Record final handoff — task auto-completes on the last phase.
+
+### Step 6: Handle failures
+
 ```
-FAIL_TASK — marks task as failed with reason
-BLOCK_TASK — marks task as blocked (waiting for external input)
-UNBLOCK_TASK — resumes a blocked task
+FAIL_TASK { taskId, reason, updatedAt } — mark as failed with reason
+BLOCK_TASK { taskId, reason, updatedAt } — needs human input
+UNBLOCK_TASK { taskId, updatedAt } — resume after human resolves
 ```
 
 ## Quick Pipeline (Single Note)
 
-For processing a single note through reflect + verify:
+For processing a single note (not from a source):
 
 ```
 1. Run /powerhouse-knowledge:connect on the note (reflect phase)
-2. Run /powerhouse-knowledge:verify on the note (verify phase)
-3. If pass: update note status to CONNECTED or VERIFIED
+2. Run /powerhouse-knowledge:verify on the note (auto-repairs + quality gate)
+3. If all pass: note is ready for IN_REVIEW status
 ```
 
 ## Batch Pipeline
 
-For processing multiple notes from a source:
+For processing multiple sources:
 
 ```
-1. Run /powerhouse-knowledge:extract on the source → creates N notes + N pipeline tasks
-2. For each task: run connect → reweave → verify
-3. Track progress via pipeline-queue document
+1. Check pipeline queue for all PENDING tasks
+2. Process each task through all 4 phases
+3. After each source: verify drive nodes, repair if needed
+4. Report: N sources processed, N claims extracted, N links created, N issues auto-repaired
+```
+
+## Quality summary after pipeline
+
+After completing all phases, report:
+```
+=== PIPELINE COMPLETE ===
+Source: "<title>"
+Claims extracted: N (skip rate: X%)
+Links created: N (N BUILDS_ON, N RELATES_TO, N cross-references to research claims)
+Auto-repaired: N issues (descriptions, provenance, types)
+Health: N PASS, N WARN, N FAIL
+Drive verified: all N notes have file nodes
 ```
 
 If "$ARGUMENTS" is provided, treat it as the source or note to process.
