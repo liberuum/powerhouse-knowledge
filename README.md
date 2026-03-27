@@ -79,6 +79,7 @@ All skills work identically against local or remote reactors — the only differ
 
 | Skill | Command | Description |
 |-------|---------|-------------|
+| Synthesize | `/powerhouse-knowledge:synthesize` | Create MOCs from topic clusters (3+ notes per topic) |
 | Search | `/powerhouse-knowledge:search <query>` | Find notes by title, type, topic, content |
 | Extract | `/powerhouse-knowledge:extract <source>` | Extract atomic claims from source material |
 | Connect | `/powerhouse-knowledge:connect <note>` | Find and create links between notes |

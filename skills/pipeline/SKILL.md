@@ -55,7 +55,7 @@ mcp__reactor-mcp__addActions({
 })
 ```
 
-### Step 3: Phase 2 — REFLECT (Connect)
+### Step 3: Phase 2 — REFLECT (Connect + Synthesize)
 
 Use `/powerhouse-knowledge:connect` on each extracted note:
 - Find related notes (both new and existing) via search and graph queries
@@ -63,6 +63,12 @@ Use `/powerhouse-knowledge:connect` on each extracted note:
 - Create typed links (RELATES_TO, BUILDS_ON, CONTRADICTS, SUPERSEDES, DERIVED_FROM)
 - Also connect to research claims in /research/ when relevant
 - Target: >= 2 links per note, no orphans
+
+Then use `/powerhouse-knowledge:synthesize` to create MOCs:
+- Group notes by shared topics
+- Create `bai/moc` documents in `/knowledge/` for any topic with 3+ notes that doesn't already have a MOC
+- Add core ideas with articulated context phrases
+- Set tier (HUB for 20+ notes, DOMAIN for 10+, TOPIC for 3+)
 
 Record handoff with `ADVANCE_PHASE`.
 

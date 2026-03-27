@@ -84,6 +84,24 @@ Each note has this state structure:
 ### Provenance
 - `SET_PROVENANCE { author, sourceOrigin, sessionId?, createdAt }`
 - Valid sourceOrigin values: `DERIVED`, `IMPORT`, `MANUAL`, `SESSION_MINE`
+
+## Document model: `bai/moc`
+
+Maps of Content — navigation documents organizing notes by topic. Live in `/knowledge/`.
+
+**State:** title, description, orientation, tier (HUB/DOMAIN/TOPIC), coreIdeas[], tensions[], openQuestions[], parentRef, childRefs[], noteCount
+
+**Operations:**
+- `CREATE_MOC { title, description, orientation, tier, parentRef?, createdAt }`
+- `ADD_CORE_IDEA { id, noteRef, contextPhrase, sortOrder, addedAt, addedBy? }` — contextPhrase is the articulation test
+- `UPDATE_CORE_IDEA { id, contextPhrase?, sortOrder? }`
+- `REMOVE_CORE_IDEA { id }`
+- `ADD_TENSION { id, description, involvedRefs[], addedAt }`
+- `ADD_OPEN_QUESTION { question }`
+- `UPDATE_ORIENTATION { orientation, updatedAt }`
+- `ADD_CHILD_MOC { childRef }` — for hub/domain hierarchy
+
+Use `/powerhouse-knowledge:synthesize` to auto-create MOCs from topic clusters.
 - Use `DERIVED` for claims extracted from sources, `IMPORT` for bulk imports, `MANUAL` for user-created notes
 
 ## Document model: `bai/source`
