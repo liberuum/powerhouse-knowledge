@@ -102,6 +102,25 @@ Maps of Content — navigation documents organizing notes by topic. Live in `/kn
 - `ADD_CHILD_MOC { childRef }` — for hub/domain hierarchy
 
 Use `/powerhouse-knowledge:synthesize` to auto-create MOCs from topic clusters.
+
+## Document model: `bai/tension`
+
+Unresolved contradictions between knowledge claims. Live in `/ops/`.
+
+**State:** title, description, content, involvedRefs[], status (OPEN/RESOLVED/DISSOLVED), observedAt, observedBy, resolution, resolvedAt
+
+**Operations:**
+- `CREATE_TENSION { title, description, content?, involvedRefs[], observedAt, observedBy? }`
+- `RESOLVE_TENSION { resolution, resolvedAt }` — one side is correct
+- `DISSOLVE_TENSION { resolution, resolvedAt }` — apparent contradiction, both sides compatible
+- `ADD_INVOLVED_REF { ref }` — add another note to the tension
+
+**When to create tensions:**
+- During `/connect` when you find CONTRADICTS links between notes
+- During `/pipeline` reflect phase when new claims conflict with existing ones
+- When the same topic has notes reaching different conclusions
+
+**Always also add the tension to the relevant MOC** via `ADD_TENSION` on the MOC document, so the MOC shows the contradiction within its topic.
 - Use `DERIVED` for claims extracted from sources, `IMPORT` for bulk imports, `MANUAL` for user-created notes
 
 ## Document model: `bai/source`

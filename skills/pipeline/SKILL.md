@@ -70,6 +70,58 @@ Then use `/powerhouse-knowledge:synthesize` to create MOCs:
 - Add core ideas with articulated context phrases
 - Set tier (HUB for 20+ notes, DOMAIN for 10+, TOPIC for 3+)
 
+Then **detect tensions** — look for contradictions between notes:
+- Check if any CONTRADICTS links were created during connection
+- Compare claims that address the same topic but reach different conclusions
+- For each genuine contradiction, create a `bai/tension` document in `/ops/`:
+
+```
+mcp__reactor-mcp__createDocument({
+  documentType: "bai/tension",
+  driveId: "<drive-uuid>",
+  name: "<tension title>",
+  parentFolder: "<ops-folder-uuid>"
+})
+
+mcp__reactor-mcp__addActions({
+  documentId: "<tension-id>",
+  actions: [{
+    type: "CREATE_TENSION",
+    input: {
+      title: "<what contradicts what>",
+      description: "<brief summary of the conflict>",
+      content: "<full analysis: Side A says X because..., Side B says Y because..., this matters because...>",
+      involvedRefs: ["<note-id-1>", "<note-id-2>"],
+      observedAt: "<ISO>",
+      observedBy: "knowledge-agent"
+    },
+    scope: "global"
+  }]
+})
+```
+
+Also add the tension to the relevant MOC if one exists:
+```
+mcp__reactor-mcp__addActions({
+  documentId: "<moc-id>",
+  actions: [{
+    type: "ADD_TENSION",
+    input: {
+      id: "<unique-id>",
+      description: "<tension summary>",
+      involvedRefs: ["<note-id-1>", "<note-id-2>"],
+      addedAt: "<ISO>"
+    },
+    scope: "global"
+  }]
+})
+```
+
+**Three outcomes for tensions:**
+- **OPEN** — genuine unresolved contradiction, needs human judgment
+- **RESOLVED** — one side is correct, the other should be updated or archived
+- **DISSOLVED** — apparent contradiction only, both sides are compatible at different levels
+
 Record handoff with `ADVANCE_PHASE`.
 
 ### Step 4: Phase 3 — REWEAVE (Update older notes)

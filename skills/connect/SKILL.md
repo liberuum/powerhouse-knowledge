@@ -38,6 +38,42 @@ mcp__reactor-mcp__addActions({
 - **SUPERSEDES** — this note replaces the target (newer/better understanding)
 - **DERIVED_FROM** — this note was extracted or derived from the target
 
+## Tension detection
+
+When you find a CONTRADICTS link, check whether this is a genuine unresolved tension:
+
+- Do two notes make opposing claims about the same topic?
+- Is the contradiction substantive (not just different wording)?
+- Is it unresolved (no existing note reconciles the two positions)?
+
+If yes, create a `bai/tension` document:
+```
+mcp__reactor-mcp__createDocument({
+  documentType: "bai/tension",
+  driveId: "<drive-uuid>",
+  name: "<what contradicts what>",
+  parentFolder: "<ops-folder-uuid>"
+})
+
+mcp__reactor-mcp__addActions({
+  documentId: "<tension-id>",
+  actions: [{
+    type: "CREATE_TENSION",
+    input: {
+      title: "<tension title>",
+      description: "<brief summary>",
+      content: "<Side A says... Side B says... This matters because...>",
+      involvedRefs: ["<note-id-1>", "<note-id-2>"],
+      observedAt: "<ISO>",
+      observedBy: "knowledge-agent"
+    },
+    scope: "global"
+  }]
+})
+```
+
+Also add the tension to the relevant MOC if one exists (via `ADD_TENSION` on the MOC).
+
 ## Quality rules
 
 - Every connection must pass the **articulation test** — bare links without reasons are address books, not knowledge graphs
@@ -45,5 +81,6 @@ mcp__reactor-mcp__addActions({
 - Create bidirectional links when appropriate (if A builds on B, B may also relate to A)
 - Minimum 2 connections per note — orphan notes indicate incomplete processing
 - Update the target note's content if the connection reveals new context
+- When creating CONTRADICTS links, always check if a `bai/tension` document should be created
 
 If "$ARGUMENTS" is provided, find connections for that specific note.
