@@ -33,7 +33,20 @@ You interact with the Knowledge Vault through the `reactor-mcp` MCP server, whic
 The reactor MCP is available at:
 - **Local**: `http://localhost:4001/mcp` (when running `ph vetra --watch`)
 - **Remote**: Any deployed Switchboard instance — configure the URL in `.mcp.json`
-- **WebSocket**: `ws://localhost:4001/graphql/subscriptions` for real-time updates (replace host for remote)
+- **WebSocket**: Replace http with ws and append `/graphql/subscriptions`
+
+## Resolving $REACTOR_URL
+
+Skills and curl commands use `$REACTOR_URL` as a placeholder. Before running any curl command, resolve it:
+
+```bash
+# Read from .mcp.json (project root or plugin directory)
+REACTOR_URL=$(grep -oP 'https?://[^"]+' .mcp.json 2>/dev/null | head -1 | sed 's|/mcp$||')
+# Fallback to localhost
+REACTOR_URL=${REACTOR_URL:-http://localhost:4001}
+```
+
+For remote Switchboard (e.g., `https://switchboard-dev.powerhouse.xyz`), the subgraph is at `$REACTOR_URL/graphql/knowledgeGraph`.
 
 ## CRITICAL: MCP tool name resolution
 

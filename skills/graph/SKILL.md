@@ -13,52 +13,52 @@ The Knowledge Graph subgraph is at `/graphql/knowledgeGraph`. Use Bash to query:
 
 ```bash
 # Stats
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphStats(driveId: \"<UUID>\") { nodeCount edgeCount orphanCount } }"}'
 
 # Triangles (synthesis opportunities)
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphTriangles(driveId: \"<UUID>\", limit: 10) { noteA { title documentId } noteB { title documentId } sharedTarget { title } } }"}'
 
 # Bridges (critical nodes)
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphBridges(driveId: \"<UUID>\") { title documentId } }"}'
 
 # Orphans
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphOrphans(driveId: \"<UUID>\") { title documentId noteType } }"}'
 
 # N-hop connections from a note
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphConnections(driveId: \"<UUID>\", documentId: \"<NOTE-ID>\", depth: 3) { node { title } depth viaLinkType } }"}'
 
 # Backlinks (who links to this note?)
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphBacklinks(driveId: \"<UUID>\", documentId: \"<NOTE-ID>\") { sourceDocumentId linkType } }"}'
 
 # Forward links (what does this note link to?)
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphForwardLinks(driveId: \"<UUID>\", documentId: \"<NOTE-ID>\") { targetDocumentId linkType targetTitle } }"}'
 
 # Full-text search
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphSearch(driveId: \"<UUID>\", query: \"cognitive\", limit: 20) { title documentId noteType } }"}'
 
 # Density
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphDensity(driveId: \"<UUID>\") }"}'
 ```
 
-For remote Switchboard, replace `localhost:4001` with the remote host.
+Resolve `$REACTOR_URL` from `.mcp.json` before running: `REACTOR_URL=$(grep -oP 'https?://[^"]+' .mcp.json 2>/dev/null | head -1 | sed 's|/mcp$||'); REACTOR_URL=${REACTOR_URL:-http://localhost:4001}`
 
 ## Analysis types
 

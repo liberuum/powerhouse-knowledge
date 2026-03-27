@@ -101,7 +101,7 @@ When verifying all notes in the vault (no specific note targeted):
 
 ```bash
 # Use the subgraph to quickly find problem notes
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphOrphans(driveId: \"<UUID>\") { documentId title } }"}'
 ```

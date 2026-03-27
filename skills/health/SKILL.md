@@ -15,17 +15,17 @@ Query the subgraph at `/graphql/knowledgeGraph`:
 
 ```bash
 # Graph stats
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphStats(driveId: \"<UUID>\") { nodeCount edgeCount orphanCount } }"}'
 
 # Density
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphDensity(driveId: \"<UUID>\") }"}'
 
 # Orphans
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphOrphans(driveId: \"<UUID>\") { documentId title } }"}'
 ```
@@ -176,4 +176,4 @@ mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
 // Read each bai/knowledge-note document, compute metrics manually
 ```
 
-For remote Switchboard, replace `localhost:4001` with the remote host.
+Resolve `$REACTOR_URL` from `.mcp.json` before running curl commands (see agent docs).

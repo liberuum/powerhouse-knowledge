@@ -29,7 +29,7 @@ mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
 
 Or use the subgraph:
 ```bash
-curl -s http://localhost:4001/graphql/knowledgeGraph \
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
   -H "Content-Type: application/json" \
   -d '{"query":"{ knowledgeGraphNodes(driveId: \"<UUID>\") { documentId title noteType } }"}'
 ```
