@@ -2,34 +2,71 @@
 
 ## Reactor Connection
 
-The plugin connects to a Powerhouse reactor via MCP. Two deployment options:
+The plugin connects to a Powerhouse reactor via MCP. There are three ways the MCP server can be configured, and **only one should be active** to avoid conflicts.
 
-### Local Reactor (Development)
+### Priority Order (highest wins)
 
-Start the reactor in your project directory:
-```bash
-ph vetra --watch   # serves MCP at http://localhost:4001/mcp
-```
+| Priority | Source | Tool prefix | When to use |
+|----------|--------|-------------|-------------|
+| 1 | **Claude.ai remote MCP config** (IDE settings) | `mcp__claude_ai_*` | Cloud-hosted Claude sessions |
+| 2 | **Project root `.mcp.json`** | `mcp__reactor-mcp__*` | Local development |
+| 3 | **Plugin `.mcp.json`** | `mcp__reactor-mcp__*` | Fallback/template |
 
-The default `.mcp.json` points to localhost — no changes needed.
+**IMPORTANT:** If you have multiple configs pointing to different servers, only the highest-priority one takes effect. The others create confusion. **Use exactly one.**
 
-### Remote Switchboard (Production)
+### Option A: Claude.ai Remote MCP (recommended for cloud)
 
-Connect to any deployed Switchboard instance. No local reactor required.
+Configure the MCP server in Claude.ai settings (Settings > MCP Servers). The tools will be registered as `mcp__claude_ai_Powerhouse_xyz_Reactor_MCP__*` or similar.
 
-Edit `.mcp.json`:
+When using this option:
+- **Delete** or empty the project root `.mcp.json` (set `"mcpServers": {}`)
+- The plugin's `.mcp.json` will be ignored
+- The agent adapts to whatever tool prefix is available
+
+### Option B: Project Root .mcp.json (recommended for local dev)
+
+Place a single `.mcp.json` in your **project root** (not inside the plugin):
+
 ```json
 {
   "mcpServers": {
     "reactor-mcp": {
-      "type": "http",
+      "url": "http://localhost:4001/mcp"
+    }
+  }
+}
+```
+
+Tools will be `mcp__reactor-mcp__*`. Start the reactor with `ph vetra --watch`.
+
+For remote Switchboard, change the URL:
+```json
+{
+  "mcpServers": {
+    "reactor-mcp": {
       "url": "https://your-switchboard.example.com/mcp"
     }
   }
 }
 ```
 
-The remote Switchboard must have the Knowledge Vault document models deployed (the `knowledge-note` Vetra package). All skills work identically — the only difference is the endpoint URL.
+### Option C: Plugin .mcp.json (fallback)
+
+The plugin ships with a default `.mcp.json` pointing to `localhost:4001`. This is only used if no project root config or IDE config exists. You generally don't need to edit this.
+
+### Tool Name Adaptation
+
+The agent and skills reference tools as `mcp__reactor-mcp__getDrives`, `mcp__reactor-mcp__createDocument`, etc. If the actual tool prefix differs (e.g., `mcp__claude_ai_Powerhouse_xyz_Reactor_MCP__getDrives`), the agent should use whatever tools are available in the session. The function names (getDrives, getDocument, createDocument, addActions, etc.) are always the same — only the prefix changes.
+
+### Troubleshooting
+
+**"Unknown tool" errors:** The MCP server name in `.mcp.json` doesn't match what the session registered. Check which tools are actually available and use those.
+
+**Tools available but wrong endpoint:** Multiple `.mcp.json` files conflict. Remove all but one. Check: project root, plugin directory, and IDE settings.
+
+**Hook warns "reactor not reachable":** The hook reads the URL from the nearest `.mcp.json`. If you're using Claude.ai remote MCP, the hook may not find the URL. Safe to ignore — the connection works through the IDE.
+
+The remote Switchboard must have the Knowledge Vault document models deployed (the `knowledge-note` Vetra package). All skills work identically regardless of connection method.
 
 For GraphQL and WebSocket endpoints on remote, replace `localhost:4001` with your Switchboard domain throughout this guide.
 
