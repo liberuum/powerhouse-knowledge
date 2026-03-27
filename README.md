@@ -17,7 +17,7 @@ This plugin connects Claude Code to a Powerhouse reactor running the Knowledge V
 
 ```bash
 cd your-project/
-git clone https://github.com/bai/powerhouse-knowledge .claude/plugins/powerhouse-knowledge
+git clone https://github.com/liberuum/powerhouse-knowledge .claude/plugins/powerhouse-knowledge
 ```
 
 Claude Code auto-discovers plugins in `.claude/plugins/`.
@@ -25,13 +25,13 @@ Claude Code auto-discovers plugins in `.claude/plugins/`.
 ### Option 2: Install as a global plugin
 
 ```bash
-git clone https://github.com/bai/powerhouse-knowledge ~/.claude/plugins/powerhouse-knowledge
+git clone https://github.com/liberuum/powerhouse-knowledge ~/.claude/plugins/powerhouse-knowledge
 ```
 
 ### Option 3: Use the plugin directory flag
 
 ```bash
-git clone https://github.com/bai/powerhouse-knowledge /path/to/powerhouse-knowledge
+git clone https://github.com/liberuum/powerhouse-knowledge /path/to/powerhouse-knowledge
 claude --plugin-dir /path/to/powerhouse-knowledge
 ```
 
