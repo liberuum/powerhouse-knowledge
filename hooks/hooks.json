@@ -2,9 +2,9 @@
   "hooks": {
     "UserPromptSubmit": [
       {
-        "matcher": "^/(seed|extract|connect|verify|pipeline|health|graph|search|setup|import|export|watch)",
+        "matcher": "^/(seed|extract|connect|synthesize|verify|pipeline|health|graph|search|setup|import|export|watch)",
         "description": "Verify reactor is reachable before running vault skills",
-        "command": "curl -sf http://localhost:4001/mcp -o /dev/null 2>/dev/null && echo 'Reactor connected' || echo 'WARNING: Reactor not reachable. Start with: ph vetra --watch (local) or configure .mcp.json for remote Switchboard'"
+        "command": "MCP_URL=$(grep -o 'https\\?://[^\"]*' .mcp.json 2>/dev/null | head -1 || echo 'http://localhost:4001/mcp'); curl -sf \"$MCP_URL\" -o /dev/null 2>/dev/null && echo \"Reactor connected at $MCP_URL\" || echo \"WARNING: Reactor not reachable at $MCP_URL\""
       }
     ]
   }

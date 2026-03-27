@@ -35,6 +35,23 @@ The reactor MCP is available at:
 - **Remote**: Any deployed Switchboard instance — configure the URL in `.mcp.json`
 - **WebSocket**: `ws://localhost:4001/graphql/subscriptions` for real-time updates (replace host for remote)
 
+## CRITICAL: MCP tool name resolution
+
+The tool names in this agent definition use the `mcp__reactor-mcp__` prefix, which matches the `.mcp.json` server name `reactor-mcp`. If the MCP server was registered under a different name in the IDE/session (e.g., `mcp__claude_ai_Powerhouse_xyz_Reactor_MCP__*`), you must use whatever tool names are actually available.
+
+**To check available tool names**, look at the MCP tools listed in your session. The function names (getDrives, getDocument, createDocument, addActions, etc.) are the same — only the prefix changes.
+
+**If tools fail with "unknown tool"**, the server name doesn't match. Fix by ensuring `.mcp.json` has the server key `reactor-mcp`:
+```json
+{
+  "mcpServers": {
+    "reactor-mcp": {
+      "url": "https://your-switchboard.example.com/mcp"
+    }
+  }
+}
+```
+
 ## CRITICAL: MCP race condition
 
 When creating multiple documents rapidly, the drive file node addition can silently fail (race condition on the drive document). **Always:**
