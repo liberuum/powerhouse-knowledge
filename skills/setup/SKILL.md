@@ -50,9 +50,13 @@ Count documents of type `bai/research-claim`. If count >= 200, the methodology i
 
 ### Step 4: Read the methodology source files
 
-The 249 Ars Contexta research claims live as markdown files with YAML frontmatter:
-- **Default location**: `/home/p/Powerhouse/arscontexta/methodology/`
-- Ask the user to confirm the path if it doesn't exist
+The 249 Ars Contexta research claims live as markdown files with YAML frontmatter. The plugin tries three locations in order:
+
+1. **Bundled in plugin**: `data/methodology/` inside the plugin directory (included when cloned from GitHub)
+2. **Local Ars Contexta repo**: `/home/p/Powerhouse/arscontexta/methodology/` (development)
+3. **Download from GitHub**: If neither exists, fetch from `https://raw.githubusercontent.com/liberuum/powerhouse-knowledge/main/data/methodology/`
+
+**To find the bundled files**, use the Glob tool to search for `**/powerhouse-knowledge/data/methodology/*.md`. If the plugin was installed via marketplace and the data directory is missing, download the file listing from the GitHub repo and fetch each file.
 
 Each file has:
 ```yaml
@@ -152,12 +156,34 @@ Location: /research/ folder
 For large imports, the dedicated import script is faster than MCP tool calls:
 
 ```bash
-node /home/p/Powerhouse/bai-knowledge-note/scripts/import-research-claims.mjs \
+# Using bundled methodology files from the plugin
+node /path/to/bai-knowledge-note/scripts/import-research-claims.mjs \
   --drive-id <drive-uuid> \
-  --vault-path /home/p/Powerhouse/arscontexta/methodology/
+  --vault-path /path/to/powerhouse-knowledge/data/methodology/
+
+# Or from the local Ars Contexta repo
+node /path/to/bai-knowledge-note/scripts/import-research-claims.mjs \
+  --drive-id <drive-uuid> \
+  --vault-path /path/to/arscontexta/methodology/
 ```
 
 This uses MCP Streamable HTTP for bulk creation and is ~10x faster than individual MCP tool calls.
+
+## Downloading methodology from GitHub (marketplace installs)
+
+If the plugin was installed via marketplace and the `data/methodology/` directory is missing, download the files:
+
+```bash
+# Clone just the data directory
+git clone --depth 1 --filter=blob:none --sparse https://github.com/liberuum/powerhouse-knowledge.git /tmp/pk-methodology
+cd /tmp/pk-methodology && git sparse-checkout set data/methodology
+# Then use /tmp/pk-methodology/data/methodology/ as the vault-path
+```
+
+Or fetch individual files via the GitHub raw URL:
+```
+https://raw.githubusercontent.com/liberuum/powerhouse-knowledge/main/data/methodology/<filename>.md
+```
 
 ## Document model: `bai/research-claim`
 
