@@ -32,8 +32,18 @@ You interact with the Knowledge Vault through the `reactor-mcp` MCP server, whic
 
 The reactor MCP is available at:
 - **Local**: `http://localhost:4001/mcp` (when running `ph vetra --watch`)
-- **Remote**: Configure the URL in `.mcp.json` to point to any deployed reactor
-- **WebSocket**: `ws://localhost:4001/graphql/subscriptions` for real-time updates
+- **Remote**: Any deployed Switchboard instance — configure the URL in `.mcp.json`
+- **WebSocket**: `ws://localhost:4001/graphql/subscriptions` for real-time updates (replace host for remote)
+
+## CRITICAL: MCP race condition
+
+When creating multiple documents rapidly, the drive file node addition can silently fail (race condition on the drive document). **Always:**
+
+1. Add a 100ms delay between sequential `createDocument` calls
+2. After batch creation, verify all documents exist in the drive tree
+3. Repair any missing nodes via `addActions` with `ADD_FILE` on the drive
+
+For bulk imports, use the dedicated import scripts which include built-in verification.
 
 ## Document model: `bai/knowledge-note`
 
@@ -73,10 +83,27 @@ Each note has this state structure:
 
 ### Provenance
 - `SET_PROVENANCE { author, sourceOrigin, sessionId?, createdAt }`
+- Valid sourceOrigin values: `DERIVED`, `IMPORT`, `MANUAL`, `SESSION_MINE`
+- Use `DERIVED` for claims extracted from sources, `IMPORT` for bulk imports, `MANUAL` for user-created notes
+
+## Document model: `bai/source`
+
+Source material that feeds the extraction pipeline. Lives in `/sources/` folder.
+
+**State:** title, description, content, sourceType, status, provenance, extractedClaims[], extractionStats
+**Status lifecycle:** INBOX → EXTRACTING → EXTRACTED → ARCHIVED
+
+**Operations:**
+- `INGEST_SOURCE { title, content, sourceType, description?, author?, url?, createdAt, createdBy? }`
+- `SET_SOURCE_STATUS { status }` — INBOX, EXTRACTING, EXTRACTED, ARCHIVED
+- `ADD_EXTRACTED_CLAIM { claimRef }` — link extracted note ID to source
+- `RECORD_EXTRACTION_STATS { claimCount, skippedCount, skipRate, extractedAt, extractedBy? }`
+
+**Source types:** ARTICLE, PAPER, BOOK_CHAPTER, TRANSCRIPT, DOCUMENTATION, CONVERSATION, WEB_PAGE, MANUAL_ENTRY
 
 ## Document model: `bai/research-claim`
 
-The vault's `/research/` folder contains the Ars Contexta methodology — 249 interconnected research claims about tools for thought, knowledge management, and agent-native cognitive architecture. These are the theoretical foundation for how the vault works.
+The vault's `/research/` folder contains the Ars Contexta methodology — 249 interconnected research claims. These are the theoretical foundation for how the vault works.
 
 **State:** title, description, content, kind, methodology[], sources[], topics[], connections[]
 
@@ -86,9 +113,62 @@ The vault's `/research/` folder contains the Ars Contexta methodology — 249 in
 - `REMOVE_RESEARCH_CONNECTION { id }`
 - `UPDATE_CLAIM_CONTENT { content }`
 
-Use `/powerhouse-knowledge:setup` to import the methodology into a new vault.
+Use `/powerhouse-knowledge:setup` to import the methodology into a new vault. Reference these claims when explaining WHY the vault is designed a certain way.
 
-Reference these claims when explaining WHY the vault is designed a certain way, or when the user asks about methodology principles.
+## Document model: `bai/pipeline-queue`
+
+Singleton document tracking processing tasks. Lives in `/ops/queue/`.
+
+**Operations:**
+- `ADD_TASK { id, taskType, target, documentRef?, createdAt }` — taskType: "claim" or "enrichment"
+- `ASSIGN_TASK { taskId, assignedTo, updatedAt }`
+- `ADVANCE_PHASE { taskId, handoff: { id, phase, workDone, filesModified, completedAt, completedBy? }, updatedAt }`
+- `COMPLETE_TASK { taskId, updatedAt }`
+- `FAIL_TASK { taskId, reason, updatedAt }`
+- `BLOCK_TASK { taskId, reason, updatedAt }`
+- `UNBLOCK_TASK { taskId, updatedAt }`
+
+**Phase order:** create → reflect → reweave → verify (for claim tasks)
+
+**Important:** Check for existing tasks with the same `documentRef` before creating duplicates. If a task already exists for a source, don't create another — the agent should process the latest document state.
+
+## Folder structure
+
+Documents must be placed in the correct folders:
+
+| Document Type | Folder Path | Folder Purpose |
+|---|---|---|
+| bai/knowledge-note | /knowledge/notes/ | Atomic claims |
+| bai/moc | /knowledge/ | Maps of Content |
+| bai/source | /sources/ | Raw input material |
+| bai/pipeline-queue | /ops/queue/ | Pipeline singleton |
+| bai/observation | /ops/sessions/ | Operational signals |
+| bai/knowledge-graph | /self/ | Graph singleton |
+| bai/vault-config | /self/ | Config singleton |
+| bai/research-claim | /research/ | Methodology claims |
+
+Always read the drive first to find folder UUIDs:
+```
+mcp__reactor-mcp__getDrive({ driveId: "<uuid>" })
+// Find: nodes where kind="folder" and name="notes" with correct parentFolder chain
+```
+
+## Subgraph queries
+
+The Knowledge Graph subgraph is available at `/graphql/knowledgeGraph` (not the main `/graphql/r/` endpoint):
+
+- `knowledgeGraphStats(driveId)` → nodeCount, edgeCount, orphanCount
+- `knowledgeGraphNodes(driveId)` → all nodes with title, noteType, status
+- `knowledgeGraphEdges(driveId)` → all edges with linkType, targetTitle
+- `knowledgeGraphOrphans(driveId)` → nodes with zero incoming links
+- `knowledgeGraphSearch(driveId, query, limit?)` → full-text search
+- `knowledgeGraphBacklinks(driveId, documentId)` → incoming links to a note
+- `knowledgeGraphForwardLinks(driveId, documentId)` → outgoing links from a note
+- `knowledgeGraphConnections(driveId, documentId, depth?)` → N-hop traversal
+- `knowledgeGraphTriangles(driveId, limit?)` → synthesis opportunities
+- `knowledgeGraphBridges(driveId)` → critical nodes
+- `knowledgeGraphDensity(driveId)` → interconnectedness score
+- `knowledgeGraphDebug(driveId)` → raw processor DB tables
 
 ## Processing pipeline
 
@@ -109,17 +189,23 @@ The knowledge management workflow follows 6 phases (the "6 Rs"):
 - **Comprehensive extraction**: Skip rate < 10% for domain-relevant sources
 - **Minimum connectivity**: Every note should have >= 2 connections
 
-## Graph analysis
+## Source-first workflow
 
-Use `/powerhouse-knowledge:graph` and `/powerhouse-knowledge:health` to analyze the knowledge graph structure:
-- **Orphans**: Notes with zero incoming links (disconnected)
-- **Triangles**: Synthesis opportunities (A->C, B->C, but A-/->B)
-- **Bridges**: Critical nodes whose removal disconnects the graph
-- **Density**: How interconnected the graph is overall
+Content enters the vault as sources, then gets processed:
+
+1. **User adds source** in the app (paste article) → `bai/source` in `/sources/`
+2. **User clicks "Queue for Processing"** → adds PENDING task to PipelineQueue, sets source to EXTRACTING
+3. **Agent runs /pipeline** → extract claims → connect → reweave → verify
+4. **Results appear** in Notes tab, Graph tab, Health tab
+
+The agent should always:
+- Create notes from sources (not ad-hoc), preserving the provenance chain
+- Update the source with `ADD_EXTRACTED_CLAIM` and `RECORD_EXTRACTION_STATS` after extraction
+- Track progress in the PipelineQueue with `ADVANCE_PHASE` handoffs
 
 ## Session workflow
 
-1. **Orient**: Check vault health, review recent changes, surface maintenance needs
+1. **Orient**: Check vault health, review pending pipeline tasks, surface maintenance needs
 2. **Work**: Process the user's request using appropriate skills
 3. **Persist**: Ensure all changes are committed as operations, graph stays consistent
 

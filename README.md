@@ -26,8 +26,17 @@ claude --plugin-dir /path/to/powerhouse-knowledge
 
 ## Configuration
 
-Edit `.mcp.json` to point to your reactor:
+The plugin connects to a Powerhouse reactor via MCP. You can run locally or connect to any remote Switchboard instance.
 
+### Local reactor (development)
+
+Start the reactor in your project directory, then point the plugin to localhost:
+
+```bash
+ph vetra --watch   # serves MCP at http://localhost:4001/mcp
+```
+
+`.mcp.json` (default — no changes needed):
 ```json
 {
   "mcpServers": {
@@ -39,7 +48,22 @@ Edit `.mcp.json` to point to your reactor:
 }
 ```
 
-For remote reactors, replace the URL with your deployed endpoint.
+### Remote Switchboard (production)
+
+No local reactor needed. Edit `.mcp.json` to point to the remote instance:
+
+```json
+{
+  "mcpServers": {
+    "reactor-mcp": {
+      "type": "http",
+      "url": "https://your-switchboard.example.com/mcp"
+    }
+  }
+}
+```
+
+All skills work identically against local or remote reactors — the only difference is the endpoint URL. The remote Switchboard must have the Knowledge Vault document models deployed.
 
 ## Skills
 

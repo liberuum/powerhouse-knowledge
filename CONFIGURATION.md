@@ -1,5 +1,40 @@
 # Configuration Guide
 
+## Reactor Connection
+
+The plugin connects to a Powerhouse reactor via MCP. Two deployment options:
+
+### Local Reactor (Development)
+
+Start the reactor in your project directory:
+```bash
+ph vetra --watch   # serves MCP at http://localhost:4001/mcp
+```
+
+The default `.mcp.json` points to localhost — no changes needed.
+
+### Remote Switchboard (Production)
+
+Connect to any deployed Switchboard instance. No local reactor required.
+
+Edit `.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "reactor-mcp": {
+      "type": "http",
+      "url": "https://your-switchboard.example.com/mcp"
+    }
+  }
+}
+```
+
+The remote Switchboard must have the Knowledge Vault document models deployed (the `knowledge-note` Vetra package). All skills work identically — the only difference is the endpoint URL.
+
+For GraphQL and WebSocket endpoints on remote, replace `localhost:4001` with your Switchboard domain throughout this guide.
+
+---
+
 ## Connection Modes
 
 The plugin supports two connection modes to the Powerhouse reactor:
