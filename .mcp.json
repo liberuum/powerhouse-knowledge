@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "reactor-mcp": {
-      "type": "http",
-      "url": "http://localhost:4001/mcp"
+      "type": "https",
+      "url": "https://switchboard-dev.powerhouse.xyz/mcp"
     }
   }
 }

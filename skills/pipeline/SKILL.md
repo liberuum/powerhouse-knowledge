@@ -15,7 +15,9 @@ Source -> CREATE (extract claims) -> REFLECT (connect) -> REWEAVE (update old no
 
 Each phase is tracked in the `bai/pipeline-queue` singleton document.
 
-## CRITICAL: Pipeline tracking operations
+## CRITICAL: Pipeline tracking is MANDATORY
+
+**Every pipeline run MUST update the `bai/pipeline-queue` document.** After completing each phase (create, reflect, reweave, verify), immediately record the handoff via ASSIGN_TASK + ADVANCE_PHASE. The task must reach DONE status by the end of the pipeline. Never skip pipeline tracking — the app's Pipeline view reads from this document.
 
 Pipeline operations (ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE, COMPLETE_TASK, FAIL_TASK) are **dependent** — each requires the previous one to have created state. **Always use sequential `switchboard docs mutate` calls, never `docs apply`** (which reverses operation order for dependent actions).
 
@@ -95,11 +97,13 @@ Then **cross-reference with methodology claims** in `/research/`:
 - Create CONTRADICTS links when a note challenges a claim
 - This grounds working knowledge in the theoretical foundation
 
-Then use `/powerhouse-knowledge:synthesize` to create MOCs:
-- Group notes by shared topics
+**MANDATORY: Create MOCs via `/powerhouse-knowledge:synthesize`:**
+- Group notes by shared topics (aggregate `topics[]` from all note states)
 - Create `bai/moc` documents in `/knowledge/` for any topic with 3+ notes that doesn't already have a MOC
-- Add core ideas with articulated context phrases
+- Add core ideas with articulated context phrases (WHY each note matters to the topic)
 - Set tier (HUB for 20+ notes, DOMAIN for 10+, TOPIC for 3+)
+- **Verify each MOC appears in the drive tree after creation** — don't skip this
+- This is NOT optional — the health check will flag missing MOCs as WARN
 
 Then **detect tensions** — look for contradictions between notes:
 - Check if any CONTRADICTS links were created during connection

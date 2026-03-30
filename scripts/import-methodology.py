@@ -8,20 +8,31 @@ import re
 import subprocess
 import sys
 import time
-METHODOLOGY_DIR = "/Users/p/Documents/Powerhouse/powerhouse-knowledge/data/methodology"
-SW = os.path.expanduser("~/.cargo/bin/switchboard")
+METHODOLOGY_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "methodology")
+SW = os.environ.get("SWITCHBOARD_BIN", "switchboard")
 
 
-def run_sw(*args, timeout=30):
+def run_sw(*args, timeout=60, retries=2):
     """Run a switchboard CLI command and return parsed JSON or raw output."""
     cmd = [SW] + list(args)
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    if result.returncode != 0:
-        return None, result.stderr
-    try:
-        return json.loads(result.stdout), None
-    except json.JSONDecodeError:
-        return result.stdout.strip(), None
+    for attempt in range(retries + 1):
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            if result.returncode != 0:
+                if attempt < retries and ("timeout" in result.stderr.lower() or "connection" in result.stderr.lower()):
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                return None, result.stderr
+            try:
+                return json.loads(result.stdout), None
+            except json.JSONDecodeError:
+                return result.stdout.strip(), None
+        except subprocess.TimeoutExpired:
+            if attempt < retries:
+                time.sleep(2 * (attempt + 1))
+                continue
+            return None, "Command timed out"
+    return None, "All retries exhausted"
 
 
 def run_sw_raw(*args, timeout=30):
@@ -255,9 +266,8 @@ def main():
             print(f"  [{i+1}/{len(claims)}] FAILED to create: {title[:50]}... {err}")
             failed += 1
 
-        # Small delay to avoid overwhelming the reactor
-        if (i + 1) % 5 == 0:
-            time.sleep(0.1)
+        # Delay to avoid overwhelming the reactor (longer for remote)
+        time.sleep(0.3)
 
     print(f"\nPass 1 complete: {created} created, {failed} failed")
     print(f"Title→ID map: {len(title_to_id)} entries")
@@ -312,9 +322,8 @@ def main():
                 f"  [{i+1}/{len(claims)}] {resolved} resolved, {unresolved} unresolved, {conn_errors} errors"
             )
 
-        # Small delay
-        if (i + 1) % 10 == 0:
-            time.sleep(0.1)
+        # Delay to avoid overwhelming the reactor (longer for remote)
+        time.sleep(0.2)
 
     print(f"\nPass 2 complete: {resolved} resolved, {unresolved} unresolved, {conn_errors} errors")
 

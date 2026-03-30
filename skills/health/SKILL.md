@@ -1,17 +1,55 @@
 ---
 name: health
-description: Check vault health — orphan notes, dangling links, graph density, processing stats. Saves results to the bai/health-report document for historical tracking. Use for maintenance, monitoring, or when the user asks about vault status.
+description: Check remote vault health — orphan notes, dangling links, graph density, methodology grounding, MOC coverage, processing stats. Saves results to the bai/health-report document. All checks run against the live reactor via Switchboard CLI.
 ---
 
 # Vault Health Check
 
-Run diagnostics across the knowledge vault, report actionable findings, and **save results to the `bai/health-report` document** in `/ops/health/`.
+Run diagnostics against the **remote knowledge vault** via the Switchboard CLI. All data comes from the live reactor — there are no local files to scan. Results are saved to the `bai/health-report` document for the app's HealthDashboard.
 
-## Process
+## Pre-flight
 
-### Step 1: Gather metrics
+1. Verify CLI connectivity:
+```bash
+switchboard config show
+switchboard ping
+```
 
-Query the subgraph via the Switchboard CLI:
+2. Detect the vault drive (look for `bai/vault-config`):
+```bash
+switchboard drives list --format json | python3 -c "
+import json, sys
+drives = json.load(sys.stdin)
+for d in drives:
+    nodes = d.get('nodes', d.get('state', {}).get('global', {}).get('nodes', []))
+    if any(n.get('documentType') == 'bai/vault-config' for n in nodes):
+        print(f'SLUG={d[\"slug\"]}')
+        print(f'ID={d[\"id\"]}')
+        print(f'NAME={d[\"name\"]}')
+"
+```
+
+3. Get the drive tree and index all documents by type:
+```bash
+switchboard docs tree <drive-slug> --format json | python3 -c "
+import json, sys
+tree = json.load(sys.stdin)
+nodes = tree.get('nodes', [])
+# Index by documentType
+by_type = {}
+for n in nodes:
+    dt = n.get('documentType', n.get('kind', 'unknown'))
+    by_type.setdefault(dt, []).append(n)
+for dt, items in sorted(by_type.items()):
+    print(f'{dt}: {len(items)}')
+"
+```
+
+Record: note count, MOC count, source count, research claim count, folder UUIDs.
+
+## Step 1: Gather metrics from the subgraph
+
+Run these queries **in parallel** (they are independent):
 
 ```bash
 # Graph stats
@@ -24,52 +62,88 @@ switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
 switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title } }'
 ```
 
-Also read individual notes to check:
-- Missing descriptions
-- Missing provenance
-- Missing note types
-- Missing topics
-- Link density per note
+## Step 2: Read individual note state
+
+For each `bai/knowledge-note` in the drive tree, read its full state:
 
 ```bash
-switchboard docs list --drive <drive-slug> --format json
 switchboard docs get <note-id> --state --format json
 ```
 
-### Step 2: Compute checks
+Extract per note:
+- `title` — present or missing
+- `description` — present, length, quality (does it add info beyond title?)
+- `noteType` — present or missing
+- `status` — DRAFT, IN_REVIEW, CANONICAL, ARCHIVED
+- `topics[]` — count
+- `links[]` — count and types
+- `provenance.sourceOrigin` — present or missing
+- `content` — present and length
+
+## Step 3: Check methodology grounding via subgraph
+
+For each note, query forward links and check if any target a `bai/research-claim`:
+
+```bash
+switchboard query '{ knowledgeGraphForwardLinks(driveId: "<UUID>", documentId: "<NOTE-ID>") { targetDocumentId linkType targetTitle } }'
+```
+
+Cross-reference `targetDocumentId` against the list of research claim IDs from the drive tree. A note is **grounded** if it has at least one BUILDS_ON or RELATES_TO link to a research claim.
+
+## Step 4: Check MOC coverage
+
+From the drive tree, find all `bai/moc` documents. For each topic that appears on 3+ notes but has no MOC, flag it as a coverage gap.
+
+```bash
+# Count topic frequency across all notes
+# python3 -c "... aggregate topics from note states ..."
+# Flag topics with 3+ notes and no corresponding MOC
+```
+
+## Step 5: Compute diagnostic checks
 
 | Category | PASS | WARN | FAIL |
 |---|---|---|---|
-| ORPHAN_DETECTION | 0 orphans | 1-3 | 4+ |
-| LINK_HEALTH | avg >= 2.0 | avg >= 1.0 | avg < 1.0 |
-| DESCRIPTION_QUALITY | 0 missing | 1-2 missing | 3+ missing |
-| SCHEMA_COMPLIANCE | all have type | some missing | many missing |
-| MOC_COHERENCE | all have topics | some without | many without |
+| SCHEMA_COMPLIANCE | all notes have title, type, provenance | 1-2 missing fields | 3+ missing |
+| ORPHAN_DETECTION | 0 orphans | 1-3 orphans | 4+ orphans |
+| LINK_HEALTH | avg links >= 2.0 | avg >= 1.0 | avg < 1.0 |
+| DESCRIPTION_QUALITY | all present + informative | 1-2 missing or restated | 3+ missing |
+| MOC_COHERENCE | all 3+ note topics have MOCs | 1-2 gaps | 3+ gaps |
 | METHODOLOGY_GROUNDING | all notes link to research claims | some ungrounded | many ungrounded |
-| PROCESSING_THROUGHPUT | 0 pending obs | some pending | many pending |
-| STALE_NOTES | 0 stale | some stale | many stale |
+| PROCESSING_THROUGHPUT | 0 pending pipeline tasks | 1-2 pending | 3+ pending or FAILED |
+| STALE_NOTES | 0 DRAFT notes > 30 days | 1-3 stale | 4+ stale |
 
-**METHODOLOGY_GROUNDING check:** For each knowledge note, check if it has at least one outgoing link to a `bai/research-claim` document. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation. The verify skill auto-repairs this by searching for matching claims.
+**Description quality check (not just presence):**
+- Length: 50-200 chars ideal. < 30 = too terse, > 200 = **will silently fail SET_DESCRIPTION** (kill entire batch)
+- Restatement: if description uses >70% same words as title = WARN
+- Must add scope, mechanism, or implication beyond the title
 
-**CRITICAL: Verify, don't assume.** After auto-fixing any health recommendation (creating MOCs, adding descriptions, importing methodology), **re-read the drive tree** to confirm the fix actually applied. Don't report PASS based on what you dispatched — report PASS based on what you verified exists in the drive. Silent failures are common (race conditions, CLI bugs, network issues).
+**Methodology grounding:**
+- For each note, check forward links for targets in the research claim set
+- Notes linked to at least one research claim via BUILDS_ON or RELATES_TO = grounded
+- Ungrounded notes are "floating" — recommend `/connect` to find matching claims
 
-### Step 3: Save to bai/health-report document
+**CRITICAL: Verify, don't assume.** After auto-fixing any health recommendation, **re-read the drive tree and re-query the subgraph** to confirm. Don't report PASS based on what you dispatched — report PASS based on what you verified. Silent failures are common with remote reactors (race conditions, CLI bugs, network latency).
 
-Find or create the health report document in `/ops/health/`:
+## Step 6: Save to bai/health-report document
+
+Find the existing `bai/health-report` in `/ops/health/` from the drive tree. If it doesn't exist, create it:
 
 ```bash
-switchboard docs tree <drive-slug> --format json
-# Find existing: kind="file", documentType="bai/health-report" in /ops/health/
-# Or create new:
 switchboard docs create --type bai/health-report --name "Health Report" --drive <drive-slug> --parent-folder <ops-health-folder-uuid> --format json
 ```
 
-**Write the report via GENERATE_REPORT:**
+**Write report (overwrites previous):**
 ```bash
-switchboard docs apply <health-report-id> --actions '[{
+switchboard docs apply <health-report-id> --file /tmp/health-report.json
+```
+
+Where `/tmp/health-report.json` contains:
+```json
+[{
   "type": "GENERATE_REPORT",
   "input": {
-    "generatedAt": "<ISO timestamp>",
+    "generatedAt": "<ISO>",
     "generatedBy": "knowledge-agent",
     "mode": "full",
     "overallStatus": "PASS|WARN|FAIL",
@@ -83,89 +157,91 @@ switchboard docs apply <health-report-id> --actions '[{
       "mocCoverage": 0.0,
       "averageLinksPerNote": 0.0
     },
-    "recommendations": [
-      "Connect 2 orphan notes",
-      "Add descriptions to 3 notes"
-    ]
+    "recommendations": ["..."]
   },
   "scope": "global"
-}]'
+}]
 ```
 
-**Then add individual checks via ADD_CHECK:**
-```bash
-switchboard docs apply <health-report-id> --actions '[
-  {
-    "type": "ADD_CHECK",
-    "input": {
-      "id": "<unique-id>",
-      "category": "ORPHAN_DETECTION",
-      "status": "WARN",
-      "message": "2 orphan notes found",
-      "affectedItems": ["note-title-1", "note-title-2"]
-    },
-    "scope": "global"
-  },
-  {
-    "type": "ADD_CHECK",
-    "input": {
-      "id": "<unique-id>",
-      "category": "DESCRIPTION_QUALITY",
-      "status": "PASS",
-      "message": "All notes have descriptions",
-      "affectedItems": []
-    },
-    "scope": "global"
-  }
-]'
+**Then add individual checks:**
+```json
+[
+  {"type":"ADD_CHECK","input":{"id":"<uid>","category":"SCHEMA_COMPLIANCE","status":"PASS","message":"...","affectedItems":[]},"scope":"global"},
+  {"type":"ADD_CHECK","input":{"id":"<uid>","category":"ORPHAN_DETECTION","status":"PASS","message":"...","affectedItems":[]},"scope":"global"}
+]
 ```
 
-**Valid categories:** SCHEMA_COMPLIANCE, ORPHAN_DETECTION, LINK_HEALTH, DESCRIPTION_QUALITY, THREE_SPACE_BOUNDARIES, PROCESSING_THROUGHPUT, STALE_NOTES, MOC_COHERENCE
+Write to `/tmp/health-checks.json` and apply via `--file` to avoid shell escaping issues.
+
+**Valid categories:** SCHEMA_COMPLIANCE, ORPHAN_DETECTION, LINK_HEALTH, DESCRIPTION_QUALITY, MOC_COHERENCE, METHODOLOGY_GROUNDING, PROCESSING_THROUGHPUT, STALE_NOTES
 
 **Valid statuses:** PASS, WARN, FAIL
 
-### Step 4: Auto-repair (optional)
+## Step 7: Auto-repair (if `--fix` or user requests)
 
-If `--fix` or the user asks to repair:
-- Missing descriptions → generate and SET_DESCRIPTION
-- Missing provenance → set DERIVED
-- Missing types → infer and SET_NOTE_TYPE
-- Missing topics → identify and ADD_TOPIC
+| Issue | Auto-fix |
+|---|---|
+| Missing descriptions | Generate from title + content, `docs mutate --op setDescription` (**max 200 chars!**) |
+| Missing provenance | `docs mutate --op setProvenance` with sourceOrigin: DERIVED |
+| Missing note types | Infer from content, `docs mutate --op setNoteType` |
+| Missing topics | Identify from content, `docs mutate --op addTopic` |
+| Ungrounded notes | Search research claims by topic, add BUILDS_ON links via `docs mutate --op addLink` |
+| Missing MOCs | **Auto-create**: find topic clusters with 3+ notes and no MOC, create `bai/moc` via `docs create` + `CREATE_MOC` + `ADD_CORE_IDEA` per note. Verify in drive tree. |
+| Stale DRAFT notes | Submit for review via `docs mutate --op submitForReview` |
 
-Record repairs in the report recommendations.
+**After each auto-fix, verify it applied** by re-reading the document state. Then re-run the health check to confirm the fix improved the score.
 
-### Step 5: Report to user
+## Step 8: Report to user
 
 ```
 === VAULT HEALTH REPORT ===
+Server: <profile-name> (<url>)
+Drive: <drive-name> (<drive-slug>)
 Saved to: bai/health-report (<doc-id>)
 
 Notes: N | Links: N | Density: N%
-Orphans: N | Dangling: N | Avg links: N
+Orphans: N | Research claims: N | MOCs: N
+Avg links/note: N | Methodology grounding: N/N
 
-PASS  ORPHAN_DETECTION     All notes have incoming links
-WARN  LINK_HEALTH          3 notes have fewer than 2 links
-PASS  DESCRIPTION_QUALITY  All notes have descriptions
-PASS  SCHEMA_COMPLIANCE    All notes have a type
-WARN  MOC_COHERENCE        2 notes without topics
+PASS  SCHEMA_COMPLIANCE      All N notes have title, type, provenance
+PASS  ORPHAN_DETECTION       0 orphan notes
+PASS  LINK_HEALTH            Avg 2.4 links/note, density 0.6
+PASS  DESCRIPTION_QUALITY    All descriptions present and informative
+WARN  MOC_COHERENCE          No MOC for 'document-toolbar' (5 notes)
+WARN  METHODOLOGY_GROUNDING  2/5 notes not linked to research claims
+PASS  PROCESSING_THROUGHPUT  0 pending pipeline tasks
+PASS  STALE_NOTES            No stale notes detected
 
 Overall: WARN
 Recommendations:
-  1. Connect 3 under-linked notes via /connect
-  2. Tag 2 notes with topics
+  1. Create MOC for 'document-toolbar' topic (5 notes)
+  2. Ground 2 notes in methodology via /connect
 ```
 
 ## Reading health history
 
-The HealthDashboard in the app reads from the `bai/health-report` document. Each time `/health` runs, it overwrites the report with current data (GENERATE_REPORT resets checks, then ADD_CHECK adds new ones). This gives the app always-current health data without computing it on every render.
-
-Previous health states are preserved in the document's operation history (revision history in Connect).
+The HealthDashboard in the app reads from the `bai/health-report` document. Each `/health` run overwrites with current data (GENERATE_REPORT resets, then ADD_CHECK adds). Previous states are preserved in the document's operation history (revision history in Connect).
 
 ## Fallback (no subgraph)
 
-If the subgraph isn't available, compute metrics from individual document reads:
+If subgraph queries fail, compute metrics from individual document reads:
+
 ```bash
-switchboard docs list --drive <drive-slug> --format json
-# Read each bai/knowledge-note document, compute metrics manually
+# List all documents in the drive
+switchboard docs tree <drive-slug> --format json
+# For each bai/knowledge-note, read state and compute metrics manually
 switchboard docs get <note-id> --state --format json
+# Count links, check descriptions, etc. from state data
 ```
+
+This is slower (one HTTP call per document) but works when the subgraph indexer is behind.
+
+## Automation
+
+**When called from the pipeline (Step 6 — post-verify):** Always run with auto-fix enabled. The pipeline's health check phase should leave the vault in PASS state if possible — don't just report issues, fix them.
+
+**When called standalone:** If `$ARGUMENTS` contains `--fix`, run auto-repair. Otherwise, report only.
+
+**MOC creation is the most common auto-fix.** After every extraction, new topic clusters form. The pipeline REFLECT phase should create MOCs, but if it missed any, the health auto-fix catches them. This means no human intervention is needed for MOC creation — it's fully automated between pipeline + health.
+
+If "$ARGUMENTS" is provided, treat it as mode (`--fix`, `quick`, `full`) or a specific note ID to check.

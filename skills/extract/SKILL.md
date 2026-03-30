@@ -71,7 +71,7 @@ switchboard docs mutate <new-note-id> --op setProvenance --input '{"author": "<a
 
 **CRITICAL: Why two batches?** If ANY action in a batch fails validation, ALL actions in that batch are rejected. Provenance has a strict enum (`DERIVED`, `IMPORT`, `MANUAL`, `SESSION_MINE`) — a typo kills the entire batch including title, description, and content. By separating them, content is always saved even if provenance fails.
 
-**CRITICAL: Every note MUST have a description.** Descriptions enable progressive disclosure (title -> description -> content). A note without a description fails health checks and is invisible to scanning workflows. The description should be ~150 chars and add information beyond the title.
+**CRITICAL: Every note MUST have a description.** Descriptions enable progressive disclosure (title -> description -> content). A note without a description fails health checks and is invisible to scanning workflows. The description should be ~150 chars and add information beyond the title. **Max 200 characters** — longer descriptions silently fail and the entire batch is rejected.
 
 ### Step 5: Verify drive nodes
 
