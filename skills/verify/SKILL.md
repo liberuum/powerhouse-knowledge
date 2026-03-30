@@ -34,6 +34,7 @@ Check the note has all expected fields populated:
 - [ ] **Topic coverage**: Note belongs to at least one topic
 - [ ] **Description length**: Between 80-200 characters
 - [ ] **Content length**: At least 200 characters of substantive prose
+- [ ] **Methodology grounding**: Note has at least one link to a `bai/research-claim` in `/research/` — working knowledge should be traceable to the methodology foundation
 
 ## Auto-repair (fix before reporting)
 
@@ -72,6 +73,29 @@ mcp__reactor-mcp__addActions({
   actions: [{
     type: "SET_NOTE_TYPE",
     input: { noteType: "<inferred-type>", updatedAt: "<ISO>" },
+    scope: "global"
+  }]
+})
+```
+
+### Missing methodology grounding
+Search research claims by keywords from the note's title and topics. If a relevant claim is found, add a BUILDS_ON link:
+```
+// Search claims
+mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
+// Filter bai/research-claim docs whose title/topics overlap with the note
+
+// Add cross-link
+mcp__reactor-mcp__addActions({
+  documentId: "<note-id>",
+  actions: [{
+    type: "ADD_LINK",
+    input: {
+      id: "<unique-id>",
+      targetDocumentId: "<research-claim-id>",
+      targetTitle: "<claim title>",
+      linkType: "BUILDS_ON"
+    },
     scope: "global"
   }]
 })

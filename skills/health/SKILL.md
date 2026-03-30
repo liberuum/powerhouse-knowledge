@@ -46,8 +46,11 @@ Also read individual notes via MCP to check:
 | DESCRIPTION_QUALITY | 0 missing | 1-2 missing | 3+ missing |
 | SCHEMA_COMPLIANCE | all have type | some missing | many missing |
 | MOC_COHERENCE | all have topics | some without | many without |
+| METHODOLOGY_GROUNDING | all notes link to research claims | some ungrounded | many ungrounded |
 | PROCESSING_THROUGHPUT | 0 pending obs | some pending | many pending |
 | STALE_NOTES | 0 stale | some stale | many stale |
+
+**METHODOLOGY_GROUNDING check:** For each knowledge note, check if it has at least one outgoing link to a `bai/research-claim` document. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation. The verify skill auto-repairs this by searching for matching claims.
 
 ### Step 3: Save to bai/health-report document
 

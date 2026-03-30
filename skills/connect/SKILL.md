@@ -38,6 +38,48 @@ mcp__reactor-mcp__addActions({
 - **SUPERSEDES** — this note replaces the target (newer/better understanding)
 - **DERIVED_FROM** — this note was extracted or derived from the target
 
+## Methodology cross-reference
+
+After connecting notes to each other, **search the 249 research claims in `/research/`** for methodology backing:
+
+1. For each new note, search research claims by topic and keywords:
+```
+mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
+// Filter: documentType === "bai/research-claim"
+// Match: topics overlap OR title contains similar keywords
+```
+
+Or use the subgraph:
+```bash
+curl -s $REACTOR_URL/graphql/knowledgeGraph \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ knowledgeGraphSearch(driveId: \"<UUID>\", query: \"<keyword from note>\") { documentId title } }"}'
+```
+
+2. For each matching claim, create a cross-link from the note to the claim:
+```
+mcp__reactor-mcp__addActions({
+  documentId: "<note-id>",
+  actions: [{
+    type: "ADD_LINK",
+    input: {
+      id: "<unique-id>",
+      targetDocumentId: "<research-claim-id>",
+      targetTitle: "<claim title>",
+      linkType: "BUILDS_ON"
+    },
+    scope: "global"
+  }]
+})
+```
+
+**Link type selection for methodology:**
+- `BUILDS_ON` — note implements or validates the research claim
+- `CONTRADICTS` — note's findings challenge the methodology claim
+- `RELATES_TO` — thematic connection without direct support/conflict
+
+**Why this matters:** Cross-referencing grounds working knowledge in the methodology foundation. When someone asks "why is the vault designed this way?", the links trace from notes → research claims → cognitive science backing.
+
 ## Tension detection
 
 When you find a CONTRADICTS link, check whether this is a genuine unresolved tension:

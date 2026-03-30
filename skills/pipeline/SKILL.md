@@ -61,8 +61,13 @@ Use `/powerhouse-knowledge:connect` on each extracted note:
 - Find related notes (both new and existing) via search and graph queries
 - Apply articulation test: explain WHY each link exists
 - Create typed links (RELATES_TO, BUILDS_ON, CONTRADICTS, SUPERSEDES, DERIVED_FROM)
-- Also connect to research claims in /research/ when relevant
 - Target: >= 2 links per note, no orphans
+
+Then **cross-reference with methodology claims** in `/research/`:
+- For each extracted note, search the 249 research claims by topic and keywords
+- Create BUILDS_ON links when a note implements or validates a methodology claim
+- Create CONTRADICTS links when a note challenges a claim
+- This grounds working knowledge in the theoretical foundation
 
 Then use `/powerhouse-knowledge:synthesize` to create MOCs:
 - Group notes by shared topics
