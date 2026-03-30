@@ -15,29 +15,35 @@ Source -> CREATE (extract claims) -> REFLECT (connect) -> REWEAVE (update old no
 
 Each phase is tracked in the `bai/pipeline-queue` singleton document.
 
+## CRITICAL: Pipeline tracking operations
+
+Pipeline operations (ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE, COMPLETE_TASK, FAIL_TASK) are **dependent** — each requires the previous one to have created state. **Always use sequential `switchboard docs mutate` calls, never `docs apply`** (which reverses operation order for dependent actions).
+
+The CLI auto-injects `timestampUtcMs` and `action.id` on all actions — no need to generate them manually.
+
 ## Pre-flight: Ensure methodology is imported
 
 Before running the pipeline, check if research claims exist in `/research/`:
 
-```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Count files where documentType === "bai/research-claim"
+```bash
+switchboard docs tree <drive-slug> --format json
+# Count files where documentType === "bai/research-claim"
 ```
 
-If count < 200 (methodology not imported), run `/powerhouse-knowledge:setup` first. The pipeline's methodology cross-referencing step requires the 249 research claims to be present. Without them, the METHODOLOGY_GROUNDING health check will always WARN.
+If count < 200 (methodology not imported), run `/powerhouse-knowledge:setup` first. The pipeline's methodology cross-referencing step requires the 249 research claims to be present.
 
 For CLI: `python3 scripts/import-methodology.py <drive-slug>`
-For MCP script: `node scripts/import-research-claims.mjs --drive-id <uuid> --vault-path <plugin>/data/methodology/`
 
 ## Full Pipeline Run
 
 ### Step 1: Find pending tasks
 
-```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Find the bai/pipeline-queue document (singleton in /ops/queue/)
-mcp__reactor-mcp__getDocument({ id: "<pipeline-queue-id>" })
-// Check state.global.tasks for PENDING or IN_PROGRESS tasks
+```bash
+switchboard docs tree <drive-slug> --format json
+# Find the bai/pipeline-queue document (singleton in /ops/queue/)
+
+switchboard docs get <pipeline-queue-id> --state --format json
+# Check state.global.tasks for PENDING or IN_PROGRESS tasks
 ```
 
 If there are PENDING tasks with a `documentRef`, process them. The source document always has the latest content regardless of how many edits the user made.
@@ -49,24 +55,30 @@ If there are PENDING tasks with a `documentRef`, process them. The source docume
 Use `/powerhouse-knowledge:extract` on the source document:
 - Read the source content
 - Extract atomic claims as `bai/knowledge-note` documents
-- **100ms delay between each createDocument call** (MCP race condition)
 - **Verify all notes appear in the drive tree** after creation
 - Update the source: SET_SOURCE_STATUS to EXTRACTED, ADD_EXTRACTED_CLAIM for each note, RECORD_EXTRACTION_STATS
 - **Split actions into two batches**: content first (title, description, noteType, content, topics), provenance second — so a provenance validation error doesn't kill content
 
-Record handoff:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<pipeline-queue-id>",
-  actions: [
-    { type: "ASSIGN_TASK", input: { taskId: "<task-id>", assignedTo: "knowledge-agent", updatedAt: "<ISO>" }, scope: "global" },
-    { type: "ADVANCE_PHASE", input: {
-      taskId: "<task-id>",
-      handoff: { id: "<uid>", phase: "create", workDone: "Extracted N claims. 0% skip rate.", filesModified: ["<note-ids>"], completedAt: "<ISO>", completedBy: "knowledge-agent" },
-      updatedAt: "<ISO>"
-    }, scope: "global" }
-  ]
-})
+Record handoff with sequential `docs mutate` calls:
+```bash
+switchboard docs mutate <pipeline-queue-id> --op assignTask --input '{
+  "taskId": "<task-id>",
+  "assignedTo": "knowledge-agent",
+  "updatedAt": "<ISO>"
+}'
+
+switchboard docs mutate <pipeline-queue-id> --op advancePhase --input '{
+  "taskId": "<task-id>",
+  "handoff": {
+    "id": "<uid>",
+    "phase": "create",
+    "workDone": "Extracted N claims. 0% skip rate.",
+    "filesModified": ["<note-ids>"],
+    "completedAt": "<ISO>",
+    "completedBy": "knowledge-agent"
+  },
+  "updatedAt": "<ISO>"
+}'
 ```
 
 ### Step 3: Phase 2 — REFLECT (Connect + Synthesize)
@@ -92,48 +104,35 @@ Then use `/powerhouse-knowledge:synthesize` to create MOCs:
 Then **detect tensions** — look for contradictions between notes:
 - Check if any CONTRADICTS links were created during connection
 - Compare claims that address the same topic but reach different conclusions
-- For each genuine contradiction, create a `bai/tension` document in `/ops/`:
+- For each genuine contradiction, create a `bai/tension` document:
 
+```bash
+switchboard docs create --type bai/tension --name "<what contradicts what>" --drive <drive-slug> --parent-folder <ops-folder-uuid> --format json
 ```
-mcp__reactor-mcp__createDocument({
-  documentType: "bai/tension",
-  driveId: "<drive-uuid>",
-  name: "<tension title>",
-  parentFolder: "<ops-folder-uuid>"
-})
 
-mcp__reactor-mcp__addActions({
-  documentId: "<tension-id>",
-  actions: [{
-    type: "CREATE_TENSION",
-    input: {
-      title: "<what contradicts what>",
-      description: "<brief summary of the conflict>",
-      content: "<full analysis: Side A says X because..., Side B says Y because..., this matters because...>",
-      involvedRefs: ["<note-id-1>", "<note-id-2>"],
-      observedAt: "<ISO>",
-      observedBy: "knowledge-agent"
-    },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs apply <tension-id> --actions '[{
+  "type": "CREATE_TENSION",
+  "input": {
+    "title": "<what contradicts what>",
+    "description": "<brief summary of the conflict>",
+    "content": "<full analysis: Side A says X because..., Side B says Y because..., this matters because...>",
+    "involvedRefs": ["<note-id-1>", "<note-id-2>"],
+    "observedAt": "<ISO>",
+    "observedBy": "knowledge-agent"
+  },
+  "scope": "global"
+}]'
 ```
 
 Also add the tension to the relevant MOC if one exists:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<moc-id>",
-  actions: [{
-    type: "ADD_TENSION",
-    input: {
-      id: "<unique-id>",
-      description: "<tension summary>",
-      involvedRefs: ["<note-id-1>", "<note-id-2>"],
-      addedAt: "<ISO>"
-    },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <moc-id> --op addTension --input '{
+  "id": "<unique-id>",
+  "description": "<tension summary>",
+  "involvedRefs": ["<note-id-1>", "<note-id-2>"],
+  "addedAt": "<ISO>"
+}'
 ```
 
 **Three outcomes for tensions:**
@@ -141,7 +140,7 @@ mcp__reactor-mcp__addActions({
 - **RESOLVED** — one side is correct, the other should be updated or archived
 - **DISSOLVED** — apparent contradiction only, both sides are compatible at different levels
 
-Record handoff with `ADVANCE_PHASE`.
+Record handoff with sequential `docs mutate` calls for `ADVANCE_PHASE`.
 
 ### Step 4: Phase 3 — REWEAVE (Update older notes)
 
@@ -150,7 +149,7 @@ Check if existing notes need updating given the new claims:
 - If a new claim supersedes, contradicts, or extends an old one, add links
 - Update old note content if needed (add "See also" references)
 
-Record handoff with `ADVANCE_PHASE`.
+Record handoff with sequential `docs mutate` calls for `ADVANCE_PHASE`.
 
 ### Step 5: Phase 4 — VERIFY (Quality gate + auto-repair)
 
@@ -195,10 +194,30 @@ After: PASS (0 issues)
 
 ### Step 7: Handle failures
 
+```bash
+switchboard docs mutate <pipeline-queue-id> --op failTask --input '{"taskId": "<task-id>", "reason": "<what went wrong>", "updatedAt": "<ISO>"}'
+
+switchboard docs mutate <pipeline-queue-id> --op blockTask --input '{"taskId": "<task-id>", "reason": "<needs human input>", "updatedAt": "<ISO>"}'
+
+switchboard docs mutate <pipeline-queue-id> --op unblockTask --input '{"taskId": "<task-id>", "updatedAt": "<ISO>"}'
 ```
-FAIL_TASK { taskId, reason, updatedAt } — mark as failed with reason
-BLOCK_TASK { taskId, reason, updatedAt } — needs human input
-UNBLOCK_TASK { taskId, updatedAt } — resume after human resolves
+
+## Subgraph Queries
+
+Use the subgraph for graph analysis during pipeline phases:
+
+```bash
+# Graph stats
+switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount } }'
+
+# Search for related notes
+switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "<keyword>", limit: 20) { documentId title noteType } }'
+
+# Find orphans
+switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title } }'
+
+# Density
+switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
 ```
 
 ## Quick Pipeline (Single Note)

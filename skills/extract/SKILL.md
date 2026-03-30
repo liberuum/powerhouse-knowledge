@@ -11,17 +11,17 @@ Extract individual knowledge claims from a source document and create `bai/knowl
 
 ### Step 1: Read the source document
 
-```
-mcp__reactor-mcp__getDocument({ id: "<source-doc-id>" })
+```bash
+switchboard docs get <source-doc-id> --state --format json
 ```
 
 Read the source's `state.global.content` to get the raw text. Also note the title and sourceType for provenance.
 
 ### Step 2: Find the notes folder
 
-```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Find: /knowledge/notes/ folder UUID
+```bash
+switchboard docs tree <drive-slug> --format json
+# Find: /knowledge/notes/ folder UUID
 ```
 
 ### Step 3: Identify atomic claims
@@ -38,45 +38,35 @@ Read the source content and identify distinct claims. Each claim should:
 - Skip trivial/obvious statements
 - Split compound claims into separate notes
 
-### Step 4: Create note documents (with pacing)
+### Step 4: Create note documents
 
 For each claim, create a document and populate it:
 
+```bash
+switchboard docs create --type bai/knowledge-note --name "<declarative claim title>" --drive <drive-slug> --parent-folder <notes-folder-uuid> --format json
 ```
-mcp__reactor-mcp__createDocument({
-  documentType: "bai/knowledge-note",
-  driveId: "<drive-uuid>",
-  name: "<declarative claim title>",
-  parentFolder: "<notes-folder-uuid>"
-})
-```
-
-**CRITICAL: Add a 100ms delay between each createDocument call** to avoid the MCP race condition where drive file nodes silently fail to register.
 
 Then populate the note in **two separate batches** (never mix provenance with content — if provenance fails with an invalid enum value, it kills the entire batch):
 
 **Batch 1 — Content (must succeed):**
+```bash
+switchboard docs apply <new-note-id> --actions '[
+  { "type": "SET_TITLE", "input": { "title": "<claim title>", "updatedAt": "<ISO>" }, "scope": "global" },
+  { "type": "SET_DESCRIPTION", "input": { "description": "<~150 char summary>", "updatedAt": "<ISO>" }, "scope": "global" },
+  { "type": "SET_NOTE_TYPE", "input": { "noteType": "<concept|pattern|architecture|decision|...>", "updatedAt": "<ISO>" }, "scope": "global" },
+  { "type": "SET_CONTENT", "input": { "content": "<full markdown body>", "updatedAt": "<ISO>" }, "scope": "global" },
+  { "type": "ADD_TOPIC", "input": { "id": "<unique-id>", "name": "<topic>" }, "scope": "global" }
+]'
 ```
-mcp__reactor-mcp__addActions({
-  documentId: "<new-note-id>",
-  actions: [
-    { type: "SET_TITLE", input: { title: "<claim title>", updatedAt: "<ISO>" }, scope: "global" },
-    { type: "SET_DESCRIPTION", input: { description: "<~150 char summary>", updatedAt: "<ISO>" }, scope: "global" },
-    { type: "SET_NOTE_TYPE", input: { noteType: "<concept|pattern|architecture|decision|...>", updatedAt: "<ISO>" }, scope: "global" },
-    { type: "SET_CONTENT", input: { content: "<full markdown body>", updatedAt: "<ISO>" }, scope: "global" },
-    { type: "ADD_TOPIC", input: { id: "<unique-id>", name: "<topic>" }, scope: "global" }
-  ]
-})
+
+For long content, write the actions to a temp file and use `--file`:
+```bash
+switchboard docs apply <new-note-id> --file /tmp/note-content.json
 ```
 
 **Batch 2 — Provenance (separate so failures don't lose content):**
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<new-note-id>",
-  actions: [
-    { type: "SET_PROVENANCE", input: { author: "<agent-name>", sourceOrigin: "DERIVED", createdAt: "<ISO>" }, scope: "global" }
-  ]
-})
+```bash
+switchboard docs mutate <new-note-id> --op setProvenance --input '{"author": "<agent-name>", "sourceOrigin": "DERIVED", "createdAt": "<ISO>"}'
 ```
 
 **CRITICAL: Why two batches?** If ANY action in a batch fails validation, ALL actions in that batch are rejected. Provenance has a strict enum (`DERIVED`, `IMPORT`, `MANUAL`, `SESSION_MINE`) — a typo kills the entire batch including title, description, and content. By separating them, content is always saved even if provenance fails.
@@ -85,55 +75,45 @@ mcp__reactor-mcp__addActions({
 
 ### Step 5: Verify drive nodes
 
-After creating all notes, verify they all appear as file nodes in the drive. If any are missing (race condition), repair with ADD_FILE:
+After creating all notes, verify they all appear as file nodes in the drive:
 
-```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Check: each created note ID exists as a file node
-// If missing: dispatch ADD_FILE action on the drive document
+```bash
+switchboard docs tree <drive-slug> --format json
+# Check: each created note ID exists as a file node
+# If missing: use switchboard docs mutate on the drive to add via ADD_FILE
 ```
 
 ### Step 6: Update the source document
 
 Track what was extracted:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<source-doc-id>",
-  actions: [
-    { type: "SET_SOURCE_STATUS", input: { status: "EXTRACTED" }, scope: "global" },
-    { type: "ADD_EXTRACTED_CLAIM", input: { claimRef: "<note-id-1>" }, scope: "global" },
-    { type: "ADD_EXTRACTED_CLAIM", input: { claimRef: "<note-id-2>" }, scope: "global" },
-    { type: "RECORD_EXTRACTION_STATS", input: {
-      claimCount: 5, skippedCount: 0, skipRate: 0.0,
-      extractedAt: "<ISO>", extractedBy: "knowledge-agent"
-    }, scope: "global" }
-  ]
-})
+```bash
+switchboard docs apply <source-doc-id> --actions '[
+  { "type": "SET_SOURCE_STATUS", "input": { "status": "EXTRACTED" }, "scope": "global" },
+  { "type": "ADD_EXTRACTED_CLAIM", "input": { "claimRef": "<note-id-1>" }, "scope": "global" },
+  { "type": "ADD_EXTRACTED_CLAIM", "input": { "claimRef": "<note-id-2>" }, "scope": "global" },
+  { "type": "RECORD_EXTRACTION_STATS", "input": {
+    "claimCount": 5, "skippedCount": 0, "skipRate": 0.0,
+    "extractedAt": "<ISO>", "extractedBy": "knowledge-agent"
+  }, "scope": "global" }
+]'
 ```
 
 ### Step 7: Record pipeline handoff
 
-If this extraction is part of a pipeline task, advance the phase:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<pipeline-queue-id>",
-  actions: [{
-    type: "ADVANCE_PHASE",
-    input: {
-      taskId: "<task-id>",
-      handoff: {
-        id: "<unique-id>",
-        phase: "create",
-        workDone: "Extracted N claims: <brief list>. X% skip rate.",
-        filesModified: ["<note-id-1>", "<note-id-2>"],
-        completedAt: "<ISO>",
-        completedBy: "knowledge-agent"
-      },
-      updatedAt: "<ISO>"
-    },
-    scope: "global"
-  }]
-})
+If this extraction is part of a pipeline task, advance the phase. **Use `docs mutate` for dependent pipeline operations — never batch with `docs apply`:**
+```bash
+switchboard docs mutate <pipeline-queue-id> --op advancePhase --input '{
+  "taskId": "<task-id>",
+  "handoff": {
+    "id": "<unique-id>",
+    "phase": "create",
+    "workDone": "Extracted N claims: <brief list>. X% skip rate.",
+    "filesModified": ["<note-id-1>", "<note-id-2>"],
+    "completedAt": "<ISO>",
+    "completedBy": "knowledge-agent"
+  },
+  "updatedAt": "<ISO>"
+}'
 ```
 
 ## Note types
@@ -156,7 +136,7 @@ Choose the most specific type for each claim:
 - [ ] All notes have at least one topic tag
 - [ ] Provenance traces back to the source (sourceOrigin: DERIVED)
 - [ ] Skip rate < 10% for domain-relevant content
-- [ ] **All created notes verified in drive tree** — read the drive after creation and confirm each note exists as a file node. Don't assume creation succeeded.
+- [ ] **All created notes verified in drive tree** — read the drive after creation and confirm each note exists as a file node
 - [ ] **Content and provenance in separate batches** — never batch SET_PROVENANCE with content actions
 
 If "$ARGUMENTS" is provided, treat it as the source document ID to extract from.

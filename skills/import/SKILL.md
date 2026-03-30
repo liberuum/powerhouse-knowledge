@@ -17,40 +17,31 @@ Import knowledge from external sources into the Knowledge Vault.
 ## Import Process
 
 ### Step 1: Read the drive and find folder IDs
-```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Build a folder map: "knowledge/notes" -> folder-id, "sources" -> folder-id, etc.
+```bash
+switchboard docs tree <drive-slug> --format json
+# Build a folder map: "knowledge/notes" -> folder-id, "sources" -> folder-id, etc.
 ```
 
 ### Step 2: First pass — create all documents (no links)
 
 For each note/source in the import data:
+```bash
+switchboard docs create --type bai/knowledge-note --name "<note-title>" --drive <drive-slug> --parent-folder <notes-folder-uuid> --format json
 ```
-mcp__reactor-mcp__createDocument({
-  documentType: "bai/knowledge-note",
-  driveId: "<drive-uuid>",
-  name: "<note-title>",
-  parentFolder: "<notes-folder-uuid>"
-})
-```
-
-**CRITICAL: MCP race condition prevention**
-- Add a **100ms delay** between each `createDocument` call
-- Rapid sequential calls can cause drive file nodes to silently fail
-- This is a known reactor issue with concurrent drive mutations
 
 Then set content:
+```bash
+switchboard docs apply <new-doc-id> --actions '[
+  { "type": "SET_TITLE", "input": { "title": "...", "updatedAt": "..." }, "scope": "global" },
+  { "type": "SET_DESCRIPTION", "input": { "description": "...", "updatedAt": "..." }, "scope": "global" },
+  { "type": "SET_CONTENT", "input": { "content": "...", "updatedAt": "..." }, "scope": "global" },
+  { "type": "SET_NOTE_TYPE", "input": { "noteType": "...", "updatedAt": "..." }, "scope": "global" }
+]'
 ```
-mcp__reactor-mcp__addActions({
-  documentId: "<new-doc-id>",
-  actions: [
-    { type: "SET_TITLE", input: { title: "...", updatedAt: "..." }, scope: "global" },
-    { type: "SET_DESCRIPTION", input: { description: "...", updatedAt: "..." }, scope: "global" },
-    { type: "SET_CONTENT", input: { content: "...", updatedAt: "..." }, scope: "global" },
-    { type: "SET_NOTE_TYPE", input: { noteType: "...", updatedAt: "..." }, scope: "global" },
-    { type: "SET_PROVENANCE", input: { author: "...", sourceOrigin: "IMPORT", createdAt: "..." }, scope: "global" }
-  ]
-})
+
+Then set provenance in a **separate batch** (validation failures won't kill content):
+```bash
+switchboard docs mutate <new-doc-id> --op setProvenance --input '{"author": "...", "sourceOrigin": "IMPORT", "createdAt": "..."}'
 ```
 
 **Valid sourceOrigin values:** `DERIVED`, `IMPORT`, `MANUAL`, `SESSION_MINE`. For bulk imports, use `IMPORT`.
@@ -60,21 +51,19 @@ mcp__reactor-mcp__addActions({
 ### Step 3: Verify drive nodes (repair missing)
 
 After creating all documents, verify every document has a file node in the drive:
-```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Compare file node IDs against created document IDs
-// For any missing: dispatch ADD_FILE on the drive
+```bash
+switchboard docs tree <drive-slug> --format json
+# Compare file node IDs against created document IDs
+# For any missing: dispatch ADD_FILE on the drive
 ```
 
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<drive-uuid>",
-  actions: [{
-    type: "ADD_FILE",
-    input: { id: "<missing-doc-id>", name: "<title>", documentType: "bai/knowledge-note", parentFolder: "<folder-id>" },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <drive-id> --op addFile --input '{
+  "id": "<missing-doc-id>",
+  "name": "<title>",
+  "documentType": "bai/knowledge-note",
+  "parentFolder": "<folder-id>"
+}'
 ```
 
 ### Step 4: Second pass — resolve and create links
@@ -82,32 +71,20 @@ mcp__reactor-mcp__addActions({
 For each note that has references (wiki links, related notes):
 1. Look up the target document ID from the title mapping
 2. Create typed links:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<source-note-id>",
-  actions: [{
-    type: "ADD_LINK",
-    input: {
-      id: "<generate-unique-id>",
-      targetDocumentId: "<resolved-target-id>",
-      targetTitle: "<target-title>",
-      linkType: "RELATES_TO"
-    },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <source-note-id> --op addLink --input '{
+  "id": "<generate-unique-id>",
+  "targetDocumentId": "<resolved-target-id>",
+  "targetTitle": "<target-title>",
+  "linkType": "RELATES_TO"
+}'
 ```
 
 ### Step 5: Create MOCs from folder structure or tags (optional)
 
 If the source has categories/folders/tags with 2+ notes, create MOC documents:
-```
-mcp__reactor-mcp__createDocument({
-  documentType: "bai/moc",
-  driveId: "<drive-uuid>",
-  name: "<topic-name>",
-  parentFolder: "<knowledge-folder-uuid>"
-})
+```bash
+switchboard docs create --type bai/moc --name "<topic-name>" --drive <drive-slug> --parent-folder <knowledge-folder-uuid> --format json
 ```
 
 Then add core ideas linking to the notes in that category.
@@ -123,20 +100,23 @@ Then add core ideas linking to the notes in that category.
 For large imports (50+ notes), prefer the dedicated scripts which include built-in pacing and verification:
 
 ```bash
+# Import research claims (Ars Contexta methodology) via CLI
+python3 scripts/import-methodology.py <drive-slug>
+
 # Import knowledge notes from a vault directory
 node scripts/import-vault.mjs \
   --drive-id <UUID> \
   --vault-path /path/to/vault/notes/ \
   [--create-mocs] [--dry-run] [--limit N]
 
-# Import research claims (Ars Contexta methodology)
+# Import research claims via MCP script
 node scripts/import-research-claims.mjs \
   --drive-id <UUID> \
   --vault-path /path/to/methodology/ \
   [--dry-run] [--limit N]
 ```
 
-These scripts use MCP Streamable HTTP for bulk creation and include automatic drive node verification + repair.
+These scripts use the Switchboard CLI for bulk creation and include automatic drive node verification + repair.
 
 ## Wiki Link Resolution
 

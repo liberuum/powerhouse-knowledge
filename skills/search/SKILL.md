@@ -5,13 +5,24 @@ description: Search knowledge notes by title, type, topic, or content. Use when 
 
 # Search Knowledge Notes
 
-Search the Knowledge Vault for notes matching a query. Uses the reactor MCP to access documents.
+Search the Knowledge Vault for notes matching a query. Uses the Switchboard CLI to access documents.
 
 ## How to search
 
-1. Use `mcp__reactor-mcp__getDrives` to find available drives
-2. Use `mcp__reactor-mcp__getDocuments` with the drive ID to list all documents
-3. For each document of type `bai/knowledge-note`, use `mcp__reactor-mcp__getDocument` to read its state
+### Preferred: Subgraph search
+
+Use the knowledge graph subgraph for fast full-text search:
+```bash
+switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "<search-term>", limit: 20) { documentId title noteType } }'
+```
+
+### Fallback: Full document scan
+
+If the subgraph isn't available, scan documents directly:
+
+1. Use `switchboard drives list --format json` to find available drives
+2. Use `switchboard docs list --drive <drive-slug> --format json` to list all documents
+3. For each document of type `bai/knowledge-note`, use `switchboard docs get <doc-id> --state --format json` to read its state
 4. Filter results by the user's query against `state.global.title`, `state.global.description`, `state.global.noteType`, `state.global.topics`, and `state.global.content`
 
 ## Search strategies

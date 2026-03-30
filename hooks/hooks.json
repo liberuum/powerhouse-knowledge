@@ -3,8 +3,18 @@
     "UserPromptSubmit": [
       {
         "matcher": "^/(seed|extract|connect|synthesize|verify|pipeline|health|graph|search|setup|import|export|watch)",
-        "description": "Verify reactor is reachable before running vault skills",
-        "command": "MCP_URL=$(grep -o 'https\\?://[^\"]*' .mcp.json 2>/dev/null | head -1 || echo 'http://localhost:4001/mcp'); curl -sf \"$MCP_URL\" -o /dev/null 2>/dev/null && echo \"Reactor connected at $MCP_URL\" || echo \"WARNING: Reactor not reachable at $MCP_URL\""
+        "description": "Verify switchboard CLI is available and reactor is reachable before running vault skills",
+        "command": "which switchboard >/dev/null 2>&1 && switchboard ping 2>&1 | head -1 || echo 'WARNING: switchboard CLI not found or reactor not reachable. Install: curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash'"
+      },
+      {
+        "matcher": "^/(seed|extract|connect|synthesize|verify|pipeline|health|graph|search|setup|import|export|watch)",
+        "description": "Auto-introspect if cache is stale (ensures bai/* models are available)",
+        "command": "switchboard models list --format json 2>/dev/null | grep -q 'bai/' || switchboard introspect 2>&1"
+      },
+      {
+        "matcher": "^/(seed|extract|connect|synthesize|pipeline)",
+        "description": "Find the knowledge-vault drive and export its ID for skills to use",
+        "command": "DRIVE_ID=$(switchboard drives list --format json 2>/dev/null | python3 -c \"import json,sys; [print(d['id']) for d in json.load(sys.stdin) if d.get('slug')=='knowledge-vault' or 'knowledge' in d.get('name','').lower()]\" 2>/dev/null | head -1); if [ -n \"$DRIVE_ID\" ]; then echo \"KNOWLEDGE_VAULT_DRIVE=$DRIVE_ID\"; echo \"Use: switchboard docs tree $DRIVE_ID --format json to get folder structure\"; else echo 'WARNING: No knowledge-vault drive found. Create one: switchboard drives create --name \"Knowledge Vault\" --preferred-editor knowledge-vault'; fi"
       }
     ]
   }

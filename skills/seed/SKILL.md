@@ -11,62 +11,60 @@ Add source material to the Knowledge Vault and queue it for the extraction pipel
 
 1. **Receive the source** — text content, URL, file path, or pasted content from the user
 2. **Find the `/sources/` folder ID** by reading the drive:
-```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Find: kind="folder", name="sources", parentFolder=null
+```bash
+switchboard docs tree <drive-slug> --format json
+# Find: kind="folder", name="sources", parentFolder=null
 ```
 
-3. **Create the source document** in the correct folder (use drive UUID, never slug):
-```
-mcp__reactor-mcp__createDocument({
-  documentType: "bai/source",
-  driveId: "<drive-uuid>",
-  name: "<source title>",
-  parentFolder: "<sources-folder-uuid>"
-})
+3. **Create the source document** in the correct folder:
+```bash
+switchboard docs create --type bai/source --name "<source title>" --drive <drive-slug> --parent-folder <sources-folder-uuid> --format json
 ```
 
 4. **Set the source metadata via INGEST_SOURCE** (single operation that initializes all fields):
+```bash
+switchboard docs mutate <doc-id> --op ingestSource --input '{
+  "title": "<source title>",
+  "content": "<full source content>",
+  "sourceType": "<ARTICLE|PAPER|TRANSCRIPT|DOCUMENTATION|CONVERSATION|WEB_PAGE|BOOK_CHAPTER|MANUAL_ENTRY>",
+  "description": "<brief summary>",
+  "author": "<source author>",
+  "url": "<source URL if available>",
+  "createdAt": "<ISO timestamp>",
+  "createdBy": "<user or agent name>"
+}'
 ```
-mcp__reactor-mcp__addActions({
-  documentId: "<doc-id>",
-  actions: [{
-    type: "INGEST_SOURCE",
-    input: {
-      title: "<source title>",
-      content: "<full source content>",
-      sourceType: "<ARTICLE|PAPER|TRANSCRIPT|DOCUMENTATION|CONVERSATION|WEB_PAGE|BOOK_CHAPTER|MANUAL_ENTRY>",
-      description: "<brief summary>",
-      author: "<source author>",
-      url: "<source URL if available>",
-      createdAt: "<ISO timestamp>",
-      createdBy: "<user or agent name>"
-    },
-    scope: "global"
-  }]
-})
+
+For long content, write the action to a temp file and use `--file`:
+```bash
+cat > /tmp/ingest-action.json << 'EOF'
+[{
+  "type": "INGEST_SOURCE",
+  "input": {
+    "title": "...",
+    "content": "...",
+    "sourceType": "ARTICLE",
+    "createdAt": "2026-03-30T12:00:00.000Z"
+  },
+  "scope": "global"
+}]
+EOF
+switchboard docs apply <doc-id> --file /tmp/ingest-action.json
 ```
 
 5. **Queue for processing** — add a pipeline task:
-```
-// Find the PipelineQueue singleton
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Find: kind="file", documentType="bai/pipeline-queue"
+```bash
+# Find the PipelineQueue singleton
+switchboard docs tree <drive-slug> --format json
+# Find: kind="file", documentType="bai/pipeline-queue"
 
-mcp__reactor-mcp__addActions({
-  documentId: "<pipeline-queue-id>",
-  actions: [{
-    type: "ADD_TASK",
-    input: {
-      id: "<generate-unique-id>",
-      taskType: "claim",
-      target: "<source title>",
-      documentRef: "<source-doc-id>",
-      createdAt: "<ISO timestamp>"
-    },
-    scope: "global"
-  }]
-})
+switchboard docs mutate <pipeline-queue-id> --op addTask --input '{
+  "id": "<generate-unique-id>",
+  "taskType": "claim",
+  "target": "<source title>",
+  "documentRef": "<source-doc-id>",
+  "createdAt": "<ISO timestamp>"
+}'
 ```
 
 **Important:** Check if a pipeline task already exists for this `documentRef` before creating a duplicate. If one exists and isn't DONE/FAILED, skip creating a new task.

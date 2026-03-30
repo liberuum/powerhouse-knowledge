@@ -20,68 +20,57 @@ Analyze the knowledge graph for topic clusters and create `bai/moc` documents th
 
 Read all knowledge notes and group by topics:
 
-```
-mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
-// For each bai/knowledge-note, read state.global.topics[]
-// Group: topic-name -> [{ docId, title, noteType }]
-// Filter: only topics with 3+ notes are MOC candidates
+```bash
+switchboard docs list --drive <drive-slug> --format json
+# For each bai/knowledge-note, read state.global.topics[]
+switchboard docs get <note-id> --state --format json
+# Group: topic-name -> [{ docId, title, noteType }]
+# Filter: only topics with 3+ notes are MOC candidates
 ```
 
 Or use the subgraph:
 ```bash
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphNodes(driveId: \"<UUID>\") { documentId title noteType } }"}'
+switchboard query '{ knowledgeGraphNodes(driveId: "<UUID>") { documentId title noteType } }'
 ```
 
 ### Step 2: Check for existing MOCs
 
-```
-mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
-// Find all bai/moc documents
-// Compare: if a MOC already exists for topic X, update it instead of creating a new one
+```bash
+switchboard docs list --drive <drive-slug> --format json
+# Find all bai/moc documents
+# Compare: if a MOC already exists for topic X, update it instead of creating a new one
 ```
 
 ### Step 3: Find the /knowledge/ folder
 
 MOCs go in `/knowledge/` (not `/knowledge/notes/` — MOCs are navigation, not atomic claims):
 
-```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Find: kind="folder", name="knowledge", parentFolder=null
+```bash
+switchboard docs tree <drive-slug> --format json
+# Find: kind="folder", name="knowledge", parentFolder=null
 ```
 
 ### Step 4: Create MOC documents
 
 For each topic cluster with 3+ notes:
 
+```bash
+switchboard docs create --type bai/moc --name "<topic-name>" --drive <drive-slug> --parent-folder <knowledge-folder-uuid> --format json
 ```
-mcp__reactor-mcp__createDocument({
-  documentType: "bai/moc",
-  driveId: "<drive-uuid>",
-  name: "<topic-name>",
-  parentFolder: "<knowledge-folder-uuid>"
-})
-```
-
-**Wait 100ms between creates** (MCP race condition prevention).
 
 Then initialize the MOC:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<moc-id>",
-  actions: [{
-    type: "CREATE_MOC",
-    input: {
-      title: "<topic-name>",
-      description: "Map of Content for <topic> — N notes covering <brief scope>",
-      orientation: "<1-2 paragraph synthesis of what this topic covers, key themes, and how notes relate>",
-      tier: "TOPIC",
-      createdAt: "<ISO>"
-    },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs apply <moc-id> --actions '[{
+  "type": "CREATE_MOC",
+  "input": {
+    "title": "<topic-name>",
+    "description": "Map of Content for <topic> — N notes covering <brief scope>",
+    "orientation": "<1-2 paragraph synthesis of what this topic covers, key themes, and how notes relate>",
+    "tier": "TOPIC",
+    "createdAt": "<ISO>"
+  },
+  "scope": "global"
+}]'
 ```
 
 **MOC Tiers:**
@@ -93,22 +82,15 @@ mcp__reactor-mcp__addActions({
 
 For each note in the topic, add it as a core idea with an articulated context phrase:
 
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<moc-id>",
-  actions: [{
-    type: "ADD_CORE_IDEA",
-    input: {
-      id: "<unique-id>",
-      noteRef: "<note-document-id>",
-      contextPhrase: "<WHY this note matters in this topic — not just 'related to X'>",
-      sortOrder: 0,
-      addedAt: "<ISO>",
-      addedBy: "knowledge-agent"
-    },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <moc-id> --op addCoreIdea --input '{
+  "id": "<unique-id>",
+  "noteRef": "<note-document-id>",
+  "contextPhrase": "<WHY this note matters in this topic — not just related to X>",
+  "sortOrder": 0,
+  "addedAt": "<ISO>",
+  "addedBy": "knowledge-agent"
+}'
 ```
 
 **The context phrase is critical.** It's the articulation test for MOCs — explain WHY each note is a core idea in this topic, not just that it exists.
@@ -116,41 +98,27 @@ mcp__reactor-mcp__addActions({
 ### Step 6: Add tensions and open questions (optional)
 
 If notes within the topic contradict each other:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<moc-id>",
-  actions: [{
-    type: "ADD_TENSION",
-    input: {
-      id: "<unique-id>",
-      description: "<what the contradiction is>",
-      involvedRefs: ["<note-id-1>", "<note-id-2>"],
-      addedAt: "<ISO>"
-    },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <moc-id> --op addTension --input '{
+  "id": "<unique-id>",
+  "description": "<what the contradiction is>",
+  "involvedRefs": ["<note-id-1>", "<note-id-2>"],
+  "addedAt": "<ISO>"
+}'
 ```
 
 If there are unexplored directions:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<moc-id>",
-  actions: [{
-    type: "ADD_OPEN_QUESTION",
-    input: { question: "<what hasn't been explored yet in this topic?>" },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <moc-id> --op addOpenQuestion --input '{"question": "<what has not been explored yet in this topic?>"}'
 ```
 
 ### Step 7: Verify MOCs actually exist
 
 **CRITICAL:** Don't assume creation succeeded. After creating all MOCs, **read the drive tree and confirm each MOC appears**:
-```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Check each MOC ID exists as a file node with documentType === "bai/moc"
-// If missing: the creation silently failed — recreate
+```bash
+switchboard docs tree <drive-slug> --format json
+# Check each MOC ID exists as a file node with documentType === "bai/moc"
+# If missing: the creation silently failed — recreate
 ```
 Only report MOC_COHERENCE as PASS after verification, not after dispatching the create.
 

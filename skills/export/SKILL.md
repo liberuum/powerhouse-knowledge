@@ -29,13 +29,13 @@ switchboard export drive <drive-uuid> --since-revision 50 -o ./incremental/ --fo
 switchboard export doc <doc-id> --drive <drive-uuid> -o note.phd --format json
 ```
 
-## Export to Markdown (via MCP)
+## Export to Markdown
 
 For each note in the vault:
 
 1. Read the document state:
-```
-mcp__reactor-mcp__getDocument({ id: "<doc-id>" })
+```bash
+switchboard docs get <doc-id> --state --format json
 ```
 
 2. Convert state to markdown with YAML frontmatter:
@@ -73,13 +73,8 @@ The Powerhouse reactor uses consistency tokens to ensure exports reflect a compl
 
 Export the knowledge graph structure:
 
-```graphql
-query ExportGraph($driveId: ID!) {
-  knowledgeGraphDebug(driveId: $driveId) {
-    rawNodes { documentId title noteType status description }
-    rawEdges { sourceDocumentId targetDocumentId linkType targetTitle }
-  }
-}
+```bash
+switchboard query '{ knowledgeGraphDebug(driveId: "<UUID>") { rawNodes { documentId title noteType status description } rawEdges { sourceDocumentId targetDocumentId linkType targetTitle } } }'
 ```
 
 This gives the full graph as JSON — useful for visualization tools, analysis, or migration.

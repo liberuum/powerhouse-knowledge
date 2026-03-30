@@ -42,76 +42,41 @@ When verification finds fixable issues, **repair them immediately** instead of j
 
 ### Missing description
 Generate a description from the title and content, then dispatch:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<note-id>",
-  actions: [{
-    type: "SET_DESCRIPTION",
-    input: { description: "<generated ~150 char summary>", updatedAt: "<ISO>" },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <note-id> --op setDescription --input '{"description": "<generated ~150 char summary>", "updatedAt": "<ISO>"}'
 ```
 
 ### Missing provenance
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<note-id>",
-  actions: [{
-    type: "SET_PROVENANCE",
-    input: { author: "knowledge-agent", sourceOrigin: "DERIVED", createdAt: "<ISO>" },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <note-id> --op setProvenance --input '{"author": "knowledge-agent", "sourceOrigin": "DERIVED", "createdAt": "<ISO>"}'
 ```
 
 ### Missing note type
 Infer the type from content and set it:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<note-id>",
-  actions: [{
-    type: "SET_NOTE_TYPE",
-    input: { noteType: "<inferred-type>", updatedAt: "<ISO>" },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <note-id> --op setNoteType --input '{"noteType": "<inferred-type>", "updatedAt": "<ISO>"}'
 ```
 
 ### Missing methodology grounding
 Search research claims by keywords from the note's title and topics. If a relevant claim is found, add a BUILDS_ON link:
-```
-// Search claims
-mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
-// Filter bai/research-claim docs whose title/topics overlap with the note
+```bash
+# Search claims
+switchboard docs list --drive <drive-slug> --format json
+# Filter bai/research-claim docs whose title/topics overlap with the note
 
-// Add cross-link
-mcp__reactor-mcp__addActions({
-  documentId: "<note-id>",
-  actions: [{
-    type: "ADD_LINK",
-    input: {
-      id: "<unique-id>",
-      targetDocumentId: "<research-claim-id>",
-      targetTitle: "<claim title>",
-      linkType: "BUILDS_ON"
-    },
-    scope: "global"
-  }]
-})
+# Add cross-link
+switchboard docs mutate <note-id> --op addLink --input '{
+  "id": "<unique-id>",
+  "targetDocumentId": "<research-claim-id>",
+  "targetTitle": "<claim title>",
+  "linkType": "BUILDS_ON"
+}'
 ```
 
 ### Missing topics
 Identify key topics from the content and add them:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<note-id>",
-  actions: [{
-    type: "ADD_TOPIC",
-    input: { id: "<unique-id>", name: "<topic>" },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <note-id> --op addTopic --input '{"id": "<unique-id>", "name": "<topic>"}'
 ```
 
 ## Batch verification
@@ -125,9 +90,7 @@ When verifying all notes in the vault (no specific note targeted):
 
 ```bash
 # Use the subgraph to quickly find problem notes
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphOrphans(driveId: \"<UUID>\") { documentId title } }"}'
+switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title } }'
 ```
 
 ## Output format
@@ -153,40 +116,26 @@ Summary:
 ## Recording verification
 
 After verification, update confidence based on results:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<note-id>",
-  actions: [{
-    type: "SET_METADATA_FIELD",
-    input: { field: "confidence", value: "established|emerging|speculative", updatedAt: "<ISO>" },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <note-id> --op setMetadataField --input '{"field": "confidence", "value": "established|emerging|speculative", "updatedAt": "<ISO>"}'
 ```
 
 ## Pipeline integration
 
-When verify runs as part of the pipeline (phase 4), record a handoff:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<pipeline-queue-id>",
-  actions: [{
-    type: "ADVANCE_PHASE",
-    input: {
-      taskId: "<task-id>",
-      handoff: {
-        id: "<unique-id>",
-        phase: "verify",
-        workDone: "Verified N notes. Auto-repaired M issues. N PASS, N WARN, N FAIL.",
-        filesModified: ["<note-ids>"],
-        completedAt: "<ISO>",
-        completedBy: "knowledge-agent"
-      },
-      updatedAt: "<ISO>"
-    },
-    scope: "global"
-  }]
-})
+When verify runs as part of the pipeline (phase 4), record a handoff. **Use `docs mutate` for pipeline operations — never batch with `docs apply`:**
+```bash
+switchboard docs mutate <pipeline-queue-id> --op advancePhase --input '{
+  "taskId": "<task-id>",
+  "handoff": {
+    "id": "<unique-id>",
+    "phase": "verify",
+    "workDone": "Verified N notes. Auto-repaired M issues. N PASS, N WARN, N FAIL.",
+    "filesModified": ["<note-ids>"],
+    "completedAt": "<ISO>",
+    "completedBy": "knowledge-agent"
+  },
+  "updatedAt": "<ISO>"
+}'
 ```
 
 If "$ARGUMENTS" is provided, verify that specific note (by title or document ID).

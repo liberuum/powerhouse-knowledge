@@ -19,21 +19,38 @@ Initialize a Knowledge Vault drive with the Ars Contexta methodology foundation 
 - Reactor running (`ph vetra --watch` or remote reactor)
 - A vault drive exists (created via Connect UI or CLI)
 - The drive has the Ars Contexta folder structure (`/research/` folder exists)
+- `switchboard` CLI installed and configured (`switchboard config use local` or appropriate profile, `switchboard introspect` run once)
 
-## Setup Process
+## Primary Method: Switchboard CLI Script (recommended)
+
+```bash
+# From the plugin directory — uses switchboard CLI for all operations
+python3 scripts/import-methodology.py <drive-slug>
+```
+
+This script:
+- Parses all 249 markdown files from `data/methodology/`
+- Pass 1: Creates `bai/research-claim` docs via `switchboard docs create` (skips existing)
+- Pass 2: Resolves wiki-link connections via `switchboard docs mutate --op addResearchConnection`
+- Uses deterministic connection IDs (md5 hash of source+target) — safe to re-run
+- Takes ~2 minutes for 249 claims + ~1,240 connections
+
+## Manual Setup Process (fallback)
+
+Use this when the CLI script is unavailable.
 
 ### Step 1: Find the vault drive
 
-```
-mcp__reactor-mcp__getDrives()
+```bash
+switchboard drives list --format json
 ```
 
 If multiple drives exist, ask the user which one to set up. If only one non-vetra drive exists, use that.
 
 ### Step 2: Check current state
 
-```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
+```bash
+switchboard docs tree <drive-slug> --format json
 ```
 
 Verify:
@@ -42,8 +59,8 @@ Verify:
 
 ### Step 3: Check if methodology is already imported
 
-```
-mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
+```bash
+switchboard docs list --drive <drive-slug> --format json
 ```
 
 Count documents of type `bai/research-claim`. If count >= 200, the methodology is already imported → report status and skip.
@@ -87,33 +104,21 @@ Topics:
 
 For each `.md` file in the methodology directory:
 
-```
-mcp__reactor-mcp__createDocument({
-  documentType: "bai/research-claim",
-  driveId: "<drive-uuid>",
-  name: "<filename without .md>",
-  parentFolder: "<research-folder-id>"
-})
+```bash
+switchboard docs create --type bai/research-claim --name "<filename without .md>" --drive <drive-slug> --parent-folder <research-folder-uuid> --format json
 ```
 
 Then populate the claim:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<new-doc-id>",
-  actions: [{
-    type: "CREATE_CLAIM",
-    input: {
-      title: "<filename without .md>",
-      description: "<frontmatter description>",
-      content: "<body content before Relevant Notes section>",
-      kind: "<frontmatter kind, default: research>",
-      methodology: ["<frontmatter methodology array>"],
-      sources: ["<frontmatter source>"],
-      topics: ["<extracted from frontmatter and Topics section>"]
-    },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <new-doc-id> --op createClaim --input '{
+  "title": "<filename without .md>",
+  "description": "<frontmatter description>",
+  "content": "<body content before Relevant Notes section>",
+  "kind": "<frontmatter kind, default: research>",
+  "methodology": ["<frontmatter methodology array>"],
+  "sources": ["<frontmatter source>"],
+  "topics": ["<extracted from frontmatter and Topics section>"]
+}'
 ```
 
 Save a **title → document ID map** for pass 2.
@@ -126,19 +131,20 @@ Parse lines like: - [[target title]] — context phrase
 Look up target title in the title→ID map
 ```
 
+```bash
+switchboard docs mutate <source-claim-id> --op addResearchConnection --input '{
+  "id": "<generate-unique-id>",
+  "targetRef": "<target-document-id>",
+  "contextPhrase": "<context phrase from the link>"
+}'
 ```
-mcp__reactor-mcp__addActions({
-  documentId: "<source-claim-id>",
-  actions: [{
-    type: "ADD_RESEARCH_CONNECTION",
-    input: {
-      id: "<generate-unique-id>",
-      targetRef: "<target-document-id>",
-      contextPhrase: "<context phrase from the link>"
-    },
-    scope: "global"
-  }]
-})
+
+For claims with multiple connections, you can batch them:
+```bash
+switchboard docs apply <source-claim-id> --actions '[
+  { "type": "ADD_RESEARCH_CONNECTION", "input": { "id": "<uid-1>", "targetRef": "<target-1>", "contextPhrase": "..." }, "scope": "global" },
+  { "type": "ADD_RESEARCH_CONNECTION", "input": { "id": "<uid-2>", "targetRef": "<target-2>", "contextPhrase": "..." }, "scope": "global" }
+]'
 ```
 
 ### Step 6: Report results
@@ -151,25 +157,7 @@ Connections unresolved: ~23 (external references)
 Location: /research/ folder
 ```
 
-## Automated alternative
-
-### Option A: Switchboard CLI script (recommended)
-
-```bash
-# From the plugin directory — uses switchboard CLI for all operations
-python3 scripts/import-methodology.py knowledge-vault
-```
-
-This script:
-- Parses all 249 markdown files from `data/methodology/`
-- Pass 1: Creates `bai/research-claim` docs via `switchboard docs create` (skips existing)
-- Pass 2: Resolves wiki-link connections via `switchboard docs mutate --op addResearchConnection`
-- Uses deterministic connection IDs (md5 hash of source+target) — safe to re-run
-- Takes ~2 minutes for 249 claims + ~1,240 connections
-
-**Prerequisites:** `switchboard` CLI installed, `switchboard config use local`, `switchboard introspect` run once.
-
-### Option B: Node.js MCP script
+## Alternative: Node.js MCP script
 
 ```bash
 node /path/to/bai-knowledge-note/scripts/import-research-claims.mjs \
@@ -177,7 +165,7 @@ node /path/to/bai-knowledge-note/scripts/import-research-claims.mjs \
   --vault-path /path/to/powerhouse-knowledge/data/methodology/
 ```
 
-This uses MCP Streamable HTTP for bulk creation and is ~10x faster than individual MCP tool calls.
+This uses MCP Streamable HTTP for bulk creation and is ~10x faster than individual tool calls.
 
 ### Known issues with CLI import
 

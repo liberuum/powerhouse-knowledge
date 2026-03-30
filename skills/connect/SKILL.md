@@ -12,22 +12,15 @@ Find genuine connections between notes and create typed links. This is the "refl
 1. **Identify the target note** — which note are we connecting?
 2. **Search for candidates** — use the search skill to find potentially related notes
 3. **Apply the articulation test** — for each candidate, answer: "[[A]] connects to [[B]] because [specific reason]"
-4. **If the connection is genuine**, create a link using `ADD_LINK`:
+4. **If the connection is genuine**, create a link:
 
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<source-note-id>",
-  actions: [{
-    type: "ADD_LINK",
-    input: {
-      id: "<generate-unique-id>",
-      targetDocumentId: "<target-note-id>",
-      targetTitle: "<target note title>",
-      linkType: "RELATES_TO"
-    },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <source-note-id> --op addLink --input '{
+  "id": "<generate-unique-id>",
+  "targetDocumentId": "<target-note-id>",
+  "targetTitle": "<target note title>",
+  "linkType": "RELATES_TO"
+}'
 ```
 
 ## Link types
@@ -43,34 +36,26 @@ mcp__reactor-mcp__addActions({
 After connecting notes to each other, **search the 249 research claims in `/research/`** for methodology backing:
 
 1. For each new note, search research claims by topic and keywords:
-```
-mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
-// Filter: documentType === "bai/research-claim"
-// Match: topics overlap OR title contains similar keywords
+```bash
+# List all documents and filter by type
+switchboard docs list --drive <drive-slug> --format json
+# Filter: documentType === "bai/research-claim"
+# Match: topics overlap OR title contains similar keywords
 ```
 
 Or use the subgraph:
 ```bash
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphSearch(driveId: \"<UUID>\", query: \"<keyword from note>\") { documentId title } }"}'
+switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "<keyword from note>") { documentId title } }'
 ```
 
 2. For each matching claim, create a cross-link from the note to the claim:
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<note-id>",
-  actions: [{
-    type: "ADD_LINK",
-    input: {
-      id: "<unique-id>",
-      targetDocumentId: "<research-claim-id>",
-      targetTitle: "<claim title>",
-      linkType: "BUILDS_ON"
-    },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs mutate <note-id> --op addLink --input '{
+  "id": "<unique-id>",
+  "targetDocumentId": "<research-claim-id>",
+  "targetTitle": "<claim title>",
+  "linkType": "BUILDS_ON"
+}'
 ```
 
 **Link type selection for methodology:**
@@ -89,32 +74,35 @@ When you find a CONTRADICTS link, check whether this is a genuine unresolved ten
 - Is it unresolved (no existing note reconciles the two positions)?
 
 If yes, create a `bai/tension` document:
-```
-mcp__reactor-mcp__createDocument({
-  documentType: "bai/tension",
-  driveId: "<drive-uuid>",
-  name: "<what contradicts what>",
-  parentFolder: "<ops-folder-uuid>"
-})
-
-mcp__reactor-mcp__addActions({
-  documentId: "<tension-id>",
-  actions: [{
-    type: "CREATE_TENSION",
-    input: {
-      title: "<tension title>",
-      description: "<brief summary>",
-      content: "<Side A says... Side B says... This matters because...>",
-      involvedRefs: ["<note-id-1>", "<note-id-2>"],
-      observedAt: "<ISO>",
-      observedBy: "knowledge-agent"
-    },
-    scope: "global"
-  }]
-})
+```bash
+switchboard docs create --type bai/tension --name "<what contradicts what>" --drive <drive-slug> --parent-folder <ops-folder-uuid> --format json
 ```
 
-Also add the tension to the relevant MOC if one exists (via `ADD_TENSION` on the MOC).
+Then populate it:
+```bash
+switchboard docs apply <tension-id> --actions '[{
+  "type": "CREATE_TENSION",
+  "input": {
+    "title": "<tension title>",
+    "description": "<brief summary>",
+    "content": "<Side A says... Side B says... This matters because...>",
+    "involvedRefs": ["<note-id-1>", "<note-id-2>"],
+    "observedAt": "<ISO>",
+    "observedBy": "knowledge-agent"
+  },
+  "scope": "global"
+}]'
+```
+
+Also add the tension to the relevant MOC if one exists:
+```bash
+switchboard docs mutate <moc-id> --op addTension --input '{
+  "id": "<unique-id>",
+  "description": "<tension summary>",
+  "involvedRefs": ["<note-id-1>", "<note-id-2>"],
+  "addedAt": "<ISO>"
+}'
+```
 
 ## Quality rules
 

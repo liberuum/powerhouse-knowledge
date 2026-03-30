@@ -9,56 +9,36 @@ Structural analysis of the knowledge graph to find patterns, gaps, and opportuni
 
 ## Using the subgraph
 
-The Knowledge Graph subgraph is at `/graphql/knowledgeGraph`. Use Bash to query:
+Query the Knowledge Graph subgraph via the Switchboard CLI:
 
 ```bash
 # Stats
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphStats(driveId: \"<UUID>\") { nodeCount edgeCount orphanCount } }"}'
+switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount } }'
 
 # Triangles (synthesis opportunities)
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphTriangles(driveId: \"<UUID>\", limit: 10) { noteA { title documentId } noteB { title documentId } sharedTarget { title } } }"}'
+switchboard query '{ knowledgeGraphTriangles(driveId: "<UUID>", limit: 10) { noteA { title documentId } noteB { title documentId } sharedTarget { title } } }'
 
 # Bridges (critical nodes)
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphBridges(driveId: \"<UUID>\") { title documentId } }"}'
+switchboard query '{ knowledgeGraphBridges(driveId: "<UUID>") { title documentId } }'
 
 # Orphans
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphOrphans(driveId: \"<UUID>\") { title documentId noteType } }"}'
+switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { title documentId noteType } }'
 
 # N-hop connections from a note
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphConnections(driveId: \"<UUID>\", documentId: \"<NOTE-ID>\", depth: 3) { node { title } depth viaLinkType } }"}'
+switchboard query '{ knowledgeGraphConnections(driveId: "<UUID>", documentId: "<NOTE-ID>", depth: 3) { node { title } depth viaLinkType } }'
 
 # Backlinks (who links to this note?)
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphBacklinks(driveId: \"<UUID>\", documentId: \"<NOTE-ID>\") { sourceDocumentId linkType } }"}'
+switchboard query '{ knowledgeGraphBacklinks(driveId: "<UUID>", documentId: "<NOTE-ID>") { sourceDocumentId linkType } }'
 
 # Forward links (what does this note link to?)
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphForwardLinks(driveId: \"<UUID>\", documentId: \"<NOTE-ID>\") { targetDocumentId linkType targetTitle } }"}'
+switchboard query '{ knowledgeGraphForwardLinks(driveId: "<UUID>", documentId: "<NOTE-ID>") { targetDocumentId linkType targetTitle } }'
 
 # Full-text search
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphSearch(driveId: \"<UUID>\", query: \"cognitive\", limit: 20) { title documentId noteType } }"}'
+switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "cognitive", limit: 20) { title documentId noteType } }'
 
 # Density
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphDensity(driveId: \"<UUID>\") }"}'
+switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
 ```
-
-Resolve `$REACTOR_URL` from `.mcp.json` before running: `REACTOR_URL=$(grep -oP 'https?://[^"]+' .mcp.json 2>/dev/null | head -1 | sed 's|/mcp$||'); REACTOR_URL=${REACTOR_URL:-http://localhost:4001}`
 
 ## Analysis types
 

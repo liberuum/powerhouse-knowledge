@@ -11,31 +11,30 @@ Run diagnostics across the knowledge vault, report actionable findings, and **sa
 
 ### Step 1: Gather metrics
 
-Query the subgraph at `/graphql/knowledgeGraph`:
+Query the subgraph via the Switchboard CLI:
 
 ```bash
 # Graph stats
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphStats(driveId: \"<UUID>\") { nodeCount edgeCount orphanCount } }"}'
+switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount } }'
 
 # Density
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphDensity(driveId: \"<UUID>\") }"}'
+switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
 
 # Orphans
-curl -s $REACTOR_URL/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphOrphans(driveId: \"<UUID>\") { documentId title } }"}'
+switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title } }'
 ```
 
-Also read individual notes via MCP to check:
+Also read individual notes to check:
 - Missing descriptions
 - Missing provenance
 - Missing note types
 - Missing topics
 - Link density per note
+
+```bash
+switchboard docs list --drive <drive-slug> --format json
+switchboard docs get <note-id> --state --format json
+```
 
 ### Step 2: Compute checks
 
@@ -52,84 +51,73 @@ Also read individual notes via MCP to check:
 
 **METHODOLOGY_GROUNDING check:** For each knowledge note, check if it has at least one outgoing link to a `bai/research-claim` document. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation. The verify skill auto-repairs this by searching for matching claims.
 
-**CRITICAL: Verify, don't assume.** After auto-fixing any health recommendation (creating MOCs, adding descriptions, importing methodology), **re-read the drive tree** to confirm the fix actually applied. Don't report PASS based on what you dispatched — report PASS based on what you verified exists in the drive. Silent failures are common (MCP race condition, CLI bugs, network issues).
+**CRITICAL: Verify, don't assume.** After auto-fixing any health recommendation (creating MOCs, adding descriptions, importing methodology), **re-read the drive tree** to confirm the fix actually applied. Don't report PASS based on what you dispatched — report PASS based on what you verified exists in the drive. Silent failures are common (race conditions, CLI bugs, network issues).
 
 ### Step 3: Save to bai/health-report document
 
 Find or create the health report document in `/ops/health/`:
 
-```
-mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Find existing: kind="file", documentType="bai/health-report" in /ops/health/
-// Or create new:
-mcp__reactor-mcp__createDocument({
-  documentType: "bai/health-report",
-  driveId: "<drive-uuid>",
-  name: "Health Report",
-  parentFolder: "<ops-health-folder-uuid>"
-})
+```bash
+switchboard docs tree <drive-slug> --format json
+# Find existing: kind="file", documentType="bai/health-report" in /ops/health/
+# Or create new:
+switchboard docs create --type bai/health-report --name "Health Report" --drive <drive-slug> --parent-folder <ops-health-folder-uuid> --format json
 ```
 
 **Write the report via GENERATE_REPORT:**
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<health-report-id>",
-  actions: [{
-    type: "GENERATE_REPORT",
-    input: {
-      generatedAt: "<ISO timestamp>",
-      generatedBy: "knowledge-agent",
-      mode: "full",
-      overallStatus: "PASS|WARN|FAIL",
-      graphMetrics: {
-        noteCount: N,
-        mocCount: N,
-        connectionCount: N,
-        density: 0.83,
-        orphanCount: N,
-        danglingLinkCount: N,
-        mocCoverage: 0.75,
-        averageLinksPerNote: 2.5
-      },
-      recommendations: [
-        "Connect 2 orphan notes",
-        "Add descriptions to 3 notes"
-      ]
+```bash
+switchboard docs apply <health-report-id> --actions '[{
+  "type": "GENERATE_REPORT",
+  "input": {
+    "generatedAt": "<ISO timestamp>",
+    "generatedBy": "knowledge-agent",
+    "mode": "full",
+    "overallStatus": "PASS|WARN|FAIL",
+    "graphMetrics": {
+      "noteCount": 0,
+      "mocCount": 0,
+      "connectionCount": 0,
+      "density": 0.0,
+      "orphanCount": 0,
+      "danglingLinkCount": 0,
+      "mocCoverage": 0.0,
+      "averageLinksPerNote": 0.0
     },
-    scope: "global"
-  }]
-})
+    "recommendations": [
+      "Connect 2 orphan notes",
+      "Add descriptions to 3 notes"
+    ]
+  },
+  "scope": "global"
+}]'
 ```
 
 **Then add individual checks via ADD_CHECK:**
-```
-mcp__reactor-mcp__addActions({
-  documentId: "<health-report-id>",
-  actions: [
-    {
-      type: "ADD_CHECK",
-      input: {
-        id: "<unique-id>",
-        category: "ORPHAN_DETECTION",
-        status: "WARN",
-        message: "2 orphan notes found",
-        affectedItems: ["note-title-1", "note-title-2"]
-      },
-      scope: "global"
+```bash
+switchboard docs apply <health-report-id> --actions '[
+  {
+    "type": "ADD_CHECK",
+    "input": {
+      "id": "<unique-id>",
+      "category": "ORPHAN_DETECTION",
+      "status": "WARN",
+      "message": "2 orphan notes found",
+      "affectedItems": ["note-title-1", "note-title-2"]
     },
-    {
-      type: "ADD_CHECK",
-      input: {
-        id: "<unique-id>",
-        category: "DESCRIPTION_QUALITY",
-        status: "PASS",
-        message: "All notes have descriptions",
-        affectedItems: []
-      },
-      scope: "global"
-    }
-  ]
-})
+    "scope": "global"
+  },
+  {
+    "type": "ADD_CHECK",
+    "input": {
+      "id": "<unique-id>",
+      "category": "DESCRIPTION_QUALITY",
+      "status": "PASS",
+      "message": "All notes have descriptions",
+      "affectedItems": []
+    },
+    "scope": "global"
+  }
+]'
 ```
 
 **Valid categories:** SCHEMA_COMPLIANCE, ORPHAN_DETECTION, LINK_HEALTH, DESCRIPTION_QUALITY, THREE_SPACE_BOUNDARIES, PROCESSING_THROUGHPUT, STALE_NOTES, MOC_COHERENCE
@@ -176,9 +164,8 @@ Previous health states are preserved in the document's operation history (revisi
 ## Fallback (no subgraph)
 
 If the subgraph isn't available, compute metrics from individual document reads:
+```bash
+switchboard docs list --drive <drive-slug> --format json
+# Read each bai/knowledge-note document, compute metrics manually
+switchboard docs get <note-id> --state --format json
 ```
-mcp__reactor-mcp__getDocuments({ parentId: "<drive-uuid>" })
-// Read each bai/knowledge-note document, compute metrics manually
-```
-
-Resolve `$REACTOR_URL` from `.mcp.json` before running curl commands (see agent docs).
