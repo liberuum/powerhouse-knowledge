@@ -53,24 +53,24 @@ switchboard drives fix <drive-slug>
 
 The CLI `docs create` can timeout on schema introspection. Use GraphQL directly for creation, then `docs apply` for operations:
 
-```bash
-# Create via GraphQL (reliable)
-DOC_ID=$(curl -s $REACTOR_URL/graphql/r/ \
-  -H "Content-Type: application/json" \
-  -d '{"query":"mutation { createEmptyDocument(documentType: \"bai/source\") { id } }"}' \
-  | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).data.createEmptyDocument.id")
+**IMPORTANT:** Always use MCP HTTP for document creation — it atomically creates the document AND links it to the drive. Using `createEmptyDocument` + manual `ADD_FILE` creates ghost nodes that Connect can't see.
 
-# Add to drive in correct folder
-switchboard docs apply <drive-id> --wait --actions '[{
-  "type": "ADD_FILE",
-  "input": {
-    "id": "'$DOC_ID'",
-    "name": "Document Name",
-    "documentType": "bai/source",
-    "parentFolder": "<folder-uuid>"
-  },
-  "scope": "global"
-}]'
+```bash
+# Resolve REACTOR_URL
+REACTOR_URL=$(grep -oP 'https?://[^"]+' .mcp.json 2>/dev/null | head -1 | sed 's|/mcp$||')
+REACTOR_URL=${REACTOR_URL:-http://localhost:4001}
+
+# Create document via MCP HTTP (atomic — linked to drive + folder)
+DOC_ID=$(curl -s -X POST $REACTOR_URL/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"createDocument","arguments":{"documentType":"bai/source","driveId":"<drive-uuid>","name":"Document Name","parentFolder":"<folder-uuid>"}},"id":1}' \
+  | grep -o '"documentId":"[^"]*"' | cut -d'"' -f4)
+
+echo "Created: $DOC_ID"
+```
+
+**Why MCP not GraphQL?** `createEmptyDocument` creates a standalone document. `ADD_FILE` adds a file node to the drive. But Connect's PGLite only knows about documents linked atomically during creation. MCP `createDocument` with `driveId` does both in one step.
 ```
 
 ## Dispatching Operations
@@ -125,33 +125,31 @@ switchboard docs apply <note-id> --wait --actions '[
 
 ### 1. Seed Source
 ```bash
-# Create source
-SOURCE_ID=$(curl -s $REACTOR_URL/graphql/r/ -H "Content-Type: application/json" \
-  -d '{"query":"mutation { createEmptyDocument(documentType: \"bai/source\") { id } }"}' \
-  | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).data.createEmptyDocument.id")
+# Create source via MCP HTTP (atomic)
+SOURCE_ID=$(curl -s -X POST $REACTOR_URL/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"createDocument","arguments":{"documentType":"bai/source","driveId":"<drive-uuid>","name":"Source Title","parentFolder":"<sources-folder>"}},"id":1}' \
+  | grep -o '"documentId":"[^"]*"' | cut -d'"' -f4)
 
-# Add to drive
-switchboard docs apply <drive-id> --wait --actions '[{"type":"ADD_FILE","input":{"id":"'$SOURCE_ID'","name":"Source Title","documentType":"bai/source","parentFolder":"<sources-folder>"},"scope":"global"}]'
-
-# Ingest content
+# Ingest content via CLI
 switchboard docs apply $SOURCE_ID --wait --actions '[{"type":"INGEST_SOURCE","input":{"title":"...","content":"...","sourceType":"ARTICLE","createdAt":"..."},"scope":"global"}]'
 ```
 
 ### 2. Extract Claims
 ```bash
-# Create each note (100ms delays)
-NOTE_ID=$(curl -s $REACTOR_URL/graphql/r/ -H "Content-Type: application/json" \
-  -d '{"query":"mutation { createEmptyDocument(documentType: \"bai/knowledge-note\") { id } }"}' \
-  | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).data.createEmptyDocument.id")
+# Create each note via MCP HTTP (100ms delays between calls)
+NOTE_ID=$(curl -s -X POST $REACTOR_URL/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"createDocument","arguments":{"documentType":"bai/knowledge-note","driveId":"<drive-uuid>","name":"claim title","parentFolder":"<notes-folder>"}},"id":1}' \
+  | grep -o '"documentId":"[^"]*"' | cut -d'"' -f4)
 sleep 0.1
 
-# Add to drive
-switchboard docs apply <drive-id> --wait --actions '[{"type":"ADD_FILE","input":{"id":"'$NOTE_ID'","name":"claim title","documentType":"bai/knowledge-note","parentFolder":"<notes-folder>"},"scope":"global"}]'
+# Populate (content batch) via CLI
+switchboard docs apply $NOTE_ID --wait --actions '[{"type":"SET_TITLE",...},{"type":"SET_DESCRIPTION",...},{"type":"SET_CONTENT",...}]'
 
-# Populate (content batch)
-switchboard docs apply $NOTE_ID --wait --actions '[{"type":"SET_TITLE",...},{"type":"SET_DESCRIPTION",...}]'
-
-# Populate (provenance batch)
+# Populate (provenance batch — separate!) via CLI
 switchboard docs apply $NOTE_ID --wait --actions '[{"type":"SET_PROVENANCE","input":{"author":"agent","sourceOrigin":"DERIVED","createdAt":"..."},"scope":"global"}]'
 ```
 
