@@ -180,7 +180,15 @@ The vault's `/research/` folder contains the Ars Contexta methodology — 249 in
 - `REMOVE_RESEARCH_CONNECTION { id }`
 - `UPDATE_CLAIM_CONTENT { content }`
 
-Use `/powerhouse-knowledge:setup` to import the methodology into a new vault. Reference these claims when explaining WHY the vault is designed a certain way.
+Use `/powerhouse-knowledge:setup` to import the methodology into a new vault.
+
+**Methodology cross-referencing (mandatory in pipeline):**
+- During **connect** phase: search research claims by topic/keywords for each new note, create BUILDS_ON or CONTRADICTS links
+- During **verify** phase: check every note has at least one link to a research claim, auto-repair if missing
+- During **health** check: report METHODOLOGY_GROUNDING status (how many notes are grounded vs floating)
+- When **explaining design decisions**: trace from working notes → research claims → cognitive science backing
+
+The research claims are not passive reference — they are actively checked at every pipeline stage to ensure working knowledge stays grounded in the methodology foundation.
 
 ## Document model: `bai/pipeline-queue`
 
