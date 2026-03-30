@@ -158,6 +158,19 @@ Pipeline queue (`target` is required, NOT `documentRef`):
 switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"SEED","target":"<source-uuid>","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
+## CRITICAL: Operation Order Bug in `docs apply`
+
+**`docs apply` reverses operation order** when batching dependent actions. If action B depends on action A creating state, B executes before A and fails with errors like "Task not found".
+
+**Safe to batch:** Independent actions (SET_TITLE + SET_DESCRIPTION + SET_CONTENT) — order doesn't matter.
+
+**Must be sequential:** Dependent actions (ADD_TASK then ASSIGN_TASK then ADVANCE_PHASE) — use `docs mutate` one at a time:
+```bash
+switchboard docs mutate <id> --op addTask --input '{...}'
+switchboard docs mutate <id> --op assignTask --input '{...}'
+switchboard docs mutate <id> --op advancePhase --input '{...}'
+```
+
 ## Two-Batch Pattern
 
 Separate content from provenance to prevent batch failures:
