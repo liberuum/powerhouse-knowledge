@@ -228,13 +228,55 @@ switchboard docs mutate $MOC_ID --op createMoc --input '{"title":"Topic","descri
 switchboard docs mutate $MOC_ID --op addCoreIdea --input '{"id":"ci-1","noteRef":"<note-uuid>","contextPhrase":"WHY this note matters","sortOrder":0,"addedAt":"...","addedBy":"agent"}'
 ```
 
-### 5. Lifecycle
+### 5. Pipeline Tracking (MUST be sequential — never batch!)
+
+**`docs apply` reverses dependent operations.** Always use `docs mutate` one at a time:
+
+```bash
+PQ=<pipeline-queue-id>
+SOURCE=<source-id>
+
+# Step 1: Add task
+switchboard docs mutate $PQ --op addTask --input '{"id":"task-1","taskType":"claim","target":"Source Title","documentRef":"'$SOURCE'","createdAt":"2026-03-30T16:00:00Z"}'
+
+# Step 2: Assign
+switchboard docs mutate $PQ --op assignTask --input '{"taskId":"task-1","assignedTo":"knowledge-agent","updatedAt":"2026-03-30T16:00:01Z"}'
+
+# Step 3: Advance create phase
+switchboard docs mutate $PQ --op advancePhase --input '{"taskId":"task-1","handoff":{"id":"h-create","phase":"create","workDone":"Extracted N claims","filesModified":["<note-ids>"],"completedAt":"2026-03-30T16:01:00Z","completedBy":"knowledge-agent"},"updatedAt":"2026-03-30T16:01:00Z"}'
+
+# Step 4: Assign reflect
+switchboard docs mutate $PQ --op assignTask --input '{"taskId":"task-1","assignedTo":"knowledge-agent","updatedAt":"2026-03-30T16:01:01Z"}'
+
+# Step 5: Advance reflect phase
+switchboard docs mutate $PQ --op advancePhase --input '{"taskId":"task-1","handoff":{"id":"h-reflect","phase":"reflect","workDone":"N links + MOC created","filesModified":["<ids>"],"completedAt":"2026-03-30T16:02:00Z","completedBy":"knowledge-agent"},"updatedAt":"2026-03-30T16:02:00Z"}'
+
+# Step 6-7: Assign + advance reweave
+switchboard docs mutate $PQ --op assignTask --input '{"taskId":"task-1","assignedTo":"knowledge-agent","updatedAt":"2026-03-30T16:02:01Z"}'
+switchboard docs mutate $PQ --op advancePhase --input '{"taskId":"task-1","handoff":{"id":"h-reweave","phase":"reweave","workDone":"No older notes to update","filesModified":[],"completedAt":"2026-03-30T16:02:30Z","completedBy":"knowledge-agent"},"updatedAt":"2026-03-30T16:02:30Z"}'
+
+# Step 8-9: Assign + advance verify (final — auto-completes task to DONE)
+switchboard docs mutate $PQ --op assignTask --input '{"taskId":"task-1","assignedTo":"knowledge-agent","updatedAt":"2026-03-30T16:03:00Z"}'
+switchboard docs mutate $PQ --op advancePhase --input '{"taskId":"task-1","handoff":{"id":"h-verify","phase":"verify","workDone":"All notes PASS","filesModified":["<ids>"],"completedAt":"2026-03-30T16:03:00Z","completedBy":"knowledge-agent"},"updatedAt":"2026-03-30T16:03:00Z"}'
+```
+
+### 6. Methodology Cross-Reference
+
+```bash
+# Search methodology subgraph for matching claims
+switchboard query '{ methodologySearch(driveId: "<uuid>", query: "local-first", limit: 3) { documentId title } }'
+
+# Link note to matching research claim
+switchboard docs mutate <note-id> --op addLink --input '{"id":"lm1","targetDocumentId":"<claim-uuid>","targetTitle":"claim title","linkType":"BUILDS_ON"}'
+```
+
+### 7. Lifecycle
 ```bash
 switchboard docs mutate <note-id> --op submitForReview --input '{"id":"rev-1","actor":"author","timestamp":"..."}'
 switchboard docs mutate <note-id> --op approveNote --input '{"id":"appr-1","actor":"reviewer","timestamp":"..."}'
 ```
 
-### 6. Health Report
+### 8. Health Report
 ```bash
 switchboard query '{ knowledgeGraphStats(driveId: "<uuid>") { nodeCount edgeCount orphanCount } }'
 switchboard query '{ knowledgeGraphDensity(driveId: "<uuid>") }'
