@@ -154,23 +154,152 @@ mutation MutateNote($id: String!, $actions: [JSONObject!]!) {
 }
 ```
 
-### Mode 3: Switchboard CLI (Scripting)
+### Mode 3: Switchboard CLI (Full Feature Parity)
 
-For batch operations, debugging, and automation scripts.
+The Switchboard CLI (v1.0.6+) provides full feature parity with MCP for all vault operations. Use `hooks/hooks-cli.json` instead of `hooks/hooks.json` to enable CLI mode.
 
+**Setup:**
 ```bash
-# Create documents
-switchboard docs create --type 'bai/knowledge-note' --name 'My Note' --drive <drive-uuid>
+# Install CLI
+curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash
 
-# Apply actions (auto-injects timestamps)
-switchboard docs apply <doc-id> --file actions.json --wait
+# Configure local profile
+switchboard config use local   # targets http://localhost:4001/graphql
 
-# Watch changes in real-time
-switchboard watch docs --drive <drive-uuid> --format json
+# Introspect models (discovers bai/* types correctly — bai/source, not powerhouse/source)
+switchboard introspect
 
-# Export vault
-switchboard export drive <drive-uuid> -o ./backup/
+# Create vault drive (slug becomes "knowledge-vault")
+switchboard drives create --name "Knowledge Vault" --preferred-editor knowledge-vault
 ```
+
+**MCP → CLI equivalents:**
+
+| MCP Tool | CLI Command |
+| -------- | ----------- |
+| `getDrives()` | `switchboard drives list --format json` |
+| `getDrive({ driveId })` | `switchboard docs tree <drive> --format json` |
+| `getDocument({ documentId })` | `switchboard docs get <id> --state --format json` |
+| `getDocuments({ parentId })` | `switchboard docs list --drive <drive> --format json` |
+| `createDocument({ type, driveId, name, parentFolder })` | `switchboard docs create --type <type> --name <name> --drive <drive> --parent-folder <folder>` |
+| `addActions({ documentId, actions })` | `switchboard docs mutate <id> --op <op> --input '<json>'` |
+| `addActions({ documentId, actions[] })` | `switchboard docs apply <id> --actions '<json-array>'` |
+| `deleteDocument({ documentId })` | `switchboard docs delete <id> -y` |
+| `getDocumentModelSchema({ type })` | `switchboard models ops <type>` |
+
+**CRITICAL: Required fields discovered during testing (the schema docs don't always match):**
+
+Content mutations require `updatedAt: DateTime!`:
+```bash
+# setTitle, setDescription, setNoteType, setContent all need updatedAt
+switchboard docs mutate <id> --op setTitle --input '{"title":"My Claim","updatedAt":"2026-03-30T15:00:00.000Z"}'
+switchboard docs mutate <id> --op setDescription --input '{"description":"Summary","updatedAt":"2026-03-30T15:00:00.000Z"}'
+switchboard docs mutate <id> --op setNoteType --input '{"noteType":"CONCEPT","updatedAt":"2026-03-30T15:00:00.000Z"}'
+switchboard docs mutate <id> --op setContent --input '{"content":"Full body","updatedAt":"2026-03-30T15:00:00.000Z"}'
+```
+
+Linking uses different field names than the plugin docs suggest:
+```bash
+# addTopic: uses "id" + "name" (NOT "topic")
+switchboard docs mutate <id> --op addTopic --input '{"id":"topic-unique-id","name":"zettelkasten"}'
+
+# addLink: uses "id" + "targetDocumentId" + "linkType" (NOT "targetId")
+switchboard docs mutate <id> --op addLink --input '{"id":"link-unique-id","targetDocumentId":"<target-uuid>","targetTitle":"Target Note","linkType":"RELATES_TO"}'
+```
+
+Lifecycle mutations require `id`, `actor`, `timestamp`:
+```bash
+# submitForReview, approveNote, rejectNote, archiveNote, restoreNote
+switchboard docs mutate <id> --op submitForReview --input '{"id":"review-1","actor":"author-name","timestamp":"2026-03-30T15:00:00.000Z"}'
+switchboard docs mutate <id> --op approveNote --input '{"id":"approve-1","actor":"reviewer-name","timestamp":"2026-03-30T15:00:00.000Z"}'
+# NOTE: approveNote actor must differ from the note's provenance author
+```
+
+MOC mutations:
+```bash
+# createMoc requires createdAt
+switchboard docs mutate <moc-id> --op createMoc --input '{"title":"Topic","description":"...","orientation":"...","tier":"TOPIC","createdAt":"2026-03-30T15:00:00.000Z"}'
+
+# addCoreIdea requires all fields
+switchboard docs mutate <moc-id> --op addCoreIdea --input '{"id":"ci-1","noteRef":"<note-uuid>","contextPhrase":"WHY this note matters here","sortOrder":0,"addedAt":"2026-03-30T15:00:00.000Z","addedBy":"agent"}'
+```
+
+Health report mutations:
+```bash
+switchboard docs mutate <hr-id> --op generateReport --input '{"generatedAt":"...","mode":"full","overallStatus":"PASS","graphMetrics":{"noteCount":3,"mocCount":1,"connectionCount":6,"density":1.0,"orphanCount":0,"danglingLinkCount":0,"mocCoverage":1.0,"averageLinksPerNote":2.0},"recommendations":["..."]}'
+switchboard docs mutate <hr-id> --op addCheck --input '{"id":"chk-1","category":"ORPHAN_DETECTION","status":"PASS","message":"All notes linked","affectedItems":[]}'
+```
+
+Pipeline queue:
+```bash
+# addTask: uses "target" (required), NOT "documentRef" as primary
+switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"SEED","target":"<source-uuid>","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
+```
+
+**Batch actions (CLI auto-injects `timestampUtcMs` and `action.id`):**
+```bash
+# Multiple operations via apply
+switchboard docs apply <doc-id> --actions '[
+  {"type":"SET_TITLE","input":{"title":"My Claim","updatedAt":"2026-03-30T15:00:00.000Z"},"scope":"global"},
+  {"type":"SET_DESCRIPTION","input":{"description":"A brief summary","updatedAt":"2026-03-30T15:00:00.000Z"},"scope":"global"}
+]'
+
+# From file
+switchboard docs apply <doc-id> --file actions.json --wait
+```
+
+**Subgraph queries (CLI uses raw GraphQL):**
+```bash
+# Graph stats
+switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount } }'
+
+# Density
+switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
+
+# Orphans
+switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title } }'
+
+# Search
+switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "atomic") { documentId title } }'
+```
+
+**Watch + react to changes:**
+```bash
+switchboard watch docs --drive <drive-uuid> --format json
+switchboard watch docs --drive <drive-uuid> --exec './on-change.sh'
+```
+
+**Export/import vault:**
+```bash
+switchboard export drive <drive-uuid> -o ./backup/
+switchboard import ./backup/ --drive <drive-uuid>
+```
+
+**Ghost node detection and cleanup:**
+```bash
+# Scan for orphan file nodes pointing to missing documents
+switchboard drives check <drive>
+
+# Auto-remove ghost nodes
+switchboard drives fix <drive> -y
+```
+
+**Hooks:** Copy `hooks/hooks-cli.json` to `hooks/hooks.json` to use CLI mode:
+```bash
+cp hooks/hooks-cli.json hooks/hooks.json
+```
+
+### Known Issues and Workarounds
+
+**Document creation and Connect sync:** The CLI uses `Model { createDocument(parentIdentifier: driveId) }` which goes through the reactor's proper creation pipeline. Documents created this way are visible in Connect immediately. Do NOT use `createEmptyDocument` + manual `ADD_FILE` — Connect's PGLite won't sync those documents.
+
+**Server restart after errors:** If the reactor shows `RevisionMismatchError` after a failed operation, restart the server. The retry loop will block all subsequent operations on that document until cleared.
+
+**`--parent-folder` placement:** The CLI creates the doc at the drive root first, then moves it into the folder via `DocumentDrive { moveNode }`. This is a two-step process — if the move fails, the doc remains at the root.
+
+**Action `id` field:** The CLI auto-generates action IDs for all `mutateDocument` operations (ADD_FILE, DELETE_NODE, etc.). This prevents null `action.id` errors in Connect's sync stream. If you use `docs apply` with raw actions, the CLI injects IDs automatically via `stamp_actions`.
+
+**Soft delete:** `docs delete` uses non-cascading soft delete (won't destroy parent drives). `drives delete` uses CASCADE (deletes drive + all children). Ghost nodes left behind by failed operations can be cleaned up with `drives check` + `drives fix`.
 
 ## Drive Setup
 

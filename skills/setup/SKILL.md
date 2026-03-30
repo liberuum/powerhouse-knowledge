@@ -153,21 +153,36 @@ Location: /research/ folder
 
 ## Automated alternative
 
-For large imports, the dedicated import script is faster than MCP tool calls:
+### Option A: Switchboard CLI script (recommended)
 
 ```bash
-# Using bundled methodology files from the plugin
+# From the plugin directory — uses switchboard CLI for all operations
+python3 scripts/import-methodology.py knowledge-vault
+```
+
+This script:
+- Parses all 249 markdown files from `data/methodology/`
+- Pass 1: Creates `bai/research-claim` docs via `switchboard docs create` (skips existing)
+- Pass 2: Resolves wiki-link connections via `switchboard docs mutate --op addResearchConnection`
+- Uses deterministic connection IDs (md5 hash of source+target) — safe to re-run
+- Takes ~2 minutes for 249 claims + ~1,240 connections
+
+**Prerequisites:** `switchboard` CLI installed, `switchboard config use local`, `switchboard introspect` run once.
+
+### Option B: Node.js MCP script
+
+```bash
 node /path/to/bai-knowledge-note/scripts/import-research-claims.mjs \
   --drive-id <drive-uuid> \
   --vault-path /path/to/powerhouse-knowledge/data/methodology/
-
-# Or from the local Ars Contexta repo
-node /path/to/bai-knowledge-note/scripts/import-research-claims.mjs \
-  --drive-id <drive-uuid> \
-  --vault-path /path/to/arscontexta/methodology/
 ```
 
 This uses MCP Streamable HTTP for bulk creation and is ~10x faster than individual MCP tool calls.
+
+### Known issues with CLI import
+
+- **Title truncation:** Very long claim titles (80+ chars) may be truncated by the API. This causes wiki-link resolution in Pass 2 to miss ~1,500 connections (target title doesn't match truncated drive name). The Node.js MCP script doesn't have this limitation.
+- **Connection IDs:** Use globally unique IDs (the script uses `conn-{md5hash}`). Reusing simple sequential IDs like `conn-0-1` causes React key collisions in Connect's editor.
 
 ## Downloading methodology from GitHub (marketplace installs)
 
