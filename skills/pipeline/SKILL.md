@@ -151,7 +151,35 @@ Use `/powerhouse-knowledge:verify` on all notes from this pipeline run:
 
 Record final handoff — task auto-completes on the last phase.
 
-### Step 6: Handle failures
+### Step 6: HEALTH CHECK + AUTO-FIX (automatic after verify)
+
+After the pipeline task completes, **automatically run /health and act on recommendations:**
+
+1. **Run health check** — gather metrics from subgraph, check all notes
+2. **Write report** to `bai/health-report` document
+3. **Auto-fix actionable recommendations:**
+
+| Recommendation | Auto-fix action |
+|---|---|
+| "Create MOC for X topic (N notes)" | Run `/synthesize` — create `bai/moc` with core ideas |
+| "N notes missing descriptions" | Generate descriptions from title + content, dispatch SET_DESCRIPTION |
+| "N notes not grounded in methodology" | Search research claims, add BUILDS_ON links |
+| "N notes missing types" | Infer from content, dispatch SET_NOTE_TYPE |
+| "Broken PENDING pipeline task" | Dispatch COMPLETE_TASK to clean up |
+
+4. **Re-run health** after fixes to confirm improvement
+5. **Report final status:**
+
+```
+=== POST-PIPELINE HEALTH ===
+Before: WARN (3 issues)
+Fixed: Created MOC, added 2 methodology links
+After: PASS (0 issues)
+```
+
+**Only escalate to human:** Recite test failures (description doesn't predict content), genuine tensions between notes, methodology conflicts.
+
+### Step 7: Handle failures
 
 ```
 FAIL_TASK { taskId, reason, updatedAt } — mark as failed with reason
