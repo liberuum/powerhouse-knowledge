@@ -264,6 +264,35 @@ The knowledge management workflow follows 6 phases (the "6 Rs"):
 - **Comprehensive extraction**: Skip rate < 10% for domain-relevant sources
 - **Minimum connectivity**: Every note should have >= 2 connections
 
+## CRITICAL: Operational rules
+
+These rules come from production testing. Violating them causes silent failures.
+
+### 1. Always verify after creating
+After creating any document (note, MOC, source, tension), **verify it exists in the drive**:
+```
+getDrive({ driveId }) → check the node appears in the file list
+```
+Don't assume creation succeeded — the MCP race condition, CLI bugs, or network issues can cause silent failures. If the document is missing from the drive tree, it was not created properly.
+
+### 2. Never batch dependent operations
+`docs apply` reverses operation order. Pipeline operations (ADD_TASK → ASSIGN_TASK → ADVANCE_PHASE) must be dispatched **one at a time** via `docs mutate`, not batched. Independent operations (SET_TITLE + SET_DESCRIPTION + SET_CONTENT) are safe to batch.
+
+### 3. Separate content from provenance
+Always dispatch in two batches:
+- **Batch 1:** SET_TITLE, SET_DESCRIPTION, SET_NOTE_TYPE, SET_CONTENT, ADD_TOPIC
+- **Batch 2:** SET_PROVENANCE (separate — validation failures kill the entire batch)
+Valid sourceOrigin: `DERIVED`, `IMPORT`, `MANUAL`, `SESSION_MINE`
+
+### 4. Don't use MCP for bulk imports
+MCP SSE transport crashes after ~150 rapid connections. Use the switchboard CLI or the import scripts for any operation involving 50+ documents.
+
+### 5. Pre-flight: ensure methodology exists
+Before running the pipeline, check `/research/` has 200+ research claims. If not, import them first. Without methodology, cross-referencing and grounding checks can't work.
+
+### 6. Health check must verify, not assume
+After auto-fixing health recommendations (creating MOCs, adding descriptions, etc.), **re-read the drive tree** to confirm the fixes actually applied. Don't report PASS based on what you dispatched — report based on what you verified exists.
+
 ## Source-first workflow
 
 Content enters the vault as sources, then gets processed:

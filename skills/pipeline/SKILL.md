@@ -15,6 +15,20 @@ Source -> CREATE (extract claims) -> REFLECT (connect) -> REWEAVE (update old no
 
 Each phase is tracked in the `bai/pipeline-queue` singleton document.
 
+## Pre-flight: Ensure methodology is imported
+
+Before running the pipeline, check if research claims exist in `/research/`:
+
+```
+mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
+// Count files where documentType === "bai/research-claim"
+```
+
+If count < 200 (methodology not imported), run `/powerhouse-knowledge:setup` first. The pipeline's methodology cross-referencing step requires the 249 research claims to be present. Without them, the METHODOLOGY_GROUNDING health check will always WARN.
+
+For CLI: `python3 scripts/import-methodology.py <drive-slug>`
+For MCP script: `node scripts/import-research-claims.mjs --drive-id <uuid> --vault-path <plugin>/data/methodology/`
+
 ## Full Pipeline Run
 
 ### Step 1: Find pending tasks

@@ -156,6 +156,7 @@ Choose the most specific type for each claim:
 - [ ] All notes have at least one topic tag
 - [ ] Provenance traces back to the source (sourceOrigin: DERIVED)
 - [ ] Skip rate < 10% for domain-relevant content
-- [ ] All created notes verified in drive tree (no ghost nodes)
+- [ ] **All created notes verified in drive tree** — read the drive after creation and confirm each note exists as a file node. Don't assume creation succeeded.
+- [ ] **Content and provenance in separate batches** — never batch SET_PROVENANCE with content actions
 
 If "$ARGUMENTS" is provided, treat it as the source document ID to extract from.

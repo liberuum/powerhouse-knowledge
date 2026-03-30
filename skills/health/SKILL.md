@@ -52,6 +52,8 @@ Also read individual notes via MCP to check:
 
 **METHODOLOGY_GROUNDING check:** For each knowledge note, check if it has at least one outgoing link to a `bai/research-claim` document. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation. The verify skill auto-repairs this by searching for matching claims.
 
+**CRITICAL: Verify, don't assume.** After auto-fixing any health recommendation (creating MOCs, adding descriptions, importing methodology), **re-read the drive tree** to confirm the fix actually applied. Don't report PASS based on what you dispatched — report PASS based on what you verified exists in the drive. Silent failures are common (MCP race condition, CLI bugs, network issues).
+
 ### Step 3: Save to bai/health-report document
 
 Find or create the health report document in `/ops/health/`:

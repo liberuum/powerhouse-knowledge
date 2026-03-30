@@ -144,14 +144,15 @@ mcp__reactor-mcp__addActions({
 })
 ```
 
-### Step 7: Verify drive nodes
+### Step 7: Verify MOCs actually exist
 
-After creating all MOCs, verify they appear in the drive tree:
+**CRITICAL:** Don't assume creation succeeded. After creating all MOCs, **read the drive tree and confirm each MOC appears**:
 ```
 mcp__reactor-mcp__getDrive({ driveId: "<drive-uuid>" })
-// Check each MOC ID exists as a file node
-// Repair missing with ADD_FILE if needed
+// Check each MOC ID exists as a file node with documentType === "bai/moc"
+// If missing: the creation silently failed — recreate
 ```
+Only report MOC_COHERENCE as PASS after verification, not after dispatching the create.
 
 ## Output
 
