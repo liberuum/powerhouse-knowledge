@@ -23,18 +23,22 @@ Pipeline operations (ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE, COMPLETE_TASK, FAIL_T
 
 The CLI auto-injects `timestampUtcMs` and `action.id` on all actions — no need to generate them manually.
 
-## Pre-flight: Ensure methodology is imported
+## Pre-flight: Verify methodology files are available locally
 
-Before running the pipeline, check if research claims exist in `/research/`:
+The 249 Ars Contexta research claims are bundled with the plugin in `data/methodology/*.md`. They are **not** stored in the remote vault — the agent reads them directly from disk during the cross-reference step.
 
+Before running the pipeline, confirm the files exist:
 ```bash
-switchboard docs tree <drive-slug> --format json
-# Count files where documentType === "bai/research-claim"
+ls data/methodology/*.md | wc -l
+# Should be 249
 ```
 
-If count < 200 (methodology not imported), run `/powerhouse-knowledge:setup` first. The pipeline's methodology cross-referencing step requires the 249 research claims to be present.
-
-For CLI: `python3 scripts/import-methodology.py <drive-slug>`
+If the `data/methodology/` directory is missing (e.g., marketplace install without data), clone it from GitHub:
+```bash
+git clone --depth 1 --filter=blob:none --sparse https://github.com/liberuum/powerhouse-knowledge.git /tmp/pk-methodology
+cd /tmp/pk-methodology && git sparse-checkout set data/methodology
+cp -r /tmp/pk-methodology/data/methodology/ <plugin-dir>/data/methodology/
+```
 
 ## Full Pipeline Run
 
@@ -91,11 +95,11 @@ Use `/powerhouse-knowledge:connect` on each extracted note:
 - Create typed links (RELATES_TO, BUILDS_ON, CONTRADICTS, SUPERSEDES, DERIVED_FROM)
 - Target: >= 2 links per note, no orphans
 
-Then **cross-reference with methodology claims** in `/research/`:
-- For each extracted note, search the 249 research claims by topic and keywords
-- Create BUILDS_ON links when a note implements or validates a methodology claim
-- Create CONTRADICTS links when a note challenges a claim
-- This grounds working knowledge in the theoretical foundation
+Then **cross-reference with local methodology files** in the plugin's `data/methodology/`:
+- For each extracted note, search the 249 research claim files by topic and keywords (using Grep on `data/methodology/*.md`)
+- Append a "Methodology grounding" section to the note's content referencing matching claims
+- Use BUILDS_ON when a note implements or validates a research claim, CONTRADICTS when it challenges one
+- This grounds working knowledge in the theoretical foundation without requiring remote import
 
 **MANDATORY: Create MOCs via `/powerhouse-knowledge:synthesize`:**
 - Group notes by shared topics (aggregate `topics[]` from all note states)
@@ -180,7 +184,7 @@ After the pipeline task completes, **automatically run /health and act on recomm
 |---|---|
 | "Create MOC for X topic (N notes)" | Run `/synthesize` — create `bai/moc` with core ideas |
 | "N notes missing descriptions" | Generate descriptions from title + content, dispatch SET_DESCRIPTION |
-| "N notes not grounded in methodology" | Search research claims, add BUILDS_ON links |
+| "N notes not grounded in methodology" | Search local methodology files, add grounding references to note content |
 | "N notes missing types" | Infer from content, dispatch SET_NOTE_TYPE |
 | "Broken PENDING pipeline task" | Dispatch COMPLETE_TASK to clean up |
 
@@ -190,7 +194,7 @@ After the pipeline task completes, **automatically run /health and act on recomm
 ```
 === POST-PIPELINE HEALTH ===
 Before: WARN (3 issues)
-Fixed: Created MOC, added 2 methodology links
+Fixed: Created MOC, added 2 methodology grounding references
 After: PASS (0 issues)
 ```
 
@@ -252,7 +256,7 @@ After completing all phases, report:
 === PIPELINE COMPLETE ===
 Source: "<title>"
 Claims extracted: N (skip rate: X%)
-Links created: N (N BUILDS_ON, N RELATES_TO, N cross-references to research claims)
+Links created: N (N BUILDS_ON, N RELATES_TO) | Methodology references: N
 Auto-repaired: N issues (descriptions, provenance, types)
 Health: N PASS, N WARN, N FAIL
 Drive verified: all N notes have file nodes

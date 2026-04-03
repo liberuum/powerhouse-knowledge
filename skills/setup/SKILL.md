@@ -1,43 +1,26 @@
 ---
 name: setup
-description: Initialize a Knowledge Vault with the Ars Contexta methodology. Checks if the vault is ready, imports 249 research claims into /research/, and verifies the setup. Run once per vault — idempotent (skips if already populated).
+description: Initialize a Knowledge Vault — verify drive structure, folder layout, and singleton documents are in place. The Ars Contexta methodology (249 research claims) is bundled locally with the plugin and does NOT need to be imported into the vault.
 ---
 
-# Vault Methodology Setup
+# Vault Setup
 
-Initialize a Knowledge Vault drive with the Ars Contexta methodology foundation — 249 interconnected research claims about tools for thought, knowledge management, and agent-native cognitive architecture.
+Verify that a Knowledge Vault drive is ready for use — correct folder structure, singleton documents exist, and the plugin's local methodology files are accessible.
 
 ## When to use
 
 - First time connecting the plugin to a vault drive
 - After creating a new vault drive
-- When the user asks to set up or initialize the methodology
+- When the user asks to set up or initialize the vault
 - When `/setup` is invoked explicitly
 
 ## Prerequisites
 
 - Reactor running (`ph vetra --watch` or remote reactor)
 - A vault drive exists (created via Connect UI or CLI)
-- The drive has the Ars Contexta folder structure (`/research/` folder exists)
 - `switchboard` CLI installed and configured (`switchboard config use local` or appropriate profile, `switchboard introspect` run once)
 
-## Primary Method: Switchboard CLI Script (recommended)
-
-```bash
-# From the plugin directory — uses switchboard CLI for all operations
-python3 scripts/import-methodology.py <drive-slug>
-```
-
-This script:
-- Parses all 249 markdown files from `data/methodology/`
-- Pass 1: Creates `bai/research-claim` docs via `switchboard docs create` (skips existing)
-- Pass 2: Resolves wiki-link connections via `switchboard docs mutate --op addResearchConnection`
-- Uses deterministic connection IDs (md5 hash of source+target) — safe to re-run
-- Takes ~2 minutes for 249 claims + ~1,240 connections
-
-## Manual Setup Process (fallback)
-
-Use this when the CLI script is unavailable.
+## Setup Process
 
 ### Step 1: Find the vault drive
 
@@ -47,173 +30,69 @@ switchboard drives list --format json
 
 If multiple drives exist, ask the user which one to set up. If only one non-vetra drive exists, use that.
 
-### Step 2: Check current state
+### Step 2: Verify folder structure
 
 ```bash
 switchboard docs tree <drive-slug> --format json
 ```
 
-Verify:
-- The `/research/` folder exists → get its folder ID
-- If no `/research/` folder, the drive hasn't been initialized → suggest opening it in Connect first (the Knowledge Vault app auto-creates the folder structure)
+The vault needs these folders:
+| Folder | Purpose |
+|--------|---------|
+| `/knowledge/` | MOCs |
+| `/knowledge/notes/` | Atomic knowledge notes |
+| `/sources/` | Source material |
+| `/ops/` | Operational documents |
+| `/ops/queue/` | Pipeline queue singleton |
+| `/ops/health/` | Health report singleton |
+| `/self/` | Config and graph singletons |
 
-### Step 3: Check if methodology is already imported
+If folders are missing, the vault hasn't been initialized — suggest opening it in Connect first (the Knowledge Vault app auto-creates the folder structure).
+
+### Step 3: Verify singleton documents
 
 ```bash
 switchboard docs list --drive <drive-slug> --format json
 ```
 
-Count documents of type `bai/research-claim`. If count >= 200, the methodology is already imported → report status and skip.
+Check that these exist:
+- `bai/vault-config` in `/self/`
+- `bai/knowledge-graph` in `/self/`
+- `bai/pipeline-queue` in `/ops/queue/`
 
-### Step 4: Read the methodology source files
-
-The 249 Ars Contexta research claims live as markdown files with YAML frontmatter. The plugin tries three locations in order:
-
-1. **Bundled in plugin**: `data/methodology/` inside the plugin directory (included when cloned from GitHub)
-2. **Local Ars Contexta repo**: `/home/p/Powerhouse/arscontexta/methodology/` (development)
-3. **Download from GitHub**: If neither exists, fetch from `https://raw.githubusercontent.com/liberuum/powerhouse-knowledge/main/data/methodology/`
-
-**To find the bundled files**, use the Glob tool to search for `**/powerhouse-knowledge/data/methodology/*.md`. If the plugin was installed via marketplace and the data directory is missing, download the file listing from the GitHub repo and fetch each file.
-
-Each file has:
-```yaml
----
-description: "Claim summary"
-kind: "research|foundation|methodology|principle|example"
-methodology: [list of methods]
-source: "source reference"
-topics: [topic-a, topic-b]
-confidence: "grounded|established|speculative"
----
-
-# Claim title (same as filename without .md)
-
-Full content with [[wiki links]] to other claims...
-
-Relevant Notes:
-- [[Other claim title]] — context phrase
-- [[Another claim]] — why they're connected
-
-Topics:
-- [[topic-name]]
+If missing, create them:
+```bash
+switchboard docs create --type bai/pipeline-queue --name "Pipeline Queue" --drive <drive-slug> --parent-folder <ops-queue-folder-uuid> --format json
 ```
 
-### Step 5: Two-pass import
+### Step 4: Verify local methodology files
 
-**Pass 1 — Create all 249 claim documents:**
-
-For each `.md` file in the methodology directory:
+The 249 Ars Contexta research claims are bundled with the plugin in `data/methodology/*.md`. They are **not** imported into the vault — the agent reads them directly from disk during connect, verify, and pipeline phases.
 
 ```bash
-switchboard docs create --type bai/research-claim --name "<filename without .md>" --drive <drive-slug> --parent-folder <research-folder-uuid> --format json
+ls data/methodology/*.md | wc -l
+# Should be 249
 ```
 
-Then populate the claim:
+If the `data/methodology/` directory is missing (marketplace install), clone from GitHub:
 ```bash
-switchboard docs mutate <new-doc-id> --op createClaim --input '{
-  "title": "<filename without .md>",
-  "description": "<frontmatter description>",
-  "content": "<body content before Relevant Notes section>",
-  "kind": "<frontmatter kind, default: research>",
-  "methodology": ["<frontmatter methodology array>"],
-  "sources": ["<frontmatter source>"],
-  "topics": ["<extracted from frontmatter and Topics section>"]
-}'
-```
-
-Save a **title → document ID map** for pass 2.
-
-**Pass 2 — Resolve connections:**
-
-For each claim that has a "Relevant Notes" section:
-```
-Parse lines like: - [[target title]] — context phrase
-Look up target title in the title→ID map
-```
-
-```bash
-switchboard docs mutate <source-claim-id> --op addResearchConnection --input '{
-  "id": "<generate-unique-id>",
-  "targetRef": "<target-document-id>",
-  "contextPhrase": "<context phrase from the link>"
-}'
-```
-
-For claims with multiple connections, you can batch them:
-```bash
-switchboard docs apply <source-claim-id> --actions '[
-  { "type": "ADD_RESEARCH_CONNECTION", "input": { "id": "<uid-1>", "targetRef": "<target-1>", "contextPhrase": "..." }, "scope": "global" },
-  { "type": "ADD_RESEARCH_CONNECTION", "input": { "id": "<uid-2>", "targetRef": "<target-2>", "contextPhrase": "..." }, "scope": "global" }
-]'
-```
-
-### Step 6: Report results
-
-```
-=== Methodology Setup Complete ===
-Claims imported: 249
-Connections resolved: ~2,676
-Connections unresolved: ~23 (external references)
-Location: /research/ folder
-```
-
-## Alternative: Node.js MCP script
-
-```bash
-node /path/to/bai-knowledge-note/scripts/import-research-claims.mjs \
-  --drive-id <drive-uuid> \
-  --vault-path /path/to/powerhouse-knowledge/data/methodology/
-```
-
-This uses MCP Streamable HTTP for bulk creation and is ~10x faster than individual tool calls.
-
-### Known issues with CLI import
-
-- **Title truncation:** Very long claim titles (80+ chars) may be truncated by the API. This causes wiki-link resolution in Pass 2 to miss ~1,500 connections (target title doesn't match truncated drive name). The Node.js MCP script doesn't have this limitation.
-- **Connection IDs:** Use globally unique IDs (the script uses `conn-{md5hash}`). Reusing simple sequential IDs like `conn-0-1` causes React key collisions in Connect's editor.
-
-## Downloading methodology from GitHub (marketplace installs)
-
-If the plugin was installed via marketplace and the `data/methodology/` directory is missing, download the files:
-
-```bash
-# Clone just the data directory
 git clone --depth 1 --filter=blob:none --sparse https://github.com/liberuum/powerhouse-knowledge.git /tmp/pk-methodology
 cd /tmp/pk-methodology && git sparse-checkout set data/methodology
-# Then use /tmp/pk-methodology/data/methodology/ as the vault-path
+cp -r /tmp/pk-methodology/data/methodology/ <plugin-dir>/data/methodology/
 ```
 
-Or fetch individual files via the GitHub raw URL:
+### Step 5: Report results
+
 ```
-https://raw.githubusercontent.com/liberuum/powerhouse-knowledge/main/data/methodology/<filename>.md
+=== Vault Setup Complete ===
+Drive: <drive-name> (<drive-uuid>)
+Folders: ✓ all present
+Singletons: ✓ pipeline-queue, vault-config, knowledge-graph
+Methodology: ✓ 249 claims available locally (not imported to vault)
+Status: Ready for use
 ```
 
-## Document model: `bai/research-claim`
-
-**State:**
-- `title` — Declarative claim statement (the filename)
-- `description` — Brief summary
-- `content` — Full markdown body with arguments and evidence
-- `kind` — research, foundation, methodology, principle, example
-- `methodology[]` — Research methods used
-- `sources[]` — Source references
-- `topics[]` — Topic tags
-- `connections[]` — Cross-claim links (`{ id, targetRef, contextPhrase }`)
-
-**Operations:**
-- `CREATE_CLAIM` — Initialize all fields at once
-- `ADD_RESEARCH_CONNECTION` — Link to another claim
-- `REMOVE_RESEARCH_CONNECTION` — Remove a link
-- `UPDATE_CLAIM_CONTENT` — Update the content body
-
-## Idempotency
-
-This skill is safe to run multiple times:
-- If methodology is already imported (>= 200 research claims exist), it reports status and skips
-- If partially imported (some claims exist), suggest cleaning up and re-running the import script
-- The import script itself is idempotent per run (creates new docs each time, doesn't duplicate)
-
-## What the methodology provides
+## What the methodology provides (locally)
 
 The 249 claims are the theoretical foundation for how the Knowledge Vault works:
 - **Processing pipeline design** — why 6Rs, why each phase matters
@@ -222,4 +101,13 @@ The 249 claims are the theoretical foundation for how the Knowledge Vault works:
 - **Cognitive science backing** — attention management, cognitive offloading, memory systems
 - **Agent design patterns** — how AI agents should operate knowledge systems
 
-The Claude plugin uses these claims as reference when processing sources, extracting notes, and maintaining vault quality.
+The agent reads these files directly from `data/methodology/` during:
+- **Connect phase** — searching for methodology backing when creating note connections
+- **Verify phase** — checking if notes are grounded in methodology
+- **Health check** — reporting METHODOLOGY_GROUNDING status
+
+No remote import, no `bai/research-claim` documents, no `/research/` folder needed.
+
+## Idempotency
+
+This skill is safe to run multiple times — it only checks and creates missing structure, never duplicates.

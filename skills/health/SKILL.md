@@ -80,15 +80,16 @@ Extract per note:
 - `provenance.sourceOrigin` — present or missing
 - `content` — present and length
 
-## Step 3: Check methodology grounding via subgraph
+## Step 3: Check methodology grounding via note content
 
-For each note, query forward links and check if any target a `bai/research-claim`:
+For each note, check if its content includes a "Methodology grounding" section referencing at least one claim from the plugin's local `data/methodology/` files. Read each note's state:
 
 ```bash
-switchboard query '{ knowledgeGraphForwardLinks(driveId: "<UUID>", documentId: "<NOTE-ID>") { targetDocumentId linkType targetTitle } }'
+switchboard docs get <note-id> --state --format json
+# Check if state.global.content contains "## Methodology grounding"
 ```
 
-Cross-reference `targetDocumentId` against the list of research claim IDs from the drive tree. A note is **grounded** if it has at least one BUILDS_ON or RELATES_TO link to a research claim.
+A note is **grounded** if its content references at least one methodology claim. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation.
 
 ## Step 4: Check MOC coverage
 
@@ -109,7 +110,7 @@ From the drive tree, find all `bai/moc` documents. For each topic that appears o
 | LINK_HEALTH | avg links >= 2.0 | avg >= 1.0 | avg < 1.0 |
 | DESCRIPTION_QUALITY | all present + informative | 1-2 missing or restated | 3+ missing |
 | MOC_COHERENCE | all 3+ note topics have MOCs | 1-2 gaps | 3+ gaps |
-| METHODOLOGY_GROUNDING | all notes link to research claims | some ungrounded | many ungrounded |
+| METHODOLOGY_GROUNDING | all notes reference methodology in content | some ungrounded | many ungrounded |
 | PROCESSING_THROUGHPUT | 0 pending pipeline tasks | 1-2 pending | 3+ pending or FAILED |
 | STALE_NOTES | 0 DRAFT notes > 30 days | 1-3 stale | 4+ stale |
 
@@ -118,10 +119,7 @@ From the drive tree, find all `bai/moc` documents. For each topic that appears o
 - Restatement: if description uses >70% same words as title = WARN
 - Must add scope, mechanism, or implication beyond the title
 
-**Methodology grounding:**
-- For each note, check forward links for targets in the research claim set
-- Notes linked to at least one research claim via BUILDS_ON or RELATES_TO = grounded
-- Ungrounded notes are "floating" — recommend `/connect` to find matching claims
+**METHODOLOGY_GROUNDING check:** For each knowledge note, check if its content includes a "Methodology grounding" section referencing at least one claim from the plugin's local `data/methodology/` files. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation. The verify skill auto-repairs this by searching local methodology files and appending grounding references to the note's content.
 
 **CRITICAL: Verify, don't assume.** After auto-fixing any health recommendation, **re-read the drive tree and re-query the subgraph** to confirm. Don't report PASS based on what you dispatched — report PASS based on what you verified. Silent failures are common with remote reactors (race conditions, CLI bugs, network latency).
 
@@ -185,7 +183,7 @@ Write to `/tmp/health-checks.json` and apply via `--file` to avoid shell escapin
 | Missing provenance | `docs mutate --op setProvenance` with sourceOrigin: DERIVED |
 | Missing note types | Infer from content, `docs mutate --op setNoteType` |
 | Missing topics | Identify from content, `docs mutate --op addTopic` |
-| Ungrounded notes | Search research claims by topic, add BUILDS_ON links via `docs mutate --op addLink` |
+| Ungrounded notes | Search local methodology files, add grounding references to note content via `docs mutate --op setContent` |
 | Missing MOCs | **Auto-create**: find topic clusters with 3+ notes and no MOC, create `bai/moc` via `docs create` + `CREATE_MOC` + `ADD_CORE_IDEA` per note. Verify in drive tree. |
 | Stale DRAFT notes | Submit for review via `docs mutate --op submitForReview` |
 

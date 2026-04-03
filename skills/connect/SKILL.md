@@ -33,37 +33,37 @@ switchboard docs mutate <source-note-id> --op addLink --input '{
 
 ## Methodology cross-reference
 
-After connecting notes to each other, **search the 249 research claims in `/research/`** for methodology backing:
+After connecting notes to each other, **search the local methodology files** for research backing. The 249 Ars Contexta research claims are bundled with the plugin in `data/methodology/*.md` — they are **not** stored in the remote vault.
 
-1. For each new note, search research claims by topic and keywords:
+1. For each new note, search the local methodology files by topic and keywords:
 ```bash
-# List all documents and filter by type
-switchboard docs list --drive <drive-slug> --format json
-# Filter: documentType === "bai/research-claim"
-# Match: topics overlap OR title contains similar keywords
+# Search methodology files by keyword (from the plugin directory)
+grep -rl "<keyword from note>" data/methodology/*.md
 ```
 
-Or use the subgraph:
-```bash
-switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "<keyword from note>") { documentId title } }'
+Or use the Grep tool to search file contents and the Glob tool to list all `data/methodology/*.md` files. Each file has YAML frontmatter with `description`, `topics`, and `methodology` fields that help match against the note.
+
+2. For each matching claim, **record the methodology reference in the note's content** rather than creating a document link (since the claim has no remote document ID):
+
+Add a "Methodology grounding" section to the note's content via `SET_CONTENT`:
+```markdown
+## Methodology grounding
+- **[[claim title]]** — how this note relates to the claim (BUILDS_ON / CONTRADICTS / RELATES_TO)
 ```
 
-2. For each matching claim, create a cross-link from the note to the claim:
 ```bash
-switchboard docs mutate <note-id> --op addLink --input '{
-  "id": "<unique-id>",
-  "targetDocumentId": "<research-claim-id>",
-  "targetTitle": "<claim title>",
-  "linkType": "BUILDS_ON"
+switchboard docs mutate <note-id> --op setContent --input '{
+  "content": "<existing content + methodology grounding section>",
+  "updatedAt": "<ISO>"
 }'
 ```
 
-**Link type selection for methodology:**
+**Relationship types for methodology:**
 - `BUILDS_ON` — note implements or validates the research claim
 - `CONTRADICTS` — note's findings challenge the methodology claim
 - `RELATES_TO` — thematic connection without direct support/conflict
 
-**Why this matters:** Cross-referencing grounds working knowledge in the methodology foundation. When someone asks "why is the vault designed this way?", the links trace from notes → research claims → cognitive science backing.
+**Why this matters:** Cross-referencing grounds working knowledge in the methodology foundation. The claims live locally as plugin reference data — the agent reads them directly from disk, which is faster and requires no remote import step.
 
 ## Tension detection
 

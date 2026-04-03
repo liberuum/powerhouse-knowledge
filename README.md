@@ -4,7 +4,7 @@ Claude Code plugin for the Powerhouse Knowledge Vault. Enables AI agents to quer
 
 ## What it does
 
-This plugin connects Claude Code to a Powerhouse reactor running the Knowledge Vault document models (`bai/knowledge-note`, `bai/research-claim`, and 9 others). It provides 13 skills for knowledge management, an MCP server for direct document access, and an agent definition optimized for knowledge work.
+This plugin connects Claude Code to a Powerhouse reactor running the Knowledge Vault document models (`bai/knowledge-note`, `bai/moc`, and 9 others). It provides 13 skills for knowledge management, an MCP server for direct document access, and an agent definition optimized for knowledge work. The Ars Contexta methodology (249 research claims) is bundled locally in `data/methodology/` and read from disk — no remote import needed.
 
 ## Prerequisites
 
@@ -86,7 +86,7 @@ claude --plugin-dir /path/to/powerhouse-knowledge
 /powerhouse-knowledge:setup
 ```
 
-This imports the Ars Contexta methodology (249 research claims) into the `/research/` folder. Idempotent — skips if already imported.
+This verifies the vault drive structure, folder layout, and singleton documents are ready. The methodology is bundled locally — no import step needed.
 
 ### 4. Start building knowledge
 
@@ -122,7 +122,7 @@ The plugin connects to a Powerhouse reactor via MCP. These tools are available:
 | `bai/knowledge-note` | Atomic knowledge claims | `/knowledge/notes/` |
 | `bai/source` | Raw input material | `/sources/` |
 | `bai/moc` | Maps of Content (topic navigation) | `/knowledge/` |
-| `bai/research-claim` | Methodology foundation (249 claims) | `/research/` |
+| _(methodology)_ | _(local: `data/methodology/*.md`, not in vault)_ | _(plugin directory)_ |
 | `bai/pipeline-queue` | Processing pipeline tracker (singleton) | `/ops/queue/` |
 | `bai/health-report` | Vault health diagnostics (singleton) | `/ops/health/` |
 | `bai/vault-config` | Vault configuration (singleton) | `/self/` |
@@ -170,7 +170,7 @@ Source (article/transcript)
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| Setup | `/powerhouse-knowledge:setup` | Initialize vault with Ars Contexta methodology (249 research claims) |
+| Setup | `/powerhouse-knowledge:setup` | Verify vault structure, folders, and singletons are ready |
 | Import | `/powerhouse-knowledge:import <path>` | Bulk import from markdown, Obsidian, or Ars Contexta vaults |
 | Export | `/powerhouse-knowledge:export [path]` | Export vault as markdown, JSON, or .phd backup |
 
@@ -200,7 +200,7 @@ The plugin includes a `knowledge-agent` that activates by default. This agent:
 - Understands all 11 document models and their operations
 - Follows the 6-phase processing pipeline (Record, Reduce, Reflect, Reweave, Verify, Rethink)
 - Enforces quality principles (atomic claims, articulation test, minimum connectivity)
-- References the Ars Contexta methodology (249 research claims) for design decisions
+- References the Ars Contexta methodology (249 research claims, bundled locally) for design decisions
 - Auto-repairs common issues during verification (missing descriptions, provenance, types)
 - Can analyze graph structure for synthesis opportunities
 
@@ -209,7 +209,7 @@ The plugin includes a `knowledge-agent` that activates by default. This agent:
 | Model | Type | Operations | Purpose |
 |-------|------|-----------|---------|
 | Knowledge Note | `bai/knowledge-note` | 26 | Atomic knowledge claims |
-| Research Claim | `bai/research-claim` | 4 | Methodology foundation |
+| _(Methodology)_ | _(local files)_ | _(249 claims)_ | _(bundled in `data/methodology/`)_ |
 | Knowledge Graph | `bai/knowledge-graph` | 7 | Materialized graph singleton |
 | Map of Content | `bai/moc` | 12 | Topic navigation |
 | Source | `bai/source` | 4 | Ingested source material |

@@ -34,7 +34,7 @@ Check the note has all expected fields populated:
 - [ ] **Topic coverage**: Note belongs to at least one topic
 - [ ] **Description length**: Between 80-200 characters
 - [ ] **Content length**: At least 200 characters of substantive prose
-- [ ] **Methodology grounding**: Note has at least one link to a `bai/research-claim` in `/research/` — working knowledge should be traceable to the methodology foundation
+- [ ] **Methodology grounding**: Note content includes a "Methodology grounding" section referencing at least one research claim from the plugin's `data/methodology/` files
 
 ## Auto-repair (fix before reporting)
 
@@ -58,18 +58,14 @@ switchboard docs mutate <note-id> --op setNoteType --input '{"noteType": "<infer
 ```
 
 ### Missing methodology grounding
-Search research claims by keywords from the note's title and topics. If a relevant claim is found, add a BUILDS_ON link:
-```bash
-# Search claims
-switchboard docs list --drive <drive-slug> --format json
-# Filter bai/research-claim docs whose title/topics overlap with the note
+Search the plugin's local methodology files (`data/methodology/*.md`) by keywords from the note's title and topics. Use the Grep tool to find matching claims by title, description, or topic overlap.
 
-# Add cross-link
-switchboard docs mutate <note-id> --op addLink --input '{
-  "id": "<unique-id>",
-  "targetDocumentId": "<research-claim-id>",
-  "targetTitle": "<claim title>",
-  "linkType": "BUILDS_ON"
+If a relevant claim is found, append a "Methodology grounding" section to the note's content:
+
+```bash
+switchboard docs mutate <note-id> --op setContent --input '{
+  "content": "<existing content>\n\n## Methodology grounding\n- **[[claim title]]** — how this note relates to the claim (BUILDS_ON)",
+  "updatedAt": "<ISO>"
 }'
 ```
 

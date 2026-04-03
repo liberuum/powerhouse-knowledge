@@ -260,15 +260,19 @@ switchboard docs mutate $PQ --op assignTask --input '{"taskId":"task-1","assigne
 switchboard docs mutate $PQ --op advancePhase --input '{"taskId":"task-1","handoff":{"id":"h-verify","phase":"verify","workDone":"All notes PASS","filesModified":["<ids>"],"completedAt":"2026-03-30T16:03:00Z","completedBy":"knowledge-agent"},"updatedAt":"2026-03-30T16:03:00Z"}'
 ```
 
-### 6. Methodology Cross-Reference
+### 6. Methodology Cross-Reference (Local)
+
+Methodology claims are read from the plugin's local `data/methodology/*.md` files, not from the remote vault. Use Grep/Read tools to search them:
 
 ```bash
-# Search methodology subgraph for matching claims
-switchboard query '{ methodologySearch(driveId: "<uuid>", query: "local-first", limit: 3) { documentId title } }'
+# Search local methodology files by keyword
+grep -rl "local-first" data/methodology/*.md
 
-# Link note to matching research claim
-switchboard docs mutate <note-id> --op addLink --input '{"id":"lm1","targetDocumentId":"<claim-uuid>","targetTitle":"claim title","linkType":"BUILDS_ON"}'
+# Read a specific claim
+cat "data/methodology/claim title.md"
 ```
+
+After finding a matching claim, reference it in the note's content (via SET_CONTENT), not as a document link.
 
 ### 7. Lifecycle
 ```bash
@@ -342,11 +346,17 @@ switchboard docs delete <doc-id> -y
 switchboard drives delete <drive-slug> -y
 ```
 
-## Methodology Import
+## Methodology Reference (Local)
+
+The 249 Ars Contexta research claims are bundled with the plugin in `data/methodology/*.md`. They are read directly from disk by the agent — no import to the vault is needed.
 
 ```bash
-# Import 249 Ars Contexta research claims into /research/
-python3 scripts/import-methodology.py knowledge-vault
-```
+# List all methodology files
+ls data/methodology/*.md | wc -l  # Should be 249
 
-The script is in the plugin's `scripts/` directory. It uses the CLI for all operations and is idempotent (skips existing claims on re-run).
+# Search by keyword
+grep -rl "cognitive offloading" data/methodology/*.md
+
+# Read a specific claim's frontmatter
+head -20 "data/methodology/cognitive offloading is the architectural foundation for vault design.md"
+```

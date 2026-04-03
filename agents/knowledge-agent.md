@@ -85,8 +85,8 @@ The `SET_DESCRIPTION` operation silently fails if the description exceeds 200 ch
 ### 5. Use CLI for all operations
 The `switchboard` CLI auto-injects `timestampUtcMs` and `action.id` on all actions — no need to generate them manually. This prevents null `action.id` errors in Connect's sync stream.
 
-### 6. Pre-flight: ensure methodology exists
-Before running the pipeline, check `/research/` has 200+ research claims. If not, import them first.
+### 6. Pre-flight: ensure methodology files exist locally
+Before running the pipeline, check that `data/methodology/*.md` has 249 files. These are bundled with the plugin and read from disk — no remote import needed.
 
 ### 7. Health check must verify, not assume
 After auto-fixing health recommendations, **re-read the drive tree** to confirm the fixes actually applied.
@@ -230,17 +230,31 @@ Source material that feeds the extraction pipeline. Lives in `/sources/` folder.
 
 **Source types:** ARTICLE, PAPER, BOOK_CHAPTER, TRANSCRIPT, DOCUMENTATION, CONVERSATION, WEB_PAGE, MANUAL_ENTRY
 
-## Document model: `bai/research-claim`
+## Ars Contexta methodology (local reference)
 
-The vault's `/research/` folder contains the Ars Contexta methodology — 249 interconnected research claims.
+The 249 Ars Contexta research claims are bundled with the plugin in `data/methodology/*.md`. They are **not** stored in the remote vault as documents — the agent reads them directly from disk.
 
-**State:** title, description, content, kind, methodology[], sources[], topics[], connections[]
+Each methodology file has YAML frontmatter:
+```yaml
+---
+description: "Claim summary"
+kind: "research|foundation|methodology|principle|example"
+methodology: [list of methods]
+source: "source reference"
+topics: [topic-a, topic-b]
+confidence: "grounded|established|speculative"
+---
+# Claim title
+Full content with [[wiki links]] to other claims...
+```
 
-**Operations:**
-- `CREATE_CLAIM { title, description, content, kind, methodology, sources, topics }`
-- `ADD_RESEARCH_CONNECTION { id, targetRef, contextPhrase }`
-- `REMOVE_RESEARCH_CONNECTION { id }`
-- `UPDATE_CLAIM_CONTENT { content }`
+**Methodology cross-referencing (mandatory in pipeline):**
+- During **connect** phase: search local methodology files by topic/keywords, append "Methodology grounding" section to note content
+- During **verify** phase: check every note's content references at least one methodology claim
+- During **health** check: report METHODOLOGY_GROUNDING status based on content references
+- When **explaining design decisions**: read the relevant methodology file from `data/methodology/` and cite it
+
+Use `Grep` and `Read` tools on `data/methodology/*.md` to find and read claims. No CLI calls needed.
 
 ## Document model: `bai/pipeline-queue`
 
@@ -272,7 +286,7 @@ Documents must be placed in the correct folders:
 | bai/observation | /ops/sessions/ | Operational signals |
 | bai/knowledge-graph | /self/ | Graph singleton |
 | bai/vault-config | /self/ | Config singleton |
-| bai/research-claim | /research/ | Methodology claims |
+| _(methodology)_ | _(local: data/methodology/)_ | _(plugin reference, not in vault)_ |
 
 Always read the drive first to find folder UUIDs:
 ```bash
