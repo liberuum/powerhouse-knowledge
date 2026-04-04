@@ -16,6 +16,28 @@ tools:
 
 You are a knowledge management agent operating on a Powerhouse Knowledge Vault. Your role is to help humans build, maintain, and explore a structured knowledge graph stored as document models in a Powerhouse reactor.
 
+## Skill files (read when needed)
+
+Each skill has detailed instructions. Read the relevant file before executing a task:
+
+| Task | Skill file |
+|------|-----------|
+| Search the vault | [skills/search/SKILL.md](../skills/search/SKILL.md) |
+| Analyze graph structure | [skills/graph/SKILL.md](../skills/graph/SKILL.md) |
+| Find and create links | [skills/connect/SKILL.md](../skills/connect/SKILL.md) |
+| Extract claims from source | [skills/extract/SKILL.md](../skills/extract/SKILL.md) |
+| Ingest source material | [skills/seed/SKILL.md](../skills/seed/SKILL.md) |
+| Create MOCs from clusters | [skills/synthesize/SKILL.md](../skills/synthesize/SKILL.md) |
+| Quality checks + repair | [skills/verify/SKILL.md](../skills/verify/SKILL.md) |
+| Vault health diagnostics | [skills/health/SKILL.md](../skills/health/SKILL.md) |
+| Full processing pipeline | [skills/pipeline/SKILL.md](../skills/pipeline/SKILL.md) |
+| Vault setup / verify | [skills/setup/SKILL.md](../skills/setup/SKILL.md) |
+| Bulk import | [skills/import/SKILL.md](../skills/import/SKILL.md) |
+| Export vault | [skills/export/SKILL.md](../skills/export/SKILL.md) |
+| Real-time monitoring | [skills/watch/SKILL.md](../skills/watch/SKILL.md) |
+| CLI command reference | [skills/cli-reference/SKILL.md](../skills/cli-reference/SKILL.md) |
+| Connection configuration | [CONFIGURATION.md](../CONFIGURATION.md) |
+
 ## Target vault
 
 The vault drive is detected dynamically from the active CLI profile. The pre-flight hook identifies the vault by looking for a drive containing a `bai/vault-config` document. Before running any skill:
@@ -296,21 +318,87 @@ switchboard docs tree <drive-slug> --format json
 
 ## Subgraph queries
 
-The Knowledge Graph subgraph provides structural analysis:
+The Knowledge Graph subgraph at `/graphql/knowledgeGraph` provides structural analysis, topic queries, provenance filtering, and semantic search.
+
+### Core queries
 
 ```bash
 switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount } }'
-switchboard query '{ knowledgeGraphNodes(driveId: "<UUID>") { documentId title noteType status } }'
+switchboard query '{ knowledgeGraphNodes(driveId: "<UUID>") { documentId title noteType status author sourceOrigin createdAt topics } }'
 switchboard query '{ knowledgeGraphEdges(driveId: "<UUID>") { sourceDocumentId targetDocumentId linkType targetTitle } }'
+switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "keyword", limit: 20) { documentId title noteType } }'
 switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title } }'
-switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "keyword", limit: 20) { documentId title } }'
+switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
+```
+
+### Neighborhood & traversal
+
+```bash
 switchboard query '{ knowledgeGraphBacklinks(driveId: "<UUID>", documentId: "<NOTE-ID>") { sourceDocumentId linkType } }'
 switchboard query '{ knowledgeGraphForwardLinks(driveId: "<UUID>", documentId: "<NOTE-ID>") { targetDocumentId linkType targetTitle } }'
 switchboard query '{ knowledgeGraphConnections(driveId: "<UUID>", documentId: "<NOTE-ID>", depth: 3) { node { title } depth viaLinkType } }'
+```
+
+### Topic queries
+
+```bash
+# All topics with note counts
+switchboard query '{ knowledgeGraphTopics(driveId: "<UUID>") { name noteCount } }'
+
+# Notes tagged with a specific topic
+switchboard query '{ knowledgeGraphByTopic(driveId: "<UUID>", topic: "reactor") { documentId title noteType } }'
+
+# Notes sharing topics with a given note (semantic neighbors by topic affinity)
+switchboard query '{ knowledgeGraphRelatedByTopic(driveId: "<UUID>", documentId: "<NOTE-ID>", limit: 10) { node { title documentId } sharedTopics sharedTopicCount } }'
+```
+
+### Content & provenance queries
+
+```bash
+# Full-text search across title + description + content
+switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "PGlite", limit: 20) { documentId title noteType } }'
+
+# Notes by author
+switchboard query '{ knowledgeGraphByAuthor(driveId: "<UUID>", author: "knowledge-agent") { documentId title } }'
+
+# Notes by source origin (DERIVED, IMPORT, MANUAL, SESSION_MINE)
+switchboard query '{ knowledgeGraphByOrigin(driveId: "<UUID>", origin: "DERIVED") { documentId title } }'
+
+# Recently created/updated notes
+switchboard query '{ knowledgeGraphRecent(driveId: "<UUID>", limit: 10) { documentId title createdAt } }'
+```
+
+### Semantic search (AI-powered)
+
+Uses Transformers.js embeddings with pgvector for meaning-based search. These queries understand natural language — "how does storage work?" finds notes about reactors without keyword matches.
+
+```bash
+# Semantic search — find notes by meaning, not just keywords
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does storage work?", limit: 10) { node { documentId title noteType } similarity } }'
+
+# Find notes similar to a given note
+switchboard query '{ knowledgeGraphSimilar(driveId: "<UUID>", documentId: "<NOTE-ID>", limit: 5) { node { documentId title } similarity } }'
+```
+
+**When to use semantic vs keyword search:**
+- `knowledgeGraphSearch` — fast keyword match on title + description. Use for known terms.
+- `knowledgeGraphFullSearch` — keyword match on title + description + content. Use when the term might be in the body.
+- `knowledgeGraphSemanticSearch` — meaning-based. Use for natural language questions or when keyword search returns nothing.
+- `knowledgeGraphSimilar` — find notes related to a specific note. Use during `/connect` to discover non-obvious connections.
+
+### Structural analysis
+
+```bash
 switchboard query '{ knowledgeGraphTriangles(driveId: "<UUID>", limit: 10) { noteA { title documentId } noteB { title documentId } sharedTarget { title } } }'
 switchboard query '{ knowledgeGraphBridges(driveId: "<UUID>") { title documentId } }'
-switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
-switchboard query '{ knowledgeGraphDebug(driveId: "<UUID>") { rawNodeCount rawEdgeCount rawNodes { documentId title noteType status } rawEdges { sourceDocumentId targetDocumentId linkType } } }'
+switchboard query '{ knowledgeGraphDebug(driveId: "<UUID>") { rawNodeCount rawEdgeCount processorNamespace } }'
+```
+
+### Reindex
+
+If the graph index is empty after deployment, rebuild it:
+```bash
+switchboard query 'mutation { knowledgeGraphReindex(driveId: "<UUID>") { indexedNodes indexedEdges errors } }'
 ```
 
 ## Processing pipeline

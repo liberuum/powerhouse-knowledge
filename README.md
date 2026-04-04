@@ -1,19 +1,27 @@
 # powerhouse-knowledge
 
-Claude Code plugin for the Powerhouse Knowledge Vault. Enables AI agents to query, create, connect, and verify knowledge notes stored as Powerhouse document models.
+Claude Code plugin for the Powerhouse Knowledge Vault. Enables AI agents and humans to query, create, connect, and verify knowledge notes stored as Powerhouse document models.
 
-## What it does
+## What This Plugin Does
 
-This plugin connects Claude Code to a Powerhouse reactor running the Knowledge Vault document models (`bai/knowledge-note`, `bai/moc`, and 9 others). It provides 13 skills for knowledge management, an MCP server for direct document access, and an agent definition optimized for knowledge work. The Ars Contexta methodology (249 research claims) is bundled locally in `data/methodology/` and read from disk — no remote import needed.
+This plugin gives you (human or AI agent) the ability to manage a structured knowledge graph inside a Powerhouse reactor. It provides:
+
+- **14 skills** for knowledge management (seed, extract, connect, search, verify, health, graph, etc.)
+- **A knowledge-agent** definition optimized for knowledge work via the Switchboard CLI
+- **Connection to a Powerhouse reactor** via MCP or Switchboard CLI
+- **Access to the Graph Indexer** — a relational index with keyword search, topic queries, provenance filtering, and AI-powered semantic search
+
+The vault stores knowledge as `bai/knowledge-note` documents — atomic claims with typed links, topics, provenance, and lifecycle states. Notes are organized by Maps of Content (MOCs), processed through a 6-phase pipeline, and visualized as an interactive graph.
 
 ## Prerequisites
 
-- **Powerhouse reactor** with the Knowledge Vault document models deployed (the `bai-knowledge-note` Vetra package)
-- **Claude Code** CLI installed
+- **Powerhouse reactor** running with the `bai-knowledge-note` Vetra package deployed
+- **Claude Code** CLI installed (for AI agent use)
+- **Switchboard CLI** installed (recommended — `curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash`)
 
 ## Installation
 
-### Option 1: Clone into your project
+### Option 1: Clone into your project (recommended)
 
 ```bash
 cd your-project/
@@ -22,219 +30,248 @@ git clone https://github.com/liberuum/powerhouse-knowledge .claude/plugins/power
 
 Claude Code auto-discovers plugins in `.claude/plugins/`.
 
-### Option 2: Install as a global plugin
+### Option 2: Global plugin
 
 ```bash
 git clone https://github.com/liberuum/powerhouse-knowledge ~/.claude/plugins/powerhouse-knowledge
 ```
 
-### Option 3: Use the plugin directory flag
+### Option 3: Plugin directory flag
 
 ```bash
-git clone https://github.com/liberuum/powerhouse-knowledge /path/to/powerhouse-knowledge
 claude --plugin-dir /path/to/powerhouse-knowledge
-```
-
-### Option 4: Add to CLAUDE.md for AI agents
-
-Add this to your project's `CLAUDE.md` so any AI agent session auto-discovers the plugin:
-
-```markdown
-## Plugins
-
-This project uses the powerhouse-knowledge plugin for knowledge vault management.
-Plugin path: .claude/plugins/powerhouse-knowledge
 ```
 
 ## Quick Start
 
-### 1. Connect to a reactor
+### Step 1: Connect to a reactor
 
-**Local (development):**
+**Local development:**
 ```bash
 cd your-powerhouse-project/
-ph vetra --watch   # serves MCP at http://localhost:4001/mcp
+ph vetra --watch   # starts reactor at localhost:4001
 ```
 
-The default `.mcp.json` in the plugin points to `localhost:4001` — no changes needed.
-
-**Remote (production):**
-
-Edit `.mcp.json` in the plugin directory:
-```json
-{
-  "mcpServers": {
-    "reactor-mcp": {
-      "type": "http",
-      "url": "https://your-switchboard.example.com/mcp"
-    }
-  }
-}
+**Remote (Switchboard):**
+```bash
+switchboard config use remote-dev   # or your profile name
+switchboard ping                     # verify connection
 ```
 
-### 2. Open Claude Code
+See [CONFIGURATION.md](CONFIGURATION.md) for detailed connection options (MCP, CLI, GraphQL).
+
+### Step 2: Verify the vault
 
 ```bash
-claude   # if plugin is in .claude/plugins/
-# or
-claude --plugin-dir /path/to/powerhouse-knowledge
+switchboard drives list --format json   # find the vault drive
+switchboard docs tree <drive-slug> --format json   # check folder structure
 ```
 
-### 3. Initialize the vault
-
+Or use the setup skill:
 ```
 /powerhouse-knowledge:setup
 ```
 
-This verifies the vault drive structure, folder layout, and singleton documents are ready. The methodology is bundled locally — no import step needed.
+### Step 3: Start working
 
-### 4. Start building knowledge
-
+**Seed a source (article, transcript, documentation):**
 ```
-/powerhouse-knowledge:seed     # paste an article or transcript
-/powerhouse-knowledge:pipeline # extract claims, connect, verify
-/powerhouse-knowledge:health   # check vault quality
+/powerhouse-knowledge:seed
 ```
 
-## For AI Agents
-
-If you're an AI agent (Claude, Gemini, or other) working in a repo with this plugin:
-
-### Available MCP Tools
-
-The plugin connects to a Powerhouse reactor via MCP. These tools are available:
-
-| Tool | Purpose |
-|------|---------|
-| `mcp__reactor-mcp__getDrives` | List all drives |
-| `mcp__reactor-mcp__getDrive` | Get drive structure (folders, files) |
-| `mcp__reactor-mcp__getDocument` | Read a document's state |
-| `mcp__reactor-mcp__getDocuments` | List documents in a drive |
-| `mcp__reactor-mcp__createDocument` | Create a new document (use `driveId` + `parentFolder`) |
-| `mcp__reactor-mcp__addActions` | Dispatch operations on a document |
-| `mcp__reactor-mcp__deleteDocument` | Delete a document |
-| `mcp__reactor-mcp__getDocumentModelSchema` | Get schema for a document type |
-
-### Key Document Types
-
-| Type | Purpose | Folder |
-|------|---------|--------|
-| `bai/knowledge-note` | Atomic knowledge claims | `/knowledge/notes/` |
-| `bai/source` | Raw input material | `/sources/` |
-| `bai/moc` | Maps of Content (topic navigation) | `/knowledge/` |
-| _(methodology)_ | _(local: `data/methodology/*.md`, not in vault)_ | _(plugin directory)_ |
-| `bai/pipeline-queue` | Processing pipeline tracker (singleton) | `/ops/queue/` |
-| `bai/health-report` | Vault health diagnostics (singleton) | `/ops/health/` |
-| `bai/vault-config` | Vault configuration (singleton) | `/self/` |
-| `bai/knowledge-graph` | Materialized graph (singleton) | `/self/` |
-
-### Important Patterns
-
-**MCP race condition:** When creating multiple documents, add a 100ms delay between each `createDocument` call. Rapid calls can cause drive file nodes to silently fail.
-
-**Two-batch actions:** Split content actions (SET_TITLE, SET_DESCRIPTION, SET_CONTENT) from provenance actions (SET_PROVENANCE) into separate `addActions` calls. If provenance validation fails, it kills the entire batch.
-
-**Valid sourceOrigin values:** `DERIVED` (extracted from source), `IMPORT` (bulk import), `MANUAL` (user-created), `SESSION_MINE` (session capture).
-
-**Folder placement:** Always read the drive first to find folder UUIDs, then pass `parentFolder` when creating documents.
-
-### Subgraph Queries
-
-The Knowledge Graph subgraph is at `/graphql/knowledgeGraph` (not `/graphql/r/`):
-
-```bash
-curl -s http://localhost:4001/graphql/knowledgeGraph \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ knowledgeGraphStats(driveId: \"<UUID>\") { nodeCount edgeCount orphanCount } }"}'
+**Run the full pipeline (extract → connect → verify):**
+```
+/powerhouse-knowledge:pipeline
 ```
 
-Available: `knowledgeGraphStats`, `knowledgeGraphNodes`, `knowledgeGraphEdges`, `knowledgeGraphOrphans`, `knowledgeGraphSearch`, `knowledgeGraphTriangles`, `knowledgeGraphBridges`, `knowledgeGraphDensity`, `knowledgeGraphBacklinks`, `knowledgeGraphForwardLinks`, `knowledgeGraphConnections`, `knowledgeGraphDebug`.
-
-### Processing Pipeline
-
-The 6R pipeline: Record -> Reduce -> Reflect -> Reweave -> Verify -> Rethink
-
+**Search the vault:**
 ```
-Source (article/transcript)
-  -> /seed (creates bai/source in /sources/)
-  -> /extract (creates bai/knowledge-note docs in /knowledge/notes/)
-  -> /connect (adds typed links between notes)
-  -> /synthesize (creates bai/moc docs from topic clusters)
-  -> /verify (auto-repairs missing descriptions/provenance, quality gate)
-  -> /health (writes results to bai/health-report)
+/powerhouse-knowledge:search how does the reactor work
 ```
 
-## Skills
+**Check vault health:**
+```
+/powerhouse-knowledge:health
+```
+
+**Explore the graph:**
+```
+/powerhouse-knowledge:graph
+```
+
+## Connection Modes
+
+The plugin supports three ways to interact with the reactor:
+
+| Mode | Tool | Best for |
+|------|------|----------|
+| **Switchboard CLI** | `switchboard` commands via Bash | Agent workflows, full feature parity |
+| **MCP** | `mcp__reactor-mcp__*` tools | Direct document CRUD from Claude |
+| **GraphQL** | HTTP queries to `/graphql/knowledgeGraph` | Subgraph queries, external integrations |
+
+The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.md](CONFIGURATION.md) for setup details.
+
+## Skills Reference
 
 ### Setup & Import
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| Setup | `/powerhouse-knowledge:setup` | Verify vault structure, folders, and singletons are ready |
-| Import | `/powerhouse-knowledge:import <path>` | Bulk import from markdown, Obsidian, or Ars Contexta vaults |
+| Setup | `/powerhouse-knowledge:setup` | Verify vault structure, folders, and singletons |
+| Import | `/powerhouse-knowledge:import <path>` | Bulk import from markdown, Obsidian, or JSON |
 | Export | `/powerhouse-knowledge:export [path]` | Export vault as markdown, JSON, or .phd backup |
 
-### Knowledge Management (Core)
+### Knowledge Management
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| Synthesize | `/powerhouse-knowledge:synthesize` | Create MOCs from topic clusters (3+ notes per topic) |
-| Search | `/powerhouse-knowledge:search <query>` | Find notes by title, type, topic, content |
-| Extract | `/powerhouse-knowledge:extract <source>` | Extract atomic claims from source material |
-| Connect | `/powerhouse-knowledge:connect <note>` | Find and create links between notes |
-| Verify | `/powerhouse-knowledge:verify <note>` | Run quality checks + auto-repair (recite, schema, health) |
-| Health | `/powerhouse-knowledge:health` | Vault health report saved to bai/health-report document |
+| Seed | `/powerhouse-knowledge:seed` | Ingest source material into the vault |
+| Extract | `/powerhouse-knowledge:extract` | Extract atomic claims from a source |
+| Connect | `/powerhouse-knowledge:connect` | Find and create typed links between notes |
+| Synthesize | `/powerhouse-knowledge:synthesize` | Create MOCs from topic clusters |
+| Search | `/powerhouse-knowledge:search <query>` | Find notes (keyword, topic, semantic, provenance) |
+| Verify | `/powerhouse-knowledge:verify` | Quality checks + auto-repair |
+| Health | `/powerhouse-knowledge:health` | Vault diagnostics saved to health-report |
 | Graph | `/powerhouse-knowledge:graph` | Structural analysis (triangles, bridges, clusters) |
-| Seed | `/powerhouse-knowledge:seed <source>` | Ingest source material for processing |
 
 ### Processing & Automation
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| Pipeline | `/powerhouse-knowledge:pipeline` | Run the full extract -> connect -> synthesize -> reweave -> verify flow |
+| Pipeline | `/powerhouse-knowledge:pipeline` | Full end-to-end: extract → connect → verify |
 | Watch | `/powerhouse-knowledge:watch` | Real-time vault monitoring via WebSocket |
 
-## Agent
+## Graph Indexer & Subgraph
 
-The plugin includes a `knowledge-agent` that activates by default. This agent:
-- Understands all 11 document models and their operations
-- Follows the 6-phase processing pipeline (Record, Reduce, Reflect, Reweave, Verify, Rethink)
-- Enforces quality principles (atomic claims, articulation test, minimum connectivity)
-- References the Ars Contexta methodology (249 research claims, bundled locally) for design decisions
-- Auto-repairs common issues during verification (missing descriptions, provenance, types)
-- Can analyze graph structure for synthesis opportunities
+The vault includes a **Graph Indexer processor** that maintains a relational index of all knowledge notes. The **Knowledge Graph subgraph** exposes this index via GraphQL at `/graphql/knowledgeGraph`.
+
+### What's indexed
+
+Every `bai/knowledge-note` operation triggers the indexer to update:
+- **graph_nodes** — title, description, content, noteType, status, author, sourceOrigin, createdAt
+- **graph_edges** — source, target, linkType, targetTitle
+- **graph_topics** — document_id, topic name
+- **note_embeddings** — 384-dim vector embeddings for semantic search (Transformers.js + pgvector)
+
+### Available queries
+
+**Search:**
+- `knowledgeGraphSearch(query)` — keyword match on title + description
+- `knowledgeGraphFullSearch(query)` — keyword match on title + description + content
+- `knowledgeGraphSemanticSearch(query)` — AI-powered meaning-based search
+- `knowledgeGraphSimilar(documentId)` — find semantically similar notes
+
+**Topics:**
+- `knowledgeGraphTopics` — all topics with note counts
+- `knowledgeGraphByTopic(topic)` — notes tagged with a topic
+- `knowledgeGraphRelatedByTopic(documentId)` — notes sharing topics with a given note
+
+**Provenance:**
+- `knowledgeGraphByAuthor(author)` — notes by author
+- `knowledgeGraphByOrigin(origin)` — notes by source origin
+- `knowledgeGraphRecent(limit, since?)` — recently created/updated notes
+
+**Structure:**
+- `knowledgeGraphStats` — node count, edge count, orphan count
+- `knowledgeGraphNodes` / `knowledgeGraphEdges` — all indexed data
+- `knowledgeGraphOrphans` — notes with no incoming links
+- `knowledgeGraphBacklinks` / `knowledgeGraphForwardLinks` — directional edges
+- `knowledgeGraphConnections(documentId, depth)` — BFS traversal
+- `knowledgeGraphTriangles` — synthesis opportunities (A,B both link to C)
+- `knowledgeGraphBridges` — articulation points
+- `knowledgeGraphDensity` — graph density metric
+
+**Admin:**
+- `knowledgeGraphReindex(driveId)` — backfill the index after deployment
+- `knowledgeGraphDebug(driveId)` — raw DB rows
+
+### When to use which search
+
+| User intent | Best query |
+|-------------|-----------|
+| Natural language question | `knowledgeGraphSemanticSearch` |
+| Known keyword/term | `knowledgeGraphSearch` or `knowledgeGraphFullSearch` |
+| "Notes about topic X" | `knowledgeGraphByTopic` |
+| "Notes similar to this one" | `knowledgeGraphSimilar` |
+| "What did author X write?" | `knowledgeGraphByAuthor` |
+| "Recent notes" | `knowledgeGraphRecent` |
 
 ## Document Models
 
-| Model | Type | Operations | Purpose |
-|-------|------|-----------|---------|
-| Knowledge Note | `bai/knowledge-note` | 26 | Atomic knowledge claims |
-| _(Methodology)_ | _(local files)_ | _(249 claims)_ | _(bundled in `data/methodology/`)_ |
-| Knowledge Graph | `bai/knowledge-graph` | 7 | Materialized graph singleton |
-| Map of Content | `bai/moc` | 12 | Topic navigation |
-| Source | `bai/source` | 4 | Ingested source material |
-| Pipeline Queue | `bai/pipeline-queue` | 7 | Processing pipeline state |
-| Observation | `bai/observation` | 4 | Operational learning signals |
-| Tension | `bai/tension` | 4 | Unresolved contradictions |
-| Vault Config | `bai/vault-config` | 8 | Vault configuration |
-| Derivation | `bai/derivation` | 4 | Configuration audit trail |
-| Health Report | `bai/health-report` | 2 | Point-in-time diagnostics |
+| Model | Type | Purpose |
+|-------|------|---------|
+| Knowledge Note | `bai/knowledge-note` | Atomic knowledge claims |
+| Map of Content | `bai/moc` | Topic navigation hubs |
+| Source | `bai/source` | Ingested source material |
+| Knowledge Graph | `bai/knowledge-graph` | Materialized graph singleton |
+| Pipeline Queue | `bai/pipeline-queue` | Processing task tracker |
+| Health Report | `bai/health-report` | Point-in-time diagnostics |
+| Vault Config | `bai/vault-config` | Vault configuration |
+| Observation | `bai/observation` | Operational learning signals |
+| Tension | `bai/tension` | Unresolved contradictions |
+| Derivation | `bai/derivation` | Configuration audit trail |
+
+## Processing Pipeline
+
+The 6R pipeline transforms raw sources into structured, connected knowledge:
+
+```
+1. Record   →  /seed (ingest source material)
+2. Reduce   →  /extract (extract atomic claims)
+3. Reflect  →  /connect (find links between notes)
+4. Reweave  →  /synthesize (create MOCs, update old notes)
+5. Verify   →  /verify (quality gate, auto-repair)
+6. Rethink  →  /health + /graph (challenge assumptions)
+```
 
 ## Architecture
 
 ```
-User (Connect App)                    AI Agent (Claude Code)
+Human (Connect App)                    AI Agent (Claude Code)
   |                                     |
-  +-- Knowledge Vault App               +-- powerhouse-knowledge plugin
-  |     |-- Notes, Graph, Sources        |     |-- 13 skills
-  |     |-- Pipeline, Health, Config     |     |-- knowledge-agent
-  |     +-- Source editor (Queue)        |     +-- .mcp.json
+  +── Knowledge Vault App               +── powerhouse-knowledge plugin
+  |     |── Notes tab (grid + search)   |     |── 14 skills
+  |     |── Graph tab (cytoscape viz)   |     |── knowledge-agent
+  |     |── Sources, Pipeline, Health   |     |── Switchboard CLI
+  |     +── MOC editor, Note editor     |     +── MCP / GraphQL
   |                                     |
-  +--------- Powerhouse Reactor --------+
-              |-- 11 document models (82 operations)
-              |-- Graph Indexer processor
-              |-- Knowledge Graph subgraph (12 queries)
-              +-- MCP server (localhost:4001/mcp)
+  +───────── Powerhouse Reactor ────────+
+              |── 11 document models
+              |── Graph Indexer processor
+              |     |── Relational index (PGlite)
+              |     +── Semantic embeddings (pgvector + Transformers.js)
+              |── Knowledge Graph subgraph (25+ queries)
+              +── MCP server
+```
+
+## Plugin Structure
+
+```
+powerhouse-knowledge/
+├── agents/
+│   └── knowledge-agent.md      # Agent definition with full vault API reference
+├── skills/
+│   ├── search/SKILL.md         # Multi-tier search (semantic, keyword, topic)
+│   ├── graph/SKILL.md          # Structural + semantic graph analysis
+│   ├── connect/SKILL.md        # Link discovery with articulation test
+│   ├── seed/SKILL.md           # Source ingestion
+│   ├── extract/SKILL.md        # Atomic claim extraction
+│   ├── synthesize/SKILL.md     # MOC creation from topic clusters
+│   ├── verify/SKILL.md         # Quality gate + auto-repair
+│   ├── health/SKILL.md         # Vault diagnostics
+│   ├── pipeline/SKILL.md       # End-to-end processing
+│   ├── setup/SKILL.md          # Vault initialization
+│   ├── import/SKILL.md         # Bulk import
+│   ├── export/SKILL.md         # Vault export
+│   ├── watch/SKILL.md          # Real-time monitoring
+│   └── cli-reference/SKILL.md  # Switchboard CLI commands
+├── data/
+│   └── methodology/            # 249 Ars Contexta research claims (local reference)
+├── hooks/                      # Pre-flight hooks for vault detection
+├── scripts/                    # Utility scripts
+├── settings.json               # Plugin settings
+├── CONFIGURATION.md            # Connection setup guide
+└── README.md                   # This file
 ```
 
 ## License

@@ -10,7 +10,11 @@ Find genuine connections between notes and create typed links. This is the "refl
 ## Connection discovery process
 
 1. **Identify the target note** — which note are we connecting?
-2. **Search for candidates** — use the search skill to find potentially related notes
+2. **Search for candidates** using multiple strategies:
+   - `knowledgeGraphSimilar(documentId)` — AI-powered semantic similarity (finds conceptually related notes even without keyword overlap)
+   - `knowledgeGraphRelatedByTopic(documentId)` — notes sharing the most topics
+   - `knowledgeGraphSearch(query)` — keyword search on title + description
+   - `knowledgeGraphSemanticSearch(query)` — meaning-based search for specific concepts
 3. **Apply the articulation test** — for each candidate, answer: "[[A]] connects to [[B]] because [specific reason]"
 4. **If the connection is genuine**, create a link:
 
