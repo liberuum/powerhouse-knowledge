@@ -184,7 +184,7 @@ Write to `/tmp/health-checks.json` and apply via `--file` to avoid shell escapin
 | Missing note types | Infer from content, `docs mutate --op setNoteType` |
 | Missing topics | Identify from content, `docs mutate --op addTopic` |
 | Ungrounded notes | Search local methodology files, add grounding references to note content via `docs mutate --op setContent` |
-| Missing MOCs | **Auto-create**: find topic clusters with 3+ notes and no MOC, create `bai/moc` via `docs create` + `CREATE_MOC` + `ADD_CORE_IDEA` per note. Verify in drive tree. |
+| Missing MOCs | **Auto-create**: find topic clusters with 3+ notes and no MOC. Create `bai/moc` via `docs create` + `--op createMoc`, then attach each cluster note as a core idea via `addRelationship(moc-id, note-id, "CORE_IDEA")` GraphQL mutation. (The legacy `--op addCoreIdea` writes to a state array the graph subgraph no longer indexes.) Verify in drive tree. |
 | Stale DRAFT notes | Submit for review via `docs mutate --op submitForReview` |
 
 **After each auto-fix, verify it applied** by re-reading the document state. Then re-run the health check to confirm the fix improved the score.

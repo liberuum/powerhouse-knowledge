@@ -78,22 +78,35 @@ switchboard docs apply <moc-id> --actions '[{
 - `DOMAIN` — broad area with 10+ notes (e.g., "Cognitive Science")
 - `TOPIC` — focused cluster with 3-9 notes (e.g., "extended-mind")
 
-### Step 5: Add core ideas
+### Step 5: Attach core ideas
 
-For each note in the topic, add it as a core idea with an articulated context phrase:
+For each note in the topic, attach it to the MoC via an `addRelationship` mutation with type `CORE_IDEA`. Since the drive-override migration, core ideas live in the reactor's `DocumentRelationship` table — not in the MoC's `coreIdeas[]` state array. This is the same mutation used for note↔note links; only the `relationshipType` differs.
 
 ```bash
-switchboard docs mutate <moc-id> --op addCoreIdea --input '{
-  "id": "<unique-id>",
-  "noteRef": "<note-document-id>",
-  "contextPhrase": "<WHY this note matters in this topic — not just related to X>",
-  "sortOrder": 0,
-  "addedAt": "<ISO>",
-  "addedBy": "knowledge-agent"
+switchboard query 'mutation {
+  addRelationship(
+    sourceIdentifier: "<moc-id>",
+    targetIdentifier: "<note-document-id>",
+    relationshipType: "CORE_IDEA",
+    branch: "main"
+  ) { documentType }
 }'
 ```
 
-**The context phrase is critical.** It's the articulation test for MOCs — explain WHY each note is a core idea in this topic, not just that it exists.
+For a hub/domain hierarchy, use `CHILD_MOC` from the parent MoC to each child MoC:
+
+```bash
+switchboard query 'mutation {
+  addRelationship(
+    sourceIdentifier: "<parent-moc-id>",
+    targetIdentifier: "<child-moc-id>",
+    relationshipType: "CHILD_MOC",
+    branch: "main"
+  ) { documentType }
+}'
+```
+
+**Articulation lives in the note body, not on the edge.** The pre-migration `addCoreIdea` op accepted a `contextPhrase` that explained WHY each note was a core idea. The new `DocumentRelationship` row is just `(source, target, type)` — no metadata. To preserve the articulation, edit the source note's content (`--op setContent`) and add a section explaining how it fits the topic. The reader sees this when they navigate from the MoC into the note.
 
 ### Step 6: Add tensions and open questions (optional)
 

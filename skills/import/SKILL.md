@@ -66,19 +66,23 @@ switchboard docs mutate <drive-id> --op addFile --input '{
 }'
 ```
 
-### Step 4: Second pass — resolve and create links
+### Step 4: Second pass — resolve and create relationships
 
 For each note that has references (wiki links, related notes):
 1. Look up the target document ID from the title mapping
-2. Create typed links:
+2. Create the relationship via `addRelationship` (writes to the reactor's `DocumentRelationship` table — the indexed source of truth since the drive-override migration):
 ```bash
-switchboard docs mutate <source-note-id> --op addLink --input '{
-  "id": "<generate-unique-id>",
-  "targetDocumentId": "<resolved-target-id>",
-  "targetTitle": "<target-title>",
-  "linkType": "RELATES_TO"
+switchboard query 'mutation {
+  addRelationship(
+    sourceIdentifier: "<source-note-id>",
+    targetIdentifier: "<resolved-target-id>",
+    relationshipType: "RELATES_TO",
+    branch: "main"
+  ) { documentType }
 }'
 ```
+
+The mutation is idempotent on `(source, target, type)`, so re-running an import is safe.
 
 ### Step 5: Create MOCs from folder structure or tags (optional)
 
@@ -120,12 +124,12 @@ These scripts use the Switchboard CLI for bulk creation and include automatic dr
 
 ## Wiki Link Resolution
 
-Convert `[[wiki link]]` to document links:
+Convert `[[wiki link]]` to relationship rows:
 
 ```
 For each [[target title]] in note content:
   1. Find document with matching title in the title-to-id map
-  2. If found: create ADD_LINK with the document ID
+  2. If found: call addRelationship(source, target, RELATES_TO)
   3. If not found: log as unresolved (may be an external reference)
 ```
 

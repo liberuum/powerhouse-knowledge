@@ -153,7 +153,15 @@ All queries require `driveId: "<UUID>"`.
 | `bai/knowledge-graph` | Graph (singleton) | `/self/` |
 | `bai/vault-config` | Config (singleton) | `/self/` |
 
-## Link types
+## Relationships
+
+Edges between documents live in the reactor's `DocumentRelationship` table since the drive-override migration. Create them with the `addRelationship` GraphQL mutation:
+
+```bash
+switchboard query 'mutation { addRelationship(sourceIdentifier:"<source>", targetIdentifier:"<target>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+```
+
+Valid `relationshipType` values:
 
 | Type | Meaning |
 |------|---------|
@@ -162,6 +170,10 @@ All queries require `driveId: "<UUID>"`.
 | `CONTRADICTS` | Challenges the target |
 | `SUPERSEDES` | Replaces the target |
 | `DERIVED_FROM` | Extracted from the target |
+| `CORE_IDEA` | MoC → note: this note is a core idea of the MoC |
+| `CHILD_MOC` | Parent MoC → child MoC: hub/domain hierarchy |
+
+Idempotent on `(source, target, type)`. To remove a relationship, use `removeRelationship` with the same argument shape. The legacy `--op addLink` / `--op addCoreIdea` / `--op addChildMoc` document-scope actions are bypassed by the graph subgraph and should not be used for new code.
 
 ## Quality principles
 

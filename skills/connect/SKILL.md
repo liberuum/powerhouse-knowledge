@@ -16,16 +16,29 @@ Find genuine connections between notes and create typed links. This is the "refl
    - `knowledgeGraphSearch(query)` — keyword search on title + description
    - `knowledgeGraphSemanticSearch(query)` — meaning-based search for specific concepts
 3. **Apply the articulation test** — for each candidate, answer: "[[A]] connects to [[B]] because [specific reason]"
-4. **If the connection is genuine**, create a link:
+4. **If the connection is genuine**, create a relationship via the `addRelationship` GraphQL mutation. Since the drive-override migration, edges live in the reactor's `DocumentRelationship` table (one row per ADD_RELATIONSHIP system action) — not in the source note's `links[]` array. The legacy `--op addLink` writes to the old per-doc array and is **not** indexed by the graph subgraph.
 
 ```bash
-switchboard docs mutate <source-note-id> --op addLink --input '{
-  "id": "<generate-unique-id>",
-  "targetDocumentId": "<target-note-id>",
-  "targetTitle": "<target note title>",
-  "linkType": "RELATES_TO"
+switchboard query 'mutation {
+  addRelationship(
+    sourceIdentifier: "<source-note-id>",
+    targetIdentifier: "<target-note-id>",
+    relationshipType: "RELATES_TO",
+    branch: "main"
+  ) { documentType }
 }'
 ```
+
+Or via direct HTTP to `/graphql/r` (faster for batch loops):
+
+```bash
+curl -s "$READ_ENDPOINT" -H 'content-type: application/json' -d '{
+  "query": "mutation($s:String!,$t:String!,$r:String!,$b:String){ addRelationship(sourceIdentifier:$s,targetIdentifier:$t,relationshipType:$r,branch:$b){ documentType } }",
+  "variables": {"s":"<source-id>","t":"<target-id>","r":"RELATES_TO","b":"main"}
+}'
+```
+
+To remove a relationship, use `removeRelationship` with the same argument shape.
 
 ## Link types
 

@@ -182,10 +182,19 @@ Each note has this state structure:
 - `SET_CONTENT { content, updatedAt }`
 - `SET_METADATA_FIELD { field, value, updatedAt }`
 
-### Linking
-- `ADD_LINK { id, targetDocumentId, targetTitle, linkType }`
-- `REMOVE_LINK { id }`
-- `UPDATE_LINK_TYPE { id, linkType }`
+### Linking — `DocumentRelationship` (system actions) since the drive-override migration
+- Use the `addRelationship` / `removeRelationship` GraphQL mutations — **not** `ADD_LINK` / `REMOVE_LINK`.
+- The legacy `ADD_LINK` document-scope action still exists on the model for backwards compatibility, but it writes only to the note's local `links[]` array; the graph subgraph (orphan detection, semantic search, MoC navigation) does **not** index it.
+- Edges live in the reactor's `DocumentRelationship` table, one row per ADD_RELATIONSHIP system action. Idempotent on `(source, target, type)`.
+
+```bash
+switchboard query 'mutation { addRelationship(sourceIdentifier:"<source>", targetIdentifier:"<target>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+switchboard query 'mutation { removeRelationship(sourceIdentifier:"<source>", targetIdentifier:"<target>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+```
+
+Valid `relationshipType`: `RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`, `DERIVED_FROM`, `CORE_IDEA` (MoC → note), `CHILD_MOC` (MoC → MoC).
+
+### Topics (still per-doc)
 - `ADD_TOPIC { id, name }`
 - `REMOVE_TOPIC { id }`
 
@@ -208,13 +217,19 @@ Maps of Content — navigation documents organizing notes by topic. Live in `/kn
 
 **Operations:**
 - `CREATE_MOC { title, description, orientation, tier, parentRef?, createdAt }`
-- `ADD_CORE_IDEA { id, noteRef, contextPhrase, sortOrder, addedAt, addedBy? }` — contextPhrase is the articulation test
-- `UPDATE_CORE_IDEA { id, contextPhrase?, sortOrder? }`
-- `REMOVE_CORE_IDEA { id }`
 - `ADD_TENSION { id, description, involvedRefs[], addedAt }`
 - `ADD_OPEN_QUESTION { question }`
 - `UPDATE_ORIENTATION { orientation, updatedAt }`
-- `ADD_CHILD_MOC { childRef }` — for hub/domain hierarchy
+
+**Edges from a MoC — use `addRelationship`, not legacy `ADD_CORE_IDEA` / `ADD_CHILD_MOC` actions.** The drive-override migration moved core-idea and child-MoC relationships into the `DocumentRelationship` table. Articulation that previously lived in `contextPhrase` now belongs in the source note's content body.
+
+```bash
+# Note as a core idea of this MoC
+switchboard query 'mutation { addRelationship(sourceIdentifier:"<moc-id>", targetIdentifier:"<note-id>", relationshipType:"CORE_IDEA", branch:"main"){ documentType } }'
+
+# Child MoC under a parent (hub/domain hierarchy)
+switchboard query 'mutation { addRelationship(sourceIdentifier:"<parent-moc-id>", targetIdentifier:"<child-moc-id>", relationshipType:"CHILD_MOC", branch:"main"){ documentType } }'
+```
 
 Use `/powerhouse-knowledge:synthesize` to auto-create MOCs from topic clusters.
 

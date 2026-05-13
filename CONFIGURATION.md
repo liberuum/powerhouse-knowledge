@@ -198,14 +198,19 @@ switchboard docs mutate <id> --op setNoteType --input '{"noteType":"CONCEPT","up
 switchboard docs mutate <id> --op setContent --input '{"content":"Full body","updatedAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
-Linking uses different field names than the plugin docs suggest:
+Topics (per-document state):
 ```bash
 # addTopic: uses "id" + "name" (NOT "topic")
 switchboard docs mutate <id> --op addTopic --input '{"id":"topic-unique-id","name":"zettelkasten"}'
-
-# addLink: uses "id" + "targetDocumentId" + "linkType" (NOT "targetId")
-switchboard docs mutate <id> --op addLink --input '{"id":"link-unique-id","targetDocumentId":"<target-uuid>","targetTitle":"Target Note","linkType":"RELATES_TO"}'
 ```
+
+Relationships (since the drive-override migration, edges live in the reactor's `DocumentRelationship` table, NOT in per-document `links[]`). Use the `addRelationship` GraphQL mutation — the legacy `--op addLink` is bypassed by the graph subgraph:
+```bash
+switchboard query 'mutation { addRelationship(sourceIdentifier:"<source-uuid>", targetIdentifier:"<target-uuid>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+switchboard query 'mutation { removeRelationship(sourceIdentifier:"<source-uuid>", targetIdentifier:"<target-uuid>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+```
+
+Valid `relationshipType`: `RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`, `DERIVED_FROM`, `CORE_IDEA` (MoC → note), `CHILD_MOC` (MoC → MoC). Mutation is idempotent on `(source, target, type)`.
 
 Lifecycle mutations require `id`, `actor`, `timestamp`:
 ```bash
@@ -217,12 +222,17 @@ switchboard docs mutate <id> --op approveNote --input '{"id":"approve-1","actor"
 
 MOC mutations:
 ```bash
-# createMoc requires createdAt
+# createMoc requires createdAt — sets title/description/orientation/tier on the MoC's state
 switchboard docs mutate <moc-id> --op createMoc --input '{"title":"Topic","description":"...","orientation":"...","tier":"TOPIC","createdAt":"2026-03-30T15:00:00.000Z"}'
 
-# addCoreIdea requires all fields
-switchboard docs mutate <moc-id> --op addCoreIdea --input '{"id":"ci-1","noteRef":"<note-uuid>","contextPhrase":"WHY this note matters here","sortOrder":0,"addedAt":"2026-03-30T15:00:00.000Z","addedBy":"agent"}'
+# Attach a note as a core idea — addRelationship with type CORE_IDEA (NOT --op addCoreIdea)
+switchboard query 'mutation { addRelationship(sourceIdentifier:"<moc-id>", targetIdentifier:"<note-uuid>", relationshipType:"CORE_IDEA", branch:"main"){ documentType } }'
+
+# Attach a child MoC — addRelationship with type CHILD_MOC (NOT --op addChildMoc)
+switchboard query 'mutation { addRelationship(sourceIdentifier:"<parent-moc-id>", targetIdentifier:"<child-moc-id>", relationshipType:"CHILD_MOC", branch:"main"){ documentType } }'
 ```
+
+The pre-migration `--op addCoreIdea` accepted a `contextPhrase` (the articulation: WHY this note matters in this MoC). The new `DocumentRelationship` row stores only `(source, target, type)` — articulation now lives in the source note's content body instead of on the edge.
 
 Health report mutations:
 ```bash
@@ -390,8 +400,8 @@ Subscribe to note changes, find related notes, auto-create links:
 ```
 1. Subscribe to bai/knowledge-note changes
 2. On new note: search for notes with overlapping topics
-3. For each match: dispatch ADD_LINK with context phrase
-4. Re-entrancy guard: skip if the change was our own link addition
+3. For each match: call `addRelationship(source, target, RELATES_TO)`
+4. Re-entrancy guard: skip if the change was our own ADD_RELATIONSHIP system action
 ```
 
 ### Pattern 2: Pipeline Saga (Saga Pattern)
