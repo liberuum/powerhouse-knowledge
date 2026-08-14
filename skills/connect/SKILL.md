@@ -14,7 +14,7 @@ Find genuine connections between notes and create typed links. This is the "refl
    - `knowledgeGraphSimilar(documentId)` — AI-powered semantic similarity (finds conceptually related notes even without keyword overlap)
    - `knowledgeGraphRelatedByTopic(documentId)` — notes sharing the most topics
    - `knowledgeGraphSearch(query)` — keyword search on title + description
-   - `knowledgeGraphSemanticSearch(query)` — meaning-based search for specific concepts
+   - `knowledgeGraphFullSearch(query)` — full-text search; ANDs terms, so use 1-2 keywords
 3. **Apply the articulation test** — for each candidate, answer: "[[A]] connects to [[B]] because [specific reason]"
 4. **If the connection is genuine**, create a relationship via the `addRelationship` GraphQL mutation. Since the drive-override migration, edges live in the reactor's `DocumentRelationship` table (one row per ADD_RELATIONSHIP system action) — not in the source note's `links[]` array. The legacy `--op addLink` writes to the old per-doc array and is **not** indexed by the graph subgraph.
 

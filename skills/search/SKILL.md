@@ -14,7 +14,7 @@ Search the Knowledge Vault using the graph indexer subgraph. Supports keyword se
 When the user asks a question or uses natural language (e.g., "how does storage work?", "notes about legal setup"), use semantic search. It understands meaning, not just keywords:
 
 ```bash
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<user question>", limit: 10) { node { documentId title description noteType status topics } similarity } }'
+switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "<1-2 keywords>", limit: 20) { documentId title description noteType status topics } }'
 ```
 
 Results ranked by similarity (0-1). Notes > 0.75 are strong matches.
@@ -78,7 +78,7 @@ If the subgraph returns empty (index needs rebuilding), scan directly:
 
 | User intent | Best query |
 |-------------|-----------|
-| Natural language question | `knowledgeGraphSemanticSearch` |
+| Natural language question | `knowledgeGraphFullSearch` with 1-2 keywords |
 | Known keyword/term | `knowledgeGraphSearch` or `knowledgeGraphFullSearch` |
 | "Notes about topic X" | `knowledgeGraphByTopic` |
 | "Notes similar to this one" | `knowledgeGraphSimilar` |

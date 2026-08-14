@@ -389,7 +389,7 @@ Uses Transformers.js embeddings with pgvector for meaning-based search. These qu
 
 ```bash
 # Semantic search — find notes by meaning, not just keywords
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does storage work?", limit: 10) { node { documentId title noteType } similarity } }'
+switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "storage", limit: 20) { documentId title noteType } }'
 
 # Find notes similar to a given note
 switchboard query '{ knowledgeGraphSimilar(driveId: "<UUID>", documentId: "<NOTE-ID>", limit: 5) { node { documentId title } similarity } }'
@@ -398,7 +398,7 @@ switchboard query '{ knowledgeGraphSimilar(driveId: "<UUID>", documentId: "<NOTE
 **When to use semantic vs keyword search:**
 - `knowledgeGraphSearch` — fast keyword match on title + description. Use for known terms.
 - `knowledgeGraphFullSearch` — keyword match on title + description + content. Use when the term might be in the body.
-- `knowledgeGraphSemanticSearch` — meaning-based. Use for natural language questions or when keyword search returns nothing.
+- `knowledgeGraphSimilar(documentId)` — vector neighbours of a known note. Requires embeddings; returns nothing if none were pushed. There is no `knowledgeGraphSemanticSearch` field.
 - `knowledgeGraphSimilar` — find notes related to a specific note. Use during `/connect` to discover non-obvious connections.
 
 ### Structural analysis

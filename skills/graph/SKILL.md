@@ -61,7 +61,7 @@ AI-powered queries using Transformers.js embeddings. Find conceptually related n
 switchboard query '{ knowledgeGraphSimilar(driveId: "<UUID>", documentId: "<NOTE-ID>", limit: 10) { node { documentId title noteType } similarity } }'
 
 # Semantic search for a concept
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how do reducers handle errors", limit: 10) { node { documentId title } similarity } }'
+switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "reducer errors", limit: 10) { documentId title } }'
 ```
 
 Use `knowledgeGraphSimilar` during connection analysis — it reveals non-obvious relationships that topic overlap and link structure miss.

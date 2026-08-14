@@ -34,6 +34,47 @@ switchboard ping           # is it reachable?
 
 If the CLI isn't configured, check if MCP tools are available (`mcp__reactor-mcp__*` or `mcp__claude_ai_*`).
 
+### Connecting to a shared remote vault
+
+A hosted vault needs no auth for reads. Point a profile at the Switchboard and
+confirm the models are deployed:
+
+```bash
+switchboard config add remote-vault --url https://<host>-switchboard.vetra.io/graphql
+switchboard config use remote-vault
+switchboard ping
+```
+
+Two things to verify before trusting results, because both fail quietly:
+
+```bash
+# 1. Are the bai/* models deployed on that Switchboard?
+#    If KnowledgeNote is absent, the drive may exist but nothing can read it properly.
+switchboard query '{ __schema { types { name } } }' --format json | grep -c KnowledgeNote
+
+# 2. Has the graph projection been built for this drive?
+switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount } }'
+```
+
+If step 2 errors with `relation "<hash>.graph_nodes" does not exist`, the
+GraphIndexer has never processed that drive — every `knowledgeGraph*` query
+will fail until someone runs the reindex mutation:
+
+```bash
+switchboard query 'mutation { knowledgeGraphReindex(driveId: "<UUID>") { indexedNodes indexedEdges errors } }'
+```
+
+Note `orphanCount` counts nodes with **zero incoming edges**. On a drive whose
+membership edges are fully indexed this reads 0 for everything, which is
+misleading; on a freshly-imported drive it reflects genuinely un-referenced
+notes. Treat a non-zero value as signal, not breakage.
+
+**Writing over a slow link:** the CLI spawns a process per call and each one
+does its own TLS handshake. For bulk writes to a remote host that is
+handshake-bound rather than CPU-bound — hundreds of calls will start failing
+with `_ssl.c:983: handshake operation timed out`. Batch actions into a single
+`docs apply`, or talk to `/graphql` over one keep-alive connection.
+
 ## Find the vault drive
 
 ```bash
@@ -50,28 +91,47 @@ Save the drive slug and UUID — you'll need them for every query.
 
 ## Search the vault
 
-**Always use semantic search as the default.** It understands meaning, not just keywords — "how does storage work?" finds notes about reactors without exact word matches.
+**Start with `knowledgeGraphFullSearch`.** It matches title, description *and* note content, and it works on every deployment.
 
 ```bash
-# DEFAULT: Semantic search — use this first for any user query
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<user question>", limit: 10) { node { documentId title noteType description } similarity } }'
+# DEFAULT: full-text search across title + description + content
+switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "reactor storage", limit: 20) { documentId title noteType } }'
 ```
 
-Only fall back to keyword search if semantic search is unavailable or you need exact term matches:
+⚠️ **`knowledgeGraphFullSearch` ANDs its terms.** A long natural-language question silently returns `[]`. Search 1–2 distinctive keywords, not a sentence — "how does the reactor store operations?" finds nothing; "operation store" finds it. Run several short queries with different wording rather than one long one.
+
+There is **no `knowledgeGraphSemanticSearch` field** — do not call it, the query will fail schema validation. The vector queries that do exist are:
 
 ```bash
-# Keyword fallback (title + description + content)
-switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "reactor", limit: 20) { documentId title noteType } }'
+# Notes similar to a given note (needs embeddings present)
+switchboard query '{ knowledgeGraphSimilar(driveId: "<UUID>", documentId: "<NOTE-ID>", limit: 5) { node { title } similarity } }'
+
+# Search by a caller-supplied vector (you must compute the embedding yourself)
+# knowledgeGraphSearchByEmbedding(driveId, embedding: [Float!]!, limit)
+```
+
+Both return nothing unless embeddings have been pushed for that drive. Embeddings are **computed client-side and uploaded** via `knowledgeGraphUpsertEmbedding` — the server never computes them, and `knowledgeGraphReindex` does not create them. Check coverage before relying on either:
+
+```bash
+switchboard query '{ knowledgeGraphMissingEmbeddings(driveId: "<UUID>") }'
+```
+
+If that errors with `relation "note_embeddings" does not exist`, the deployment has no embedding store and only keyword/topic search will work.
+
+Other retrieval paths, all always available:
+
+```bash
+# Title + description only (narrower than fullSearch)
+switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "reactor", limit: 20) { documentId title noteType } }'
 
 # By topic
 switchboard query '{ knowledgeGraphByTopic(driveId: "<UUID>", topic: "reactor") { documentId title } }'
 
-# Similar to a specific note
-switchboard query '{ knowledgeGraphSimilar(driveId: "<UUID>", documentId: "<NOTE-ID>", limit: 5) { node { title } similarity } }'
-
-# All topics
+# All topics, with counts — good for discovering the vocabulary first
 switchboard query '{ knowledgeGraphTopics(driveId: "<UUID>") { name noteCount } }'
 ```
+
+For a broad sweep, `knowledgeGraphNodes` returns every node (title, description, content, topics, status) in one call — often cheaper than many searches when you need to scan.
 
 ## Read a document
 
@@ -126,11 +186,11 @@ All queries require `driveId: "<UUID>"`.
 
 | Query | Use when |
 |-------|----------|
-| `knowledgeGraphSemanticSearch(query)` | Natural language questions |
-| `knowledgeGraphSearch(query)` | Known keywords |
-| `knowledgeGraphFullSearch(query)` | Search includes note content |
+| `knowledgeGraphFullSearch(query)` | **Default.** Title+description+content; ANDs terms, so use 1-2 keywords |
+| `knowledgeGraphSearch(query)` | Title+description only — narrower than fullSearch |
+| `knowledgeGraphNodes` | Every node in one call; cheaper than many searches when scanning |
 | `knowledgeGraphByTopic(topic)` | "Notes about X topic" |
-| `knowledgeGraphSimilar(documentId)` | "Notes like this one" |
+| `knowledgeGraphSimilar(documentId)` | "Notes like this one" — needs embeddings, else empty |
 | `knowledgeGraphRelatedByTopic(documentId)` | Notes sharing topics |
 | `knowledgeGraphTopics` | See all topics + counts |
 | `knowledgeGraphByAuthor(author)` | Notes by author |

@@ -158,7 +158,7 @@ Every `bai/knowledge-note` operation triggers the indexer to update:
 **Search:**
 - `knowledgeGraphSearch(query)` — keyword match on title + description
 - `knowledgeGraphFullSearch(query)` — keyword match on title + description + content
-- `knowledgeGraphSemanticSearch(query)` — AI-powered meaning-based search
+- `knowledgeGraphFullSearch(query)` — full-text over title, description and content (ANDs terms)
 - `knowledgeGraphSimilar(documentId)` — find semantically similar notes
 
 **Topics:**
@@ -189,7 +189,7 @@ Every `bai/knowledge-note` operation triggers the indexer to update:
 
 | User intent | Best query |
 |-------------|-----------|
-| Natural language question | `knowledgeGraphSemanticSearch` |
+| Natural language question | `knowledgeGraphFullSearch` with 1-2 keywords |
 | Known keyword/term | `knowledgeGraphSearch` or `knowledgeGraphFullSearch` |
 | "Notes about topic X" | `knowledgeGraphByTopic` |
 | "Notes similar to this one" | `knowledgeGraphSimilar` |
