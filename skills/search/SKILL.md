@@ -11,13 +11,15 @@ Search the Knowledge Vault using the graph indexer subgraph. Supports keyword se
 
 ### 1. Semantic search (best for natural language)
 
-When the user asks a question or uses natural language (e.g., "how does storage work?", "notes about legal setup"), use semantic search. It understands meaning, not just keywords:
+When the user asks a question or uses natural language (e.g., "how does storage work?", "notes about legal setup"), use `knowledgeGraphSemanticSearch` (package ≥ 1.0.50). Pass the question as-is — the server embeds it and ranks by meaning, and falls back to keyword search transparently if embeddings are unavailable:
 
 ```bash
-switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "<1-2 keywords>", limit: 20) { documentId title description noteType status topics } }'
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<natural language question>", mode: HYBRID, limit: 10) { similarity node { documentId title description noteType status topics } } }'
 ```
 
-Results ranked by similarity (0-1). Notes > 0.75 are strong matches.
+- `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (0–1, >0.8 strong match)
+- `mode: HYBRID` — semantic + keyword rank fusion; scores are tiny RRF values (~0.016), only the order matters
+- If the field fails schema validation, the deployment runs an older package — use tier 2 with 1-2 keywords instead.
 
 ### 2. Keyword search (fast, exact matches)
 
@@ -78,8 +80,8 @@ If the subgraph returns empty (index needs rebuilding), scan directly:
 
 | User intent | Best query |
 |-------------|-----------|
-| Natural language question | `knowledgeGraphFullSearch` with 1-2 keywords |
-| Known keyword/term | `knowledgeGraphSearch` or `knowledgeGraphFullSearch` |
+| Natural language question | `knowledgeGraphSemanticSearch` (mode: HYBRID) — pass the question verbatim |
+| Known keyword/term | `knowledgeGraphSearch` or `knowledgeGraphFullSearch` (1-2 keywords, terms are ANDed) |
 | "Notes about topic X" | `knowledgeGraphByTopic` |
 | "Notes similar to this one" | `knowledgeGraphSimilar` |
 | "What did author X write?" | `knowledgeGraphByAuthor` |

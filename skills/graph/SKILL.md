@@ -54,14 +54,14 @@ switchboard query '{ knowledgeGraphRelatedByTopic(driveId: "<UUID>", documentId:
 
 ## Semantic neighborhoods
 
-AI-powered queries using Transformers.js embeddings. Find conceptually related notes even without shared topics or direct links:
+AI-powered queries over server-computed embeddings (the graph-indexer processor embeds every note; package ≥ 1.0.50). Find conceptually related notes even without shared topics or direct links:
 
 ```bash
 # Find notes semantically similar to a given note
 switchboard query '{ knowledgeGraphSimilar(driveId: "<UUID>", documentId: "<NOTE-ID>", limit: 10) { node { documentId title noteType } similarity } }'
 
-# Semantic search for a concept
-switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "reducer errors", limit: 10) { documentId title } }'
+# Semantic search for a concept — natural language works verbatim
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how do reducers report errors?", mode: SEMANTIC, limit: 10) { similarity node { documentId title } } }'
 ```
 
 Use `knowledgeGraphSimilar` during connection analysis — it reveals non-obvious relationships that topic overlap and link structure miss.

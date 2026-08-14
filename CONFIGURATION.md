@@ -1,5 +1,15 @@
 # Configuration Guide
 
+## Rule zero: the user chooses the vault
+
+**The plugin has no default vault.** Every endpoint in this guide —
+`localhost:4001` included — is an example, not a target. Before the first
+vault operation of a session, the agent must establish which Switchboard URL
+and which drive the user wants, either from an unambiguous existing config
+(active CLI profile, project `.mcp.json`) or by **asking the user**. Never
+assume, and never bake an endpoint or drive id into scripts or saved config
+the user didn't name.
+
 ## Reactor Connection
 
 The plugin connects to a Powerhouse reactor via MCP. There are three ways the MCP server can be configured, and **only one should be active** to avoid conflicts.
@@ -50,9 +60,9 @@ For remote Switchboard, change the URL:
 }
 ```
 
-### Option C: Plugin .mcp.json (fallback)
+### Option C: Plugin .mcp.json (empty on purpose)
 
-The plugin ships with a default `.mcp.json` pointing to `localhost:4001`. This is only used if no project root config or IDE config exists. You generally don't need to edit this.
+The plugin's own `.mcp.json` ships **empty** (`"mcpServers": {}`) — it deliberately does not point anywhere, so installing the plugin never silently connects to a vault the user didn't choose. Configure the target via Option A or B after asking the user which vault they want.
 
 ### Tool Name Adaptation
 

@@ -151,7 +151,7 @@ Every `bai/knowledge-note` operation triggers the indexer to update:
 - **graph_nodes** — title, description, content, noteType, status, author, sourceOrigin, createdAt
 - **graph_edges** — source, target, linkType, targetTitle
 - **graph_topics** — document_id, topic name
-- **note_embeddings** — 384-dim vector embeddings for semantic search (Transformers.js + pgvector)
+- **note_embeddings** — 384-dim vector embeddings for semantic search, computed server-side by the processor on every content change plus a boot-time backfill (gte-small via Transformers.js; package ≥ 1.0.50)
 
 ### Available queries
 
@@ -239,7 +239,7 @@ Human (Connect App)                    AI Agent (Claude Code)
               |── 11 document models
               |── Graph Indexer processor
               |     |── Relational index (PGlite)
-              |     +── Semantic embeddings (pgvector + Transformers.js)
+              |     +── Semantic embeddings (server-side Transformers.js)
               |── Knowledge Graph subgraph (25+ queries)
               +── MCP server
 ```

@@ -63,15 +63,18 @@ You interact with the Knowledge Vault through the **Switchboard CLI** (`switchbo
 
 ## Connection mode: Switchboard CLI
 
-The CLI is configured via profiles:
+The CLI is configured via profiles. **There is no default vault — the user
+chooses the target.** If no profile is active or it's ambiguous which vault
+the user means, ask them for their Switchboard URL and drive before any
+vault operation; never assume an endpoint.
 
 ```bash
 # Check current profile
 switchboard config show
 
-# Switch profiles as needed
-switchboard config use local       # http://localhost:4001/graphql
-switchboard config use remote-dev  # https://switchboard-dev.powerhouse.xyz/graphql
+# Profiles are user-defined — these are examples, not defaults
+switchboard config add my-vault --url <the-switchboard-/graphql-URL-the-user-named>
+switchboard config use my-vault    # e.g. local ph vetra: http://localhost:4001/graphql
 
 # Check connectivity
 switchboard ping
@@ -385,21 +388,21 @@ switchboard query '{ knowledgeGraphRecent(driveId: "<UUID>", limit: 10) { docume
 
 ### Semantic search (AI-powered)
 
-Uses Transformers.js embeddings with pgvector for meaning-based search. These queries understand natural language — "how does storage work?" finds notes about reactors without keyword matches.
+The Switchboard embeds notes AND queries server-side (gte-small, 384-dim; package ≥ 1.0.50) — no client ever computes vectors. Natural-language questions work verbatim:
 
 ```bash
-# Semantic search — find notes by meaning, not just keywords
-switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "storage", limit: 20) { documentId title noteType } }'
+# Semantic search — pass the question as-is, server embeds it
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does storage work?", mode: HYBRID, limit: 10) { similarity node { documentId title noteType } } }'
 
 # Find notes similar to a given note
 switchboard query '{ knowledgeGraphSimilar(driveId: "<UUID>", documentId: "<NOTE-ID>", limit: 5) { node { documentId title } similarity } }'
 ```
 
 **When to use semantic vs keyword search:**
+- `knowledgeGraphSemanticSearch(query, mode)` — natural-language questions. SEMANTIC = cosine similarity (0–1); HYBRID = semantic+keyword rank fusion (tiny RRF scores, order matters). Falls back to keyword transparently when embeddings are unavailable. On pre-1.0.50 deployments the field fails schema validation — use fullSearch with 1-2 keywords instead.
 - `knowledgeGraphSearch` — fast keyword match on title + description. Use for known terms.
-- `knowledgeGraphFullSearch` — keyword match on title + description + content. Use when the term might be in the body.
-- `knowledgeGraphSimilar(documentId)` — vector neighbours of a known note. Requires embeddings; returns nothing if none were pushed. There is no `knowledgeGraphSemanticSearch` field.
-- `knowledgeGraphSimilar` — find notes related to a specific note. Use during `/connect` to discover non-obvious connections.
+- `knowledgeGraphFullSearch` — keyword match on title + description + content; ANDs terms, so 1-2 keywords only. Use when the exact term might be in the body.
+- `knowledgeGraphSimilar(documentId)` — vector neighbours of a known note. Use during `/connect` to discover non-obvious connections.
 
 ### Structural analysis
 

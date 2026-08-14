@@ -3,7 +3,10 @@
  * Seed a local file as a bai/source document into the Knowledge Vault.
  *
  * Usage:
- *   node seed-source.mjs --drive-id <UUID> --sources-folder-id <UUID> --file <path> [--endpoint <URL>]
+ *   node seed-source.mjs --endpoint <switchboard-/graphql/r-URL> --drive-id <UUID> --sources-folder-id <UUID> --file <path>
+ *
+ * There is no default endpoint on purpose: the user chooses which vault to
+ * write to. Ask them for their Switchboard URL if you don't have it.
  */
 
 import fs from "fs";
@@ -14,13 +17,14 @@ function getArg(flag, fallback) {
   return idx !== -1 ? process.argv[idx + 1] : fallback;
 }
 
-const ENDPOINT = getArg("--endpoint", "https://switchboard-dev.powerhouse.xyz/graphql/r");
+const ENDPOINT = getArg("--endpoint", null);
 const DRIVE_ID = getArg("--drive-id", null);
 const SOURCES_FOLDER_ID = getArg("--sources-folder-id", null);
 const FILE_PATH = getArg("--file", null);
 
-if (!DRIVE_ID || !SOURCES_FOLDER_ID || !FILE_PATH) {
-  console.error("Usage: node seed-source.mjs --drive-id <UUID> --sources-folder-id <UUID> --file <path>");
+if (!ENDPOINT || !DRIVE_ID || !SOURCES_FOLDER_ID || !FILE_PATH) {
+  console.error("Usage: node seed-source.mjs --endpoint <switchboard-/graphql/r-URL> --drive-id <UUID> --sources-folder-id <UUID> --file <path>");
+  console.error("No default endpoint: pass the Switchboard the user chose (e.g. http://localhost:4001/graphql/r).");
   process.exit(1);
 }
 

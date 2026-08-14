@@ -25,14 +25,31 @@ Read these files for full details on specific areas:
 | Export vault as markdown/JSON/backup | [skills/export/SKILL.md](skills/export/SKILL.md) |
 | Real-time vault monitoring via WebSocket | [skills/watch/SKILL.md](skills/watch/SKILL.md) |
 
-## First: Check your connection
+## First: Establish which vault to use — ASK, never assume
+
+**There is no default vault.** Different users run different Switchboards
+(local dev, shared team deployments, per-project drives), and pointing writes
+at the wrong one corrupts someone's knowledge base. Before the first vault
+operation of a session:
+
+1. Check whether a target is already established — an active CLI profile
+   (`switchboard config show`), a project `.mcp.json`, or the user having
+   named one in conversation.
+2. If none is unambiguous, **ask the user** which vault to connect to:
+   the Switchboard URL (e.g. `http://localhost:4001/graphql` for local
+   `ph vetra`, or `https://<their-host>/graphql` for a deployment) **and**
+   which drive on it.
+3. Confirm reachability before proceeding:
 
 ```bash
 switchboard config show    # which server are you targeting?
 switchboard ping           # is it reachable?
 ```
 
-If the CLI isn't configured, check if MCP tools are available (`mcp__reactor-mcp__*` or `mcp__claude_ai_*`).
+Never hardcode an endpoint or drive id into scripts or saved config without
+the user having named it. If the CLI isn't configured, check if MCP tools are
+available (`mcp__reactor-mcp__*` or `mcp__claude_ai_*`) — and the same rule
+applies: the MCP server's target must be one the user chose.
 
 ### Connecting to a shared remote vault
 
@@ -91,32 +108,43 @@ Save the drive slug and UUID — you'll need them for every query.
 
 ## Search the vault
 
-**Start with `knowledgeGraphFullSearch`.** It matches title, description *and* note content, and it works on every deployment.
+**Start with `knowledgeGraphSemanticSearch`** (package ≥ 1.0.50). Send the
+question in plain natural language — the Switchboard embeds the query
+server-side and ranks by meaning, falling back to keyword search
+transparently if embeddings are unavailable, so it is always safe to call:
 
 ```bash
-# DEFAULT: full-text search across title + description + content
-switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "reactor storage", limit: 20) { documentId title noteType } }'
+# DEFAULT: semantic/hybrid search from plain query text
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: HYBRID, limit: 10) { similarity node { documentId title description noteType } } }'
 ```
 
-⚠️ **`knowledgeGraphFullSearch` ANDs its terms.** A long natural-language question silently returns `[]`. Search 1–2 distinctive keywords, not a sentence — "how does the reactor store operations?" finds nothing; "operation store" finds it. Run several short queries with different wording rather than one long one.
+- `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (0–1, >0.8 is a strong match)
+- `mode: HYBRID` — semantic + keyword rank fusion; scores are small RRF values (~0.016), only the ORDER is meaningful
+- If the field doesn't exist (schema validation error), the deployment runs an older package — fall back to `knowledgeGraphFullSearch` below.
 
-There is **no `knowledgeGraphSemanticSearch` field** — do not call it, the query will fail schema validation. The vector queries that do exist are:
+Keyword search still matters for exact terms:
 
 ```bash
-# Notes similar to a given note (needs embeddings present)
+# Full-text keyword search across title + description + content
+switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "operation store", limit: 20) { documentId title noteType } }'
+```
+
+⚠️ **`knowledgeGraphFullSearch` ANDs its terms.** A long natural-language question silently returns `[]`. Give it 1–2 distinctive keywords, not a sentence — natural-language questions belong in `knowledgeGraphSemanticSearch`.
+
+Other vector queries:
+
+```bash
+# Notes similar to a given note
 switchboard query '{ knowledgeGraphSimilar(driveId: "<UUID>", documentId: "<NOTE-ID>", limit: 5) { node { title } similarity } }'
-
-# Search by a caller-supplied vector (you must compute the embedding yourself)
-# knowledgeGraphSearchByEmbedding(driveId, embedding: [Float!]!, limit)
 ```
 
-Both return nothing unless embeddings have been pushed for that drive. Embeddings are **computed client-side and uploaded** via `knowledgeGraphUpsertEmbedding` — the server never computes them, and `knowledgeGraphReindex` does not create them. Check coverage before relying on either:
+Embeddings are **computed server-side by the graph-indexer processor** (package ≥ 1.0.50): every title/description/content change re-embeds the note, and a boot-time backfill embeds anything missing — no client ever pushes vectors. Coverage check (should be `[]` shortly after a deployment boots):
 
 ```bash
 switchboard query '{ knowledgeGraphMissingEmbeddings(driveId: "<UUID>") }'
 ```
 
-If that errors with `relation "note_embeddings" does not exist`, the deployment has no embedding store and only keyword/topic search will work.
+On older deployments only: embeddings had to be client-computed and pushed via `knowledgeGraphUpsertEmbedding(driveId, documentId, embedding)` — that mutation remains as a legacy force-push path. If `knowledgeGraphMissingEmbeddings` errors with `relation "note_embeddings" does not exist`, the deployment predates the embedding store entirely and only keyword/topic search will work.
 
 Other retrieval paths, all always available:
 
@@ -186,7 +214,8 @@ All queries require `driveId: "<UUID>"`.
 
 | Query | Use when |
 |-------|----------|
-| `knowledgeGraphFullSearch(query)` | **Default.** Title+description+content; ANDs terms, so use 1-2 keywords |
+| `knowledgeGraphSemanticSearch(query, mode)` | **Default for natural language.** Server-side embedding, keyword fallback (pkg ≥ 1.0.50) |
+| `knowledgeGraphFullSearch(query)` | Exact terms in title+description+content; ANDs terms, so use 1-2 keywords |
 | `knowledgeGraphSearch(query)` | Title+description only — narrower than fullSearch |
 | `knowledgeGraphNodes` | Every node in one call; cheaper than many searches when scanning |
 | `knowledgeGraphByTopic(topic)` | "Notes about X topic" |

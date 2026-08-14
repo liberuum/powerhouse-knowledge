@@ -22,13 +22,21 @@ Verify that a Knowledge Vault drive is ready for use — correct folder structur
 
 ## Setup Process
 
+### Step 0: Establish which reactor — ask, never assume
+
+There is no default vault. If the session hasn't already established a target
+(active `switchboard config show` profile the user set up, project
+`.mcp.json`, or the user naming one), **ask the user for the Switchboard URL**
+(local `ph vetra` at `http://localhost:4001/graphql`, or their deployment's
+`/graphql` endpoint) before touching anything.
+
 ### Step 1: Find the vault drive
 
 ```bash
 switchboard drives list --format json
 ```
 
-If multiple drives exist, ask the user which one to set up. If only one non-vetra drive exists, use that.
+If multiple drives exist, ask the user which one to set up. If only one non-vetra drive exists, confirm it with the user and use that.
 
 ### Step 2: Verify folder structure
 

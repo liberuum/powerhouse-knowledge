@@ -12,6 +12,7 @@ Find genuine connections between notes and create typed links. This is the "refl
 1. **Identify the target note** — which note are we connecting?
 2. **Search for candidates** using multiple strategies:
    - `knowledgeGraphSimilar(documentId)` — AI-powered semantic similarity (finds conceptually related notes even without keyword overlap)
+   - `knowledgeGraphSemanticSearch(query, mode: SEMANTIC)` — semantic search from the note's core claim phrased as a question (pkg ≥ 1.0.50; falls back to keyword transparently)
    - `knowledgeGraphRelatedByTopic(documentId)` — notes sharing the most topics
    - `knowledgeGraphSearch(query)` — keyword search on title + description
    - `knowledgeGraphFullSearch(query)` — full-text search; ANDs terms, so use 1-2 keywords
