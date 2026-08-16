@@ -21,26 +21,36 @@ The vault stores knowledge as `bai/knowledge-note` documents — atomic claims w
 
 ## Installation
 
-### Option 1: Clone into your project (recommended)
+Claude Code loads plugins from **marketplaces** — a plugin directory sitting
+on disk (e.g. cloned into `.claude/plugins/`) is NOT discovered by itself.
+This repo is its own single-plugin marketplace (see
+`.claude-plugin/marketplace.json`), so installation is two commands.
+
+### Option 1: From GitHub (recommended)
 
 ```bash
-cd your-project/
-git clone https://github.com/liberuum/powerhouse-knowledge .claude/plugins/powerhouse-knowledge
+claude plugin marketplace add liberuum/powerhouse-knowledge
+claude plugin install powerhouse-knowledge@powerhouse-knowledge
 ```
 
-Claude Code auto-discovers plugins in `.claude/plugins/`.
+Or interactively inside Claude Code: `/plugin marketplace add liberuum/powerhouse-knowledge`,
+then `/plugin install powerhouse-knowledge@powerhouse-knowledge`.
 
-### Option 2: Global plugin
+### Option 2: From a local clone (development)
 
 ```bash
-git clone https://github.com/liberuum/powerhouse-knowledge ~/.claude/plugins/powerhouse-knowledge
+git clone https://github.com/liberuum/powerhouse-knowledge
+claude plugin marketplace add ./powerhouse-knowledge
+claude plugin install powerhouse-knowledge@powerhouse-knowledge
 ```
 
-### Option 3: Plugin directory flag
+After pulling changes into the clone, refresh with
+`claude plugin marketplace update powerhouse-knowledge` and
+`claude plugin update powerhouse-knowledge`.
 
-```bash
-claude --plugin-dir /path/to/powerhouse-knowledge
-```
+Restart your Claude Code session after installing — skills register at
+session start. Verify with `/help` or by typing `/powerhouse-knowledge:` and
+checking the completion list.
 
 ## Quick Start
 

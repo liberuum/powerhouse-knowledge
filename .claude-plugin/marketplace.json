@@ -1,0 +1,14 @@
+{
+  "name": "powerhouse-knowledge",
+  "owner": {
+    "name": "BAI",
+    "url": "https://bai.dev"
+  },
+  "plugins": [
+    {
+      "name": "powerhouse-knowledge",
+      "source": "./",
+      "description": "AI agent integration for Powerhouse Knowledge Vault. Query, create, connect, and verify knowledge notes via the Switchboard CLI and GraphQL."
+    }
+  ]
+}
