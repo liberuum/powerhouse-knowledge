@@ -45,7 +45,10 @@ if (!ENDPOINT || !DRIVE) {
   process.exit(1);
 }
 const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const dirs = skillDirs.length ? skillDirs : [join(pluginRoot, "skills")];
+const defaultDirs = [join(pluginRoot, "skills")];
+if (existsSync(join(pluginRoot, "external-skills")))
+  defaultDirs.push(join(pluginRoot, "external-skills"));
+const dirs = skillDirs.length ? skillDirs : defaultDirs;
 const READER = ENDPOINT.replace(/\/graphql\/?$/, "/graphql/r");
 const AUTHOR = "skill-sync";
 
@@ -118,13 +121,34 @@ function parseSkill(file, sourceDir) {
   const body = fm ? raw.slice(fm[0].length) : raw;
   const name = meta.name || basename(dirname(file));
   const headings = [...body.matchAll(/^## (.+)$/gm)].map((m) => m[1]).slice(0, 14);
+  // Frontmatter-less skills (external repos): first prose paragraph
+  // stands in for the description.
+  let description = (meta.description || "").trim();
+  if (!description) {
+    const para = body
+      .split(/\n\s*\n/)
+      .map((x) => x.trim())
+      .find((x) => x && !x.startsWith("#"));
+    description = (para ?? "").replace(/\s+/g, " ");
+  }
+  // External skills carry a CANONICAL sidecar: first line = URL of the
+  // true source of truth (another repo). The vendored copy here is a
+  // pinned mirror used for hashing; refresh = re-fetch + re-run sync.
+  const canonicalFile = join(dirname(file), "CANONICAL");
+  const canonicalUrl = existsSync(canonicalFile)
+    ? readFileSync(canonicalFile, "utf8").trim().split("\n")[0]
+    : null;
+  const rel = file.startsWith(pluginRoot + "/")
+    ? file.slice(pluginRoot.length + 1)
+    : `skills/${basename(dirname(file))}/SKILL.md`;
   return {
     name,
-    description: (meta.description || "").trim(),
+    description,
     raw,
     headings,
     hash: createHash("sha256").update(raw).digest("hex"),
-    repoPath: `skills/${basename(dirname(file))}/SKILL.md`,
+    repoPath: rel,
+    canonicalUrl,
     sourceDir,
   };
 }
@@ -244,7 +268,7 @@ for (const sk of skills) {
       content: sk.raw,
       sourceType: "DOCUMENTATION",
       description: sk.description.slice(0, 200),
-      url: `https://github.com/liberuum/powerhouse-knowledge/blob/main/${sk.repoPath}`,
+      url: sk.canonicalUrl ?? `https://github.com/liberuum/powerhouse-knowledge/blob/main/${sk.repoPath}`,
       author: "powerhouse-knowledge plugin",
       method: `sha256:${sk.hash}`,
       tool: "sync-skills",
@@ -267,10 +291,14 @@ for (const sk of skills) {
     ``,
     `## Where the full skill lives`,
     `- Vault source: **Agent skill: ${sk.name}** (full SKILL.md text, DERIVED_FROM below)`,
-    `- Canonical copy: plugin repo \`${sk.repoPath}\` — always execute from the repo copy; this note is the discovery layer.`,
+    sk.canonicalUrl
+      ? `- Canonical copy: ${sk.canonicalUrl} (external repo; mirrored in this plugin at \`${sk.repoPath}\`) — always execute from the canonical copy; this note is the discovery layer.`
+      : `- Canonical copy: plugin repo \`${sk.repoPath}\` — always execute from the repo copy; this note is the discovery layer.`,
     ``,
     `## Invocation`,
-    `\`/powerhouse-knowledge:${sk.name}\` in Claude Code (plugin installed), or read the source content and follow it manually.`,
+    sk.canonicalUrl
+      ? `External skill — not a plugin command. Install per its repo (typically as a Claude skill, e.g. \`.claude/skills/${sk.name}/\`), or read the source content and follow it manually.`
+      : `\`/powerhouse-knowledge:${sk.name}\` in Claude Code (plugin installed), or read the source content and follow it manually.`,
     ``,
     `_Synced by sync-skills; source hash sha256:${sk.hash.slice(0, 12)}…_`,
   ].join("\n");
