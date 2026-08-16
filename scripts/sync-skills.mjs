@@ -175,9 +175,13 @@ for (const n of noteDocs) {
   if (m) existingNotes[m[1]] = n.id;
 }
 let mocId = null;
+let ecosystemMocId = null;
 for (const m of mocDocs) {
   const st = await readState(m.id);
-  if ((st.title ?? "") === "Agent Skills") { mocId = m.id; break; }
+  const t = st.title ?? "";
+  if (t === "Agent Skills") mocId = m.id;
+  if (t === "Powerhouse Ecosystem") ecosystemMocId = m.id;
+  if (mocId && ecosystemMocId) break;
 }
 
 // ── MOC ─────────────────────────────────────────────────────────────────
@@ -196,6 +200,14 @@ if (!mocId && !DRY) {
   }]);
   console.log(`created Agent Skills MOC ${mocId}`);
 } else console.log(`Agent Skills MOC: ${mocId ?? "(dry-run)"} `);
+// Hang the skills map under the ecosystem hub so top-down MOC browsing
+// finds it (semantic/topic discovery work without this). Best-effort:
+// vaults without a "Powerhouse Ecosystem" MOC simply skip it. The edge
+// is idempotent on (source, target, type).
+if (mocId && ecosystemMocId && !DRY) {
+  await addRel(ecosystemMocId, mocId, "CHILD_MOC");
+  console.log("Agent Skills hung under Powerhouse Ecosystem (CHILD_MOC)");
+}
 
 // ── per-skill sync ──────────────────────────────────────────────────────
 let created = 0, updated = 0, skipped = 0;
