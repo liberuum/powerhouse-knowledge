@@ -32,6 +32,7 @@ Each skill has detailed instructions. Read the relevant file before executing a 
 | Vault health diagnostics | [skills/health/SKILL.md](../skills/health/SKILL.md) |
 | Full processing pipeline | [skills/pipeline/SKILL.md](../skills/pipeline/SKILL.md) |
 | Vault setup / verify | [skills/setup/SKILL.md](../skills/setup/SKILL.md) |
+| Manage projects & WBS goal trees | [skills/projects/SKILL.md](../skills/projects/SKILL.md) |
 | Bulk import | [skills/import/SKILL.md](../skills/import/SKILL.md) |
 | Export vault | [skills/export/SKILL.md](../skills/export/SKILL.md) |
 | Real-time monitoring | [skills/watch/SKILL.md](../skills/watch/SKILL.md) |
@@ -387,6 +388,8 @@ Documents must be placed in the correct folders:
 | bai/observation | /ops/sessions/ | Operational signals |
 | bai/knowledge-graph | /self/ | Graph singleton |
 | bai/vault-config | /self/ | Config singleton |
+| bai/project | /projects/ | Project tracking (status, owner, team, deliverables) |
+| bai/wbs | /projects/ | Work-breakdown goal tree for a project |
 | _(methodology)_ | _(local: data/methodology/)_ | _(plugin reference, not in vault)_ |
 
 Always read the drive first to find folder UUIDs:

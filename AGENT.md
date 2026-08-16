@@ -24,6 +24,7 @@ Read these files for full details on specific areas:
 | Bulk import from markdown/Obsidian/JSON | [skills/import/SKILL.md](skills/import/SKILL.md) |
 | Export vault as markdown/JSON/backup | [skills/export/SKILL.md](skills/export/SKILL.md) |
 | Real-time vault monitoring via WebSocket | [skills/watch/SKILL.md](skills/watch/SKILL.md) |
+| Managing projects and Work Breakdown Structure goal trees | [skills/projects/SKILL.md](skills/projects/SKILL.md) |
 | Skill discovery in the vault + incremental sync | [skills/skills/SKILL.md](skills/skills/SKILL.md) |
 
 ## First: Establish which vault to use — ASK, never assume
@@ -255,6 +256,7 @@ next action in `recommendations`, and tell the user what it would take.
 | `/powerhouse-knowledge:health` | Vault health diagnostics |
 | `/powerhouse-knowledge:graph` | Graph structure analysis |
 | `/powerhouse-knowledge:setup` | Verify vault is ready |
+| `/powerhouse-knowledge:projects` | Manage projects (`bai/project`) and WBS goal trees (`bai/wbs`); agent goal-working loop |
 | `/powerhouse-knowledge:skills <need>` | Find/read agent skills stored in the vault (semantic, by need) |
 
 ## Graph indexer queries (quick reference)
@@ -290,6 +292,8 @@ All queries require `driveId: "<UUID>"`.
 | `bai/health-report` | Diagnostics (singleton) | `/ops/health/` |
 | `bai/knowledge-graph` | Graph (singleton) | `/self/` |
 | `bai/vault-config` | Config (singleton) | `/self/` |
+| `bai/project` | Project tracking: status, owner, team, deliverables | `/projects/` |
+| `bai/wbs` | Work-breakdown goal tree for a project | `/projects/` |
 
 ## Relationships
 

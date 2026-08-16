@@ -6,7 +6,7 @@ Claude Code plugin for the Powerhouse Knowledge Vault. Enables AI agents and hum
 
 This plugin gives you (human or AI agent) the ability to manage a structured knowledge graph inside a Powerhouse reactor. It provides:
 
-- **15 skills** for knowledge management (seed, extract, connect, search, verify, health, graph, skills discovery, etc.)
+- **16 skills** for knowledge management (seed, extract, connect, search, verify, health, graph, projects/WBS, skills discovery, etc.)
 - **A knowledge-agent** definition optimized for knowledge work via the Switchboard CLI
 - **Connection to a Powerhouse reactor** via MCP or Switchboard CLI
 - **Access to the Graph Indexer** — a relational index with keyword search, topic queries, provenance filtering, and AI-powered semantic search
@@ -159,6 +159,12 @@ The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.
 | Pipeline | `/powerhouse-knowledge:pipeline` | Full end-to-end: extract → connect → verify |
 | Watch | `/powerhouse-knowledge:watch` | Real-time vault monitoring via WebSocket |
 
+### Project & Work Tracking
+
+| Skill | Command | Description |
+|-------|---------|-------------|
+| Projects | `/powerhouse-knowledge:projects` | Manage `bai/project` + `bai/wbs` — goal tracking, deliverables, agent goal-working loop |
+
 ## Graph Indexer & Subgraph
 
 The vault includes a **Graph Indexer processor** that maintains a relational index of all knowledge notes. The **Knowledge Graph subgraph** exposes this index via GraphQL at `/graphql/knowledgeGraph`.
@@ -228,6 +234,8 @@ Every `bai/knowledge-note` operation triggers the indexer to update:
 | Observation | `bai/observation` | Operational learning signals |
 | Tension | `bai/tension` | Unresolved contradictions |
 | Derivation | `bai/derivation` | Configuration audit trail |
+| Project | `bai/project` | Project tracking: status, owner, team, deliverables |
+| Work Breakdown Structure | `bai/wbs` | Goal tree for a project: statuses, assignees, dependencies, notes |
 
 ## Processing Pipeline
 
@@ -248,7 +256,7 @@ The 6R pipeline transforms raw sources into structured, connected knowledge:
 Human (Connect App)                    AI Agent (Claude Code)
   |                                     |
   +── Knowledge Vault App               +── powerhouse-knowledge plugin
-  |     |── Notes tab (grid + search)   |     |── 14 skills
+  |     |── Notes tab (grid + search)   |     |── 16 skills
   |     |── Graph tab (cytoscape viz)   |     |── knowledge-agent
   |     |── Sources, Pipeline, Health   |     |── Switchboard CLI
   |     +── MOC editor, Note editor     |     +── MCP / GraphQL
@@ -282,7 +290,8 @@ powerhouse-knowledge/
 │   ├── import/SKILL.md         # Bulk import
 │   ├── export/SKILL.md         # Vault export
 │   ├── watch/SKILL.md          # Real-time monitoring
-│   └── cli-reference/SKILL.md  # Switchboard CLI commands
+│   ├── cli-reference/SKILL.md  # Switchboard CLI commands
+│   └── projects/SKILL.md       # Project (bai/project) + WBS (bai/wbs) goal tracking
 ├── data/
 │   └── methodology/            # 249 Ars Contexta research claims (local reference)
 ├── hooks/                      # Pre-flight hooks for vault detection
