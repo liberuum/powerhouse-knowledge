@@ -158,16 +158,32 @@ if (!sourcesFolder || !notesFolder) throw new Error("vault folder layout not fou
 const srcDocs = nodes.filter((n) => n.documentType === "bai/source");
 const noteDocs = nodes.filter((n) => n.documentType === "bai/knowledge-note");
 const mocDocs = nodes.filter((n) => n.documentType === "bai/moc");
-const existingSources = {}; // name -> {id, hash}
+const existingSources = {}; // name -> {id, hash, owned, status}
+const duplicateSources = []; // same-name extras we refuse to touch
 for (const s of srcDocs) {
   const st = await readState(s.id);
   const m = (st.title ?? "").match(/^Agent skill: (\S+)/);
-  if (m)
-    existingSources[m[1]] = {
-      id: s.id,
-      hash: (st.provenance?.method ?? "").replace(/^sha256:/, ""),
-    };
+  if (!m) continue;
+  const entry = {
+    id: s.id,
+    hash: (st.provenance?.method ?? "").replace(/^sha256:/, ""),
+    owned: st.createdBy === AUTHOR || st.provenance?.tool === "sync-skills",
+    status: st.status ?? "INBOX",
+  };
+  const prior = existingSources[m[1]];
+  if (!prior) existingSources[m[1]] = entry;
+  // Two sources claim the same skill name: prefer the sync-owned one and
+  // refuse to write through the other — updating a hand-made document
+  // that happens to share a title would destroy someone's draft.
+  else if (!prior.owned && entry.owned) {
+    duplicateSources.push({ name: m[1], id: prior.id });
+    existingSources[m[1]] = entry;
+  } else duplicateSources.push({ name: m[1], id: entry.id });
 }
+for (const d of duplicateSources)
+  console.warn(
+    `⚠ duplicate source for '${d.name}' (${d.id}) — not managed by this sync; resolve manually`,
+  );
 const existingNotes = {}; // name -> id
 for (const n of noteDocs) {
   const st = await readState(n.id);
@@ -289,4 +305,19 @@ for (const sk of skills) {
   if (!ok) { console.error(`VERIFY FAILED for ${sk.name}: source=${sSt.status}/${sSt.method}, note=${nSt.title}`); process.exitCode = 1; }
   prior ? updated++ : created++;
 }
-console.log(`\nsync done: ${created} created, ${updated} updated, ${skipped} skipped (unchanged)${DRY ? " [dry-run]" : ""}`);
+// Vault-only skills: present in the vault, absent from every skills dir.
+// The sync never deletes, so these persist — but they have no canonical
+// copy and no hash to verify, which breaks the trust rule every synced
+// note teaches. Flag them; resolution is promote-or-archive (see the
+// skills SKILL.md). ARCHIVED ones are considered resolved.
+const repoNames = new Set(skills.map((k) => k.name));
+const vaultOnly = Object.entries(existingSources).filter(
+  ([name, e]) => !repoNames.has(name) && e.status !== "ARCHIVED",
+);
+for (const [name, e] of vaultOnly)
+  console.warn(
+    `⚠ vault-only skill '${name}' (${e.id}) has NO canonical repo copy — ` +
+      `promote it (copy content to skills/${name}/SKILL.md and re-run; the sync adopts the vault doc in place) ` +
+      `or archive it (SET_SOURCE_STATUS ARCHIVED).`,
+  );
+console.log(`\nsync done: ${created} created, ${updated} updated, ${skipped} skipped (unchanged)${vaultOnly.length ? `, ${vaultOnly.length} vault-only flagged` : ""}${DRY ? " [dry-run]" : ""}`);

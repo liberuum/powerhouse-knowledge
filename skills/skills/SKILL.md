@@ -64,6 +64,31 @@ stats, note → CANONICAL, DERIVED_FROM + MOC CORE_IDEA edges) and verifies
 every write by read-back. Run it twice: the second run must report
 `0 created, 0 updated, N skipped` — that is the idempotency proof.
 
+## Skills born in the vault (no canonical repo copy)
+
+Uploading a skill directly into the vault (hand-created source titled
+`Agent skill: <name>`) is allowed — it works for discovery immediately —
+but it violates the trust rule until resolved: there is no repo copy to
+execute from and no hash to verify. The sync **never deletes** it, and
+never writes through it; every run flags it:
+
+```
+⚠ vault-only skill '<name>' … NO canonical repo copy
+```
+
+Resolve one of two ways:
+- **Promote**: copy the content into `skills/<name>/SKILL.md` in the repo
+  and re-run the sync. Name matching finds the existing vault document and
+  the sync **adopts it in place** — same ids, history preserved, ownership
+  and hash recorded.
+- **Archive**: `SET_SOURCE_STATUS` → `ARCHIVED` (and archive its note if
+  one exists). Archived vault-only skills are considered resolved and are
+  no longer flagged.
+
+Same-name collisions are safe: if a hand-made source shares a title with a
+repo skill, the sync prefers the copy it owns (`createdBy: skill-sync`)
+and refuses to write through the other, warning instead.
+
 ## Staleness detection
 
 Each source stores `sha256:<hash>` of its SKILL.md in the `method` field.
