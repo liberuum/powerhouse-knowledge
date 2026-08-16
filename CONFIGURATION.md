@@ -166,7 +166,7 @@ mutation MutateNote($id: String!, $actions: [JSONObject!]!) {
 
 ### Mode 3: Switchboard CLI (Full Feature Parity)
 
-The Switchboard CLI (v1.0.6+) provides full feature parity with MCP for all vault operations. Use `hooks/hooks-cli.json` instead of `hooks/hooks.json` to enable CLI mode.
+The Switchboard CLI (v1.0.6+) provides full feature parity with MCP for all vault operations. The plugin's `hooks/hooks.json` is already CLI-mode: on vault commands it pings the reactor, auto-introspects a stale model cache, and prints the active profile + detected vault drive.
 
 **Setup:**
 ```bash
@@ -304,10 +304,7 @@ switchboard drives check <drive>
 switchboard drives fix <drive> -y
 ```
 
-**Hooks:** Copy `hooks/hooks-cli.json` to `hooks/hooks.json` to use CLI mode:
-```bash
-cp hooks/hooks-cli.json hooks/hooks.json
-```
+**Hooks:** `hooks/hooks.json` ships in CLI mode — no copying needed.
 
 ### Known Issues and Workarounds
 
