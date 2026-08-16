@@ -115,6 +115,10 @@ await mutate(srcId, [{ type: "INGEST_SOURCE", input: {
   title: `Agent skill: ${name}`, content: raw, sourceType: "DOCUMENTATION",
   description: description.slice(0, 200),
   ...(canonical ? { url: canonical } : {}),
+  // author is REQUIRED for provenance to be written at all: the INGEST_SOURCE
+  // reducer only creates state.provenance when url||author||publishedAt is
+  // set — without it the sha256 method hash (our idempotency key) is dropped.
+  author: AUTHOR,
   method: `sha256:${hash}`, tool: "add-skill", createdAt: now(), createdBy: AUTHOR } }]);
 
 // ── note ────────────────────────────────────────────────────────────────
