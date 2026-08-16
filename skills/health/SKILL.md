@@ -232,6 +232,37 @@ Recommendations:
   2. Ground 2 notes in methodology via /connect
 ```
 
+## What belongs in `recommendations`
+
+**Open actions only** — things a human or agent should still do, each naming
+the action and where to do it. The field renders as a to-do list in the app,
+so anything else is noise:
+
+- ❌ Status ("MoC membership complete: 100%") — that belongs in the relevant
+  check's message, where it is already visible.
+- ❌ Changelog ("Repaired this session: 144 note types…") — the document's
+  operation history is the changelog.
+- ❌ Design rationale ("Membership edges use RELATES_TO") — belongs in a note
+  or the skill docs.
+- ❌ Anything already fixed. Re-running the report replaces recommendations
+  wholesale, so a fixed item must not survive into the next snapshot — and
+  watch for self-contradicting leftovers like "0 notes at minimum degree 1 —
+  candidates for the next pass".
+
+## Scope methodology grounding honestly
+
+`data/methodology/` is knowledge-systems research (PKM, agent cognition,
+retrieval). A vault whose notes are mostly software internals will never
+legitimately reach 100% grounding — "the reactor persists sync state in four
+PGlite tables" has no methodology counterpart, and inventing one is a
+fabricated link that fails the articulation test.
+
+Before reporting a grounding gap, **size the addressable subset**: run a
+couple of `knowledgeGraphSemanticSearch` probes for knowledge-management,
+documentation-practice and agent-workflow themes, and treat notes scoring
+>= 0.80 as the real denominator. Report `grounded / in-scope`, not
+`grounded / all notes`.
+
 ## Re-run after every fix
 
 A health report is a snapshot, and the dashboard shows the **last** one —
