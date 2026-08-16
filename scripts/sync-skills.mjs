@@ -333,19 +333,18 @@ for (const sk of skills) {
   if (!ok) { console.error(`VERIFY FAILED for ${sk.name}: source=${sSt.status}/${sSt.method}, note=${nSt.title}`); process.exitCode = 1; }
   prior ? updated++ : created++;
 }
-// Vault-only skills: present in the vault, absent from every skills dir.
-// The sync never deletes, so these persist — but they have no canonical
-// copy and no hash to verify, which breaks the trust rule every synced
-// note teaches. Flag them; resolution is promote-or-archive (see the
-// skills SKILL.md). ARCHIVED ones are considered resolved.
+// Vault-native skills: present in the vault, not bundled with the plugin.
+// That is a fully supported home — added via scripts/add-skill.mjs or any
+// agent, updated in place by re-adding. The sync never touches them; it
+// only manages the plugin's own bundled skills. Listed for visibility.
 const repoNames = new Set(skills.map((k) => k.name));
-const vaultOnly = Object.entries(existingSources).filter(
+const vaultNative = Object.entries(existingSources).filter(
   ([name, e]) => !repoNames.has(name) && e.status !== "ARCHIVED",
 );
-for (const [name, e] of vaultOnly)
-  console.warn(
-    `⚠ vault-only skill '${name}' (${e.id}) has NO canonical repo copy — ` +
-      `promote it (copy content to skills/${name}/SKILL.md and re-run; the sync adopts the vault doc in place) ` +
-      `or archive it (SET_SOURCE_STATUS ARCHIVED).`,
+if (vaultNative.length)
+  console.log(
+    `vault-native skills (managed in the vault, not by this sync): ${vaultNative
+      .map(([n]) => n)
+      .join(", ")}`,
   );
-console.log(`\nsync done: ${created} created, ${updated} updated, ${skipped} skipped (unchanged)${vaultOnly.length ? `, ${vaultOnly.length} vault-only flagged` : ""}${DRY ? " [dry-run]" : ""}`);
+console.log(`\nsync done: ${created} created, ${updated} updated, ${skipped} skipped (unchanged)${DRY ? " [dry-run]" : ""}`);

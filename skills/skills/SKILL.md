@@ -64,30 +64,33 @@ stats, note → CANONICAL, DERIVED_FROM + MOC CORE_IDEA edges) and verifies
 every write by read-back. Run it twice: the second run must report
 `0 created, 0 updated, N skipped` — that is the idempotency proof.
 
-## Skills born in the vault (no canonical repo copy)
+## Adding skills: the vault is the home
 
-Uploading a skill directly into the vault (hand-created source titled
-`Agent skill: <name>`) is allowed — it works for discovery immediately —
-but it violates the trust rule until resolved: there is no repo copy to
-execute from and no hash to verify. The sync **never deletes** it, and
-never writes through it; every run flags it:
+Adding a skill is a **vault operation** — no plugin release, no repo
+commit, no sync run. One command handles fetch/read, source + note +
+edges + close-out, and read-back verification, and it is idempotent by
+title (re-adding updates the same documents in place):
 
+```bash
+# from a URL (e.g. a skill kept in another repo)
+node scripts/add-skill.mjs --endpoint <.../graphql> --drive <id> --url <raw-md-url>
+
+# from a local file
+node scripts/add-skill.mjs --endpoint <.../graphql> --drive <id> --file ./my-skill.md --name my-skill
+
+# update after upstream changes: run the same command again
 ```
-⚠ vault-only skill '<name>' … NO canonical repo copy
-```
 
-Resolve one of two ways:
-- **Promote**: copy the content into `skills/<name>/SKILL.md` in the repo
-  and re-run the sync. Name matching finds the existing vault document and
-  the sync **adopts it in place** — same ids, history preserved, ownership
-  and hash recorded.
-- **Archive**: `SET_SOURCE_STATUS` → `ARCHIVED` (and archive its note if
-  one exists). Archived vault-only skills are considered resolved and are
-  no longer flagged.
+Or simply ask the agent: "add this skill to the vault: <url or file>" —
+it runs the same pattern. Skills added this way are **vault-native**:
+the vault copy IS the executable copy. If the skill originated at a URL,
+the source records it as `Upstream origin` for reference. To retire one,
+archive it (`SET_SOURCE_STATUS` → `ARCHIVED` + archive its note).
 
-Same-name collisions are safe: if a hand-made source shares a title with a
-repo skill, the sync prefers the copy it owns (`createdBy: skill-sync`)
-and refuses to write through the other, warning instead.
+The sync script below manages ONLY the plugin's bundled skills — it lists
+vault-native skills informationally and never touches them. Same-name
+collisions are safe: the sync writes only through documents it owns
+(`createdBy: skill-sync`) and warns about the rest.
 
 ## Staleness detection
 
