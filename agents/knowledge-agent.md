@@ -33,6 +33,7 @@ Each skill has detailed instructions. Read the relevant file before executing a 
 | Full processing pipeline | [skills/pipeline/SKILL.md](../skills/pipeline/SKILL.md) |
 | Vault setup / verify | [skills/setup/SKILL.md](../skills/setup/SKILL.md) |
 | Manage projects & WBS goal trees | [skills/projects/SKILL.md](../skills/projects/SKILL.md) |
+| Theme an editor/drive-app UI | [skills/theme-styling/SKILL.md](../skills/theme-styling/SKILL.md) |
 | Bulk import | [skills/import/SKILL.md](../skills/import/SKILL.md) |
 | Export vault | [skills/export/SKILL.md](../skills/export/SKILL.md) |
 | Real-time monitoring | [skills/watch/SKILL.md](../skills/watch/SKILL.md) |
