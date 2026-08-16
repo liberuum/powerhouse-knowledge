@@ -6,7 +6,7 @@ Claude Code plugin for the Powerhouse Knowledge Vault. Enables AI agents and hum
 
 This plugin gives you (human or AI agent) the ability to manage a structured knowledge graph inside a Powerhouse reactor. It provides:
 
-- **14 skills** for knowledge management (seed, extract, connect, search, verify, health, graph, etc.)
+- **15 skills** for knowledge management (seed, extract, connect, search, verify, health, graph, skills discovery, etc.)
 - **A knowledge-agent** definition optimized for knowledge work via the Switchboard CLI
 - **Connection to a Powerhouse reactor** via MCP or Switchboard CLI
 - **Access to the Graph Indexer** — a relational index with keyword search, topic queries, provenance filtering, and AI-powered semantic search
@@ -94,6 +94,13 @@ Or use the setup skill:
 /powerhouse-knowledge:pipeline
 ```
 
+**Find an agent skill by describing what you need:**
+```
+/powerhouse-knowledge:skills how do I bulk import notes?
+```
+(Skills are synced into the vault as PROCEDURE notes by `scripts/sync-skills.mjs` —
+incremental by content hash, git stays canonical.)
+
 **Search the vault:**
 ```
 /powerhouse-knowledge:search how does the reactor work
@@ -140,6 +147,7 @@ The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.
 | Connect | `/powerhouse-knowledge:connect` | Find and create typed links between notes |
 | Synthesize | `/powerhouse-knowledge:synthesize` | Create MOCs from topic clusters |
 | Search | `/powerhouse-knowledge:search <query>` | Find notes (keyword, topic, semantic, provenance) |
+| Skills | `/powerhouse-knowledge:skills <need>` | Find/read agent skills stored in the vault; sync via `scripts/sync-skills.mjs` |
 | Verify | `/powerhouse-knowledge:verify` | Quality checks + auto-repair |
 | Health | `/powerhouse-knowledge:health` | Vault diagnostics saved to health-report |
 | Graph | `/powerhouse-knowledge:graph` | Structural analysis (triangles, bridges, clusters) |
