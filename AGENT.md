@@ -25,7 +25,6 @@ Read these files for full details on specific areas:
 | Export vault as markdown/JSON/backup | [skills/export/SKILL.md](skills/export/SKILL.md) |
 | Real-time vault monitoring via WebSocket | [skills/watch/SKILL.md](skills/watch/SKILL.md) |
 | Managing projects and Work Breakdown Structure goal trees | [skills/projects/SKILL.md](skills/projects/SKILL.md) |
-| Theming a Powerhouse editor or drive-app UI correctly | [skills/theme-styling/SKILL.md](skills/theme-styling/SKILL.md) |
 | Skill discovery in the vault + incremental sync | [skills/skills/SKILL.md](skills/skills/SKILL.md) |
 
 ## First: Establish which vault to use — ASK, never assume
@@ -258,7 +257,6 @@ next action in `recommendations`, and tell the user what it would take.
 | `/powerhouse-knowledge:graph` | Graph structure analysis |
 | `/powerhouse-knowledge:setup` | Verify vault is ready |
 | `/powerhouse-knowledge:projects` | Manage projects (`bai/project`) and WBS goal trees (`bai/wbs`); agent goal-working loop |
-| `/powerhouse-knowledge:theme-styling` | Theme a Powerhouse editor/drive-app UI correctly (bai tokens, semantic tokens, third-party widget theming) |
 | `/powerhouse-knowledge:skills <need>` | Find/read agent skills stored in the vault (semantic, by need) |
 
 ## Graph indexer queries (quick reference)

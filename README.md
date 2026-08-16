@@ -6,7 +6,7 @@ Claude Code plugin for the Powerhouse Knowledge Vault. Enables AI agents and hum
 
 This plugin gives you (human or AI agent) the ability to manage a structured knowledge graph inside a Powerhouse reactor. It provides:
 
-- **17 skills** for knowledge management (seed, extract, connect, search, verify, health, graph, projects/WBS, editor theming, skills discovery, etc.)
+- **16 skills** for knowledge management (seed, extract, connect, search, verify, health, graph, projects/WBS, skills discovery, etc.)
 - **A knowledge-agent** definition optimized for knowledge work via the Switchboard CLI
 - **Connection to a Powerhouse reactor** via MCP or Switchboard CLI
 - **Access to the Graph Indexer** — a relational index with keyword search, topic queries, provenance filtering, and AI-powered semantic search
@@ -165,12 +165,6 @@ The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.
 |-------|---------|-------------|
 | Projects | `/powerhouse-knowledge:projects` | Manage `bai/project` + `bai/wbs` — goal tracking, deliverables, agent goal-working loop |
 
-### Editor & UI Development
-
-| Skill | Command | Description |
-|-------|---------|-------------|
-| Theme Styling | `/powerhouse-knowledge:theme-styling` | Theme a Powerhouse editor/drive-app UI correctly — bai tokens, design-system semantic tokens, third-party widget theming |
-
 ## Graph Indexer & Subgraph
 
 The vault includes a **Graph Indexer processor** that maintains a relational index of all knowledge notes. The **Knowledge Graph subgraph** exposes this index via GraphQL at `/graphql/knowledgeGraph`.
@@ -262,7 +256,7 @@ The 6R pipeline transforms raw sources into structured, connected knowledge:
 Human (Connect App)                    AI Agent (Claude Code)
   |                                     |
   +── Knowledge Vault App               +── powerhouse-knowledge plugin
-  |     |── Notes tab (grid + search)   |     |── 17 skills
+  |     |── Notes tab (grid + search)   |     |── 16 skills
   |     |── Graph tab (cytoscape viz)   |     |── knowledge-agent
   |     |── Sources, Pipeline, Health   |     |── Switchboard CLI
   |     +── MOC editor, Note editor     |     +── MCP / GraphQL
@@ -297,8 +291,7 @@ powerhouse-knowledge/
 │   ├── export/SKILL.md         # Vault export
 │   ├── watch/SKILL.md          # Real-time monitoring
 │   ├── cli-reference/SKILL.md  # Switchboard CLI commands
-│   ├── projects/SKILL.md       # Project (bai/project) + WBS (bai/wbs) goal tracking
-│   └── theme-styling/SKILL.md  # Theming Powerhouse editors/drive-apps (bai + semantic tokens)
+│   └── projects/SKILL.md       # Project (bai/project) + WBS (bai/wbs) goal tracking
 ├── data/
 │   └── methodology/            # 249 Ars Contexta research claims (local reference)
 ├── hooks/                      # Pre-flight hooks for vault detection
