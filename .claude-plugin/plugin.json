@@ -6,9 +6,6 @@
     "name": "BAI",
     "url": "https://bai.dev"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/liberuum/powerhouse-knowledge"
-  },
+  "repository": "https://github.com/liberuum/powerhouse-knowledge",
   "license": "AGPL-3.0-only"
 }
