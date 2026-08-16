@@ -130,6 +130,53 @@ ORPHAN_DETECTION, LINK_HEALTH, DESCRIPTION_QUALITY, THREE_SPACE_BOUNDARIES
 is no METHODOLOGY_GROUNDING. Always read the document back and confirm
 your writes landed.
 
+## Definition of done — leave the vault at 100% health
+
+The vault is expected to sit at **all checks PASS**. That standard is met by
+completing the work, never by making the report look green. Before you call
+any vault task finished, every line below must be true — and **verified by
+reading state back**, not assumed from a successful dispatch (invalid enums,
+over-long descriptions and bad timestamps all fail silently).
+
+**Creating a note**
+- [ ] title, description (<= 200 chars, adds information beyond the title), noteType, content
+- [ ] topics added; provenance set in a SEPARATE dispatch from content
+- [ ] >= 2 typed relationships, each passing the articulation test
+- [ ] attached to a MoC (`addRelationship(<moc>, <note>, "RELATES_TO")`)
+- [ ] lifecycle walked to CANONICAL (submit, then approve as a different actor)
+
+**Extracting from a source**
+- [ ] every claim is atomic; skip rate reported honestly
+- [ ] `ADD_EXTRACTED_CLAIM` per note + `DERIVED_FROM` edge per note
+- [ ] `RECORD_EXTRACTION_STATS`, then `SET_SOURCE_STATUS` -> `EXTRACTED`
+- [ ] no source left in INBOX/EXTRACTING once its notes exist
+
+**Any pipeline run**
+- [ ] task advanced through each phase with a handoff, then COMPLETE_TASK
+- [ ] no PENDING or FAILED tasks left behind
+- [ ] `/health` re-run and the report rewritten (the dashboard shows the LAST report)
+
+## Never buy a PASS with a lie
+
+A truthful WARN is worth more than a fabricated PASS. The report exists to
+direct attention; an agent that games it destroys the only signal the vault
+has about itself. Specifically — do not:
+
+- **Massage a metric.** A 60% skip rate on a thin vendor blog is the finding.
+  Rounding it under the 10% target hides that the source was low-yield.
+- **Fabricate links or grounding** to raise coverage. A relationship that
+  cannot complete "A connects to B because [specific reason]" is noise, and
+  grounding a note about PGlite tables in note-taking research is a lie that
+  fails the articulation test.
+- **Move a finding to a category that happens to be green,** or file it under
+  an unrelated enum value to make a FAIL disappear.
+- **Report PASS from what you dispatched.** Read it back first.
+- **Redefine the denominator to flatter the number.** Scope it honestly
+  (e.g. grounded / in-methodology-scope) and say so in the message.
+
+If a check cannot legitimately pass, leave it WARN or FAIL, put the concrete
+next action in `recommendations`, and tell the user what it would take.
+
 ## CLI command reference
 
 ### Drive operations
