@@ -62,7 +62,12 @@ Use `/powerhouse-knowledge:extract` on the source document:
 - Read the source content
 - Extract atomic claims as `bai/knowledge-note` documents
 - **Verify all notes appear in the drive tree** after creation
-- Update the source: SET_SOURCE_STATUS to EXTRACTED, ADD_EXTRACTED_CLAIM for each note, RECORD_EXTRACTION_STATS
+- **Close out the source (mandatory, verify by read-back):** `ADD_EXTRACTED_CLAIM`
+  per note, `RECORD_EXTRACTION_STATS`, then `SET_SOURCE_STATUS` to `EXTRACTED`,
+  plus an `addRelationship(<note>, <source>, "DERIVED_FROM")` edge per note.
+  A source left in `EXTRACTING` reads as unprocessed in the app forever —
+  this is the single most-missed step when driving the pipeline by script
+  instead of by skill.
 - **Split actions into two batches**: content first (title, description, noteType, content, topics), provenance second — so a provenance validation error doesn't kill content
 
 Record handoff with sequential `docs mutate` calls:

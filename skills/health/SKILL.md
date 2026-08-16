@@ -111,7 +111,7 @@ From the drive tree, find all `bai/moc` documents. For each topic that appears o
 | DESCRIPTION_QUALITY | all present + informative | 1-2 missing or restated | 3+ missing |
 | MOC_COHERENCE | all 3+ note topics have MOCs | 1-2 gaps | 3+ gaps |
 | THREE_SPACE_BOUNDARIES | 0 open tensions | 1-3 open tensions | 4+ open tensions |
-| PROCESSING_THROUGHPUT | 0 pending pipeline tasks | 1-2 pending | 3+ pending or FAILED |
+| PROCESSING_THROUGHPUT | 0 pending tasks AND no stranded sources | 1-2 pending/stranded | 3+ pending, FAILED, or stranded |
 | STALE_NOTES | 0 DRAFT notes > 30 days | 1-3 stale | 4+ stale |
 
 **Description quality check (not just presence):**
@@ -231,6 +231,29 @@ Recommendations:
   1. Create MOC for 'document-toolbar' topic (5 notes)
   2. Ground 2 notes in methodology via /connect
 ```
+
+## Stranded sources
+
+A **stranded source** is a `bai/source` still in `INBOX` or `EXTRACTING`
+that already has notes derived from it — extraction happened but nobody
+closed the document out. It renders as unprocessed in the app's Sources
+tab indefinitely, and it is invisible to the pipeline-task check because
+its task may well be DONE.
+
+Fold this into PROCESSING_THROUGHPUT:
+
+```bash
+# For each bai/source: read state, compare status against derived notes
+switchboard docs get <source-id> --state --format json | python3 -c "
+import json,sys; g=json.load(sys.stdin)['state']['global']
+print(g.get('status'), len(g.get('extractedClaims') or []))"
+# stranded if status in (INBOX, EXTRACTING) and notes exist (via
+# knowledgeGraphBacklinks ... linkType DERIVED_FROM, or extractedClaims)
+```
+
+Repair with the Step 6 sequence in
+[skills/extract/SKILL.md](../extract/SKILL.md): ADD_EXTRACTED_CLAIM per
+note, RECORD_EXTRACTION_STATS, SET_SOURCE_STATUS EXTRACTED.
 
 ## What belongs in `recommendations`
 

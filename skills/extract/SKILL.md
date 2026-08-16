@@ -83,7 +83,18 @@ switchboard docs tree <drive-slug> --format json
 # If missing: use switchboard docs mutate on the drive to add via ADD_FILE
 ```
 
-### Step 6: Update the source document
+### Step 6: Close out the source document — MANDATORY
+
+**Extraction is not finished until the source says so.** A source left in
+`EXTRACTING` shows as unprocessed in the app's Sources tab forever, even
+though its notes exist — the notes carry no signal back to the document
+they came from. Every extraction run MUST end with all three writes below,
+and a read-back that confirms them.
+
+Provenance lives in **two** places and both are required:
+- `extractedClaims[]` on the source (document state — what the app renders)
+- a `DERIVED_FROM` relationship per note (graph edges — what the subgraph
+  traverses): `addRelationship(<note-id>, <source-id>, "DERIVED_FROM")`
 
 Track what was extracted:
 ```bash
@@ -97,6 +108,20 @@ switchboard docs apply <source-doc-id> --actions '[
   }, "scope": "global" }
 ]'
 ```
+
+**Verify before moving on** — `SET_SOURCE_STATUS` accepts only INBOX,
+EXTRACTING, EXTRACTED, ARCHIVED, and an invalid value fails silently:
+
+```bash
+switchboard docs get <source-doc-id> --state --format json | python3 -c "
+import json,sys; g=json.load(sys.stdin)['state']['global']
+print('status:', g.get('status'), '| claims:', len(g.get('extractedClaims') or []), '| stats:', bool(g.get('extractionStats')))"
+# expect: status: EXTRACTED | claims: <N> | stats: True
+```
+
+Report `skipRate` honestly. A thin vendor blog legitimately scores high;
+massaging the number to clear the <10% target hides the real signal, which
+is that the source was low-yield.
 
 ### Step 7: Record pipeline handoff
 
