@@ -135,3 +135,14 @@ switchboard docs mutate <pipeline-queue-id> --op advancePhase --input '{
 ```
 
 If "$ARGUMENTS" is provided, verify that specific note (by title or document ID).
+
+## After auto-repair: refresh the health report
+
+`/verify --fix` changes exactly the things the health report grades
+(descriptions, provenance, note types, links). The dashboard reads the
+**last** `bai/health-report`, so skipping this step leaves the user
+looking at problems you already fixed.
+
+After any repair, re-run the health check and rewrite the report:
+`/powerhouse-knowledge:health` — see [skills/health/SKILL.md](../health/SKILL.md).
+Verify by reading the report back, not by trusting the dispatch.

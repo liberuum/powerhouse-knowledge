@@ -112,7 +112,7 @@ The 249 claims are the theoretical foundation for how the Knowledge Vault works:
 The agent reads these files directly from `data/methodology/` during:
 - **Connect phase** — searching for methodology backing when creating note connections
 - **Verify phase** — checking if notes are grounded in methodology
-- **Health check** — reporting METHODOLOGY_GROUNDING status
+- **Health check** — reporting methodology-grounding status (in `recommendations`; there is no matching HealthCategory value)
 
 No remote import, no `bai/research-claim` documents, no `/research/` folder needed.
 

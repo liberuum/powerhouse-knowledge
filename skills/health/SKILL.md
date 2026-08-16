@@ -110,7 +110,7 @@ From the drive tree, find all `bai/moc` documents. For each topic that appears o
 | LINK_HEALTH | avg links >= 2.0 | avg >= 1.0 | avg < 1.0 |
 | DESCRIPTION_QUALITY | all present + informative | 1-2 missing or restated | 3+ missing |
 | MOC_COHERENCE | all 3+ note topics have MOCs | 1-2 gaps | 3+ gaps |
-| METHODOLOGY_GROUNDING | all notes reference methodology in content | some ungrounded | many ungrounded |
+| THREE_SPACE_BOUNDARIES | 0 open tensions | 1-3 open tensions | 4+ open tensions |
 | PROCESSING_THROUGHPUT | 0 pending pipeline tasks | 1-2 pending | 3+ pending or FAILED |
 | STALE_NOTES | 0 DRAFT notes > 30 days | 1-3 stale | 4+ stale |
 
@@ -119,7 +119,7 @@ From the drive tree, find all `bai/moc` documents. For each topic that appears o
 - Restatement: if description uses >70% same words as title = WARN
 - Must add scope, mechanism, or implication beyond the title
 
-**METHODOLOGY_GROUNDING check:** For each knowledge note, check if its content includes a "Methodology grounding" section referencing at least one claim from the plugin's local `data/methodology/` files. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation. The verify skill auto-repairs this by searching local methodology files and appending grounding references to the note's content.
+**Methodology-grounding check (report in `recommendations`, NOT as a check):** For each knowledge note, check if its content includes a "Methodology grounding" section referencing at least one claim from the plugin's local `data/methodology/` files. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation. The verify skill auto-repairs this by searching local methodology files and appending grounding references to the note's content.
 
 **CRITICAL: Verify, don't assume.** After auto-fixing any health recommendation, **re-read the drive tree and re-query the subgraph** to confirm. Don't report PASS based on what you dispatched — report PASS based on what you verified. Silent failures are common with remote reactors (race conditions, CLI bugs, network latency).
 
@@ -171,7 +171,23 @@ Where `/tmp/health-report.json` contains:
 
 Write to `/tmp/health-checks.json` and apply via `--file` to avoid shell escaping issues.
 
-**Valid categories:** SCHEMA_COMPLIANCE, ORPHAN_DETECTION, LINK_HEALTH, DESCRIPTION_QUALITY, MOC_COHERENCE, METHODOLOGY_GROUNDING, PROCESSING_THROUGHPUT, STALE_NOTES
+**Valid categories** — these are the ONLY values `bai/health-report`'s
+`HealthCategory` enum accepts; ADD_CHECK with anything else is silently
+dropped (the batch reports success, the check never lands):
+SCHEMA_COMPLIANCE, ORPHAN_DETECTION, LINK_HEALTH, DESCRIPTION_QUALITY,
+THREE_SPACE_BOUNDARIES, PROCESSING_THROUGHPUT, STALE_NOTES, MOC_COHERENCE.
+
+⚠️ There is no `METHODOLOGY_GROUNDING` category — report that finding in
+`recommendations` instead. Do **not** borrow `THREE_SPACE_BOUNDARIES`:
+the app reserves it for **open tensions**, and both editors render
+tension-specific remediation copy for it ("Open each tension and either
+resolve it…"), so a methodology finding filed there shows the user
+instructions that don't match the problem. Adding a dedicated enum value
+to `bai/health-report` is the proper fix when the model is next edited.
+
+⚠️ ADD_CHECK with an invalid category is **silently dropped** — the
+mutation reports success and the check never lands. Always re-read the
+report afterwards and confirm every check you dispatched is present.
 
 **Valid statuses:** PASS, WARN, FAIL
 
@@ -206,7 +222,7 @@ PASS  ORPHAN_DETECTION       0 orphan notes
 PASS  LINK_HEALTH            Avg 2.4 links/note, density 0.6
 PASS  DESCRIPTION_QUALITY    All descriptions present and informative
 WARN  MOC_COHERENCE          No MOC for 'document-toolbar' (5 notes)
-WARN  METHODOLOGY_GROUNDING  2/5 notes not linked to research claims
+WARN  THREE_SPACE_BOUNDARIES 2 open tensions awaiting resolution
 PASS  PROCESSING_THROUGHPUT  0 pending pipeline tasks
 PASS  STALE_NOTES            No stale notes detected
 
@@ -215,6 +231,16 @@ Recommendations:
   1. Create MOC for 'document-toolbar' topic (5 notes)
   2. Ground 2 notes in methodology via /connect
 ```
+
+## Re-run after every fix
+
+A health report is a snapshot, and the dashboard shows the **last** one —
+so any repair made after a run leaves the UI reporting stale problems.
+Whenever you fix something the report flagged (here, in `/verify --fix`,
+or during a pipeline), **re-run the full check and rewrite the report**
+before telling the user it's fixed. GENERATE_REPORT resets metrics,
+recommendations and checks, so a re-run cleanly replaces the previous
+snapshot; the old one stays in the document's operation history.
 
 ## Reading health history
 

@@ -116,6 +116,20 @@ Before running the pipeline, check that `data/methodology/*.md` has 249 files. T
 ### 7. Health check must verify, not assume
 After auto-fixing health recommendations, **re-read the drive tree** to confirm the fixes actually applied.
 
+### 8. Re-run health after every fix
+The dashboard shows the **last** report. Any repair made after a run — in
+`/verify --fix`, `/connect`, or a pipeline — leaves the UI showing stale
+problems. Re-run the health check and rewrite the report whenever you fix
+something it flagged.
+
+### 9. Enum values are validated silently
+`ADD_CHECK` with a category outside the model's `HealthCategory` enum
+reports success and writes nothing. The valid set is SCHEMA_COMPLIANCE,
+ORPHAN_DETECTION, LINK_HEALTH, DESCRIPTION_QUALITY, THREE_SPACE_BOUNDARIES
+(open tensions), PROCESSING_THROUGHPUT, STALE_NOTES, MOC_COHERENCE — there
+is no METHODOLOGY_GROUNDING. Always read the document back and confirm
+your writes landed.
+
 ## CLI command reference
 
 ### Drive operations
@@ -291,7 +305,7 @@ Full content with [[wiki links]] to other claims...
 **Methodology cross-referencing (mandatory in pipeline):**
 - During **connect** phase: search local methodology files by topic/keywords, append "Methodology grounding" section to note content
 - During **verify** phase: check every note's content references at least one methodology claim
-- During **health** check: report METHODOLOGY_GROUNDING status based on content references
+- During **health** check: report methodology-grounding status in the report's `recommendations` (the HealthCategory enum has no METHODOLOGY_GROUNDING value, and THREE_SPACE_BOUNDARIES is reserved for open tensions)
 - When **explaining design decisions**: read the relevant methodology file from `data/methodology/` and cite it
 
 Use `Grep` and `Read` tools on `data/methodology/*.md` to find and read claims. No CLI calls needed.
