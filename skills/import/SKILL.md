@@ -54,8 +54,13 @@ After creating all documents, verify every document has a file node in the drive
 ```bash
 switchboard docs tree <drive-slug> --format json
 # Compare file node IDs against created document IDs
-# For any missing: dispatch ADD_FILE on the drive
 ```
+
+For any missing: re-create the containment by re-running the namespaced create, or use
+`switchboard docs mutate <drive-id> --op addFile` ONLY as a last resort (CLI stamps the envelope;
+note containment edges since the drive-override migration live in DocumentRelationship — verify
+with `docs tree` afterward). CLI-stamped ADD_FILE is sync-safe; the caveat is containment
+completeness, not action safety.
 
 ```bash
 switchboard docs mutate <drive-id> --op addFile --input '{
@@ -101,26 +106,7 @@ Then add core ideas linking to the notes in that category.
 
 ## Automated Import Scripts
 
-For large imports (50+ notes), prefer the dedicated scripts which include built-in pacing and verification:
-
-```bash
-# Import research claims (Ars Contexta methodology) via CLI
-python3 scripts/import-methodology.py <drive-slug>
-
-# Import knowledge notes from a vault directory
-node scripts/import-vault.mjs \
-  --drive-id <UUID> \
-  --vault-path /path/to/vault/notes/ \
-  [--create-mocs] [--dry-run] [--limit N]
-
-# Import research claims via MCP script
-node scripts/import-research-claims.mjs \
-  --drive-id <UUID> \
-  --vault-path /path/to/methodology/ \
-  [--dry-run] [--limit N]
-```
-
-These scripts use the Switchboard CLI for bulk creation and include automatic drive node verification + repair.
+No bundled import script exists — for large imports (50+ notes), loop the CLI steps above (Steps 1-4) yourself in a shell/Python driver with pacing and verification.
 
 ## Wiki Link Resolution
 

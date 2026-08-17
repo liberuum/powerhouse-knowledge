@@ -92,7 +92,10 @@ notes. Treat a non-zero value as signal, not breakage.
 does its own TLS handshake. For bulk writes to a remote host that is
 handshake-bound rather than CPU-bound — hundreds of calls will start failing
 with `_ssl.c:983: handshake operation timed out`. Batch actions into a single
-`docs apply`, or talk to `/graphql` over one keep-alive connection.
+`docs apply`, or talk to `/graphql` over one keep-alive connection — stamping
+every action with `id` + `timestampUtcMs` yourself (copy the `envelope()`
+helper from scripts/sync-skills.mjs). An id-less action bricks sync for every
+client.
 
 ## Find the vault drive
 
@@ -199,7 +202,7 @@ over-long descriptions and bad timestamps all fail silently).
 - [ ] title, description (<= 200 chars, adds information beyond the title), noteType, content
 - [ ] topics added; provenance set in a SEPARATE dispatch from content
 - [ ] >= 2 typed relationships, each passing the articulation test
-- [ ] attached to a MoC (`addRelationship(<moc>, <note>, "RELATES_TO")`)
+- [ ] attached to a MoC (`addRelationship(<moc-uuid>, <note-uuid>, "RELATES_TO")`)
 - [ ] lifecycle walked to CANONICAL (submit, then approve as a different actor)
 
 **Extracting from a source**
@@ -241,6 +244,7 @@ next action in `recommendations`, and tell the user what it would take.
 3. **Always verify after creating**: `switchboard docs tree <drive> --format json` to confirm the node exists.
 4. **Never batch dependent operations**: Pipeline ops (ADD_TASK → ASSIGN_TASK → ADVANCE_PHASE) must be dispatched one at a time via `docs mutate`.
 5. **The CLI auto-injects timestamps and action IDs** — no need to generate them manually.
+6. **GraphQL identifier arguments take UUIDs, not slugs**: `sourceIdentifier`, `targetIdentifier`, `parentIdentifier`, and `documentIdentifier` take document UUIDs. Drive slugs are CLI-only (`--drive <slug>` is fine — the CLI resolves them). A slug passed to GraphQL `createDocument`/`createEmptyDocument` makes the containment job fail and the create hangs forever.
 
 ## Available skills
 
@@ -300,7 +304,7 @@ All queries require `driveId: "<UUID>"`.
 Edges between documents live in the reactor's `DocumentRelationship` table since the drive-override migration. Create them with the `addRelationship` GraphQL mutation:
 
 ```bash
-switchboard query 'mutation { addRelationship(sourceIdentifier:"<source>", targetIdentifier:"<target>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+switchboard query 'mutation { addRelationship(sourceIdentifier:"<source-uuid>", targetIdentifier:"<target-uuid>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
 ```
 
 Valid `relationshipType` values:

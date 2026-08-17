@@ -80,7 +80,11 @@ After creating all notes, verify they all appear as file nodes in the drive:
 ```bash
 switchboard docs tree <drive-slug> --format json
 # Check: each created note ID exists as a file node
-# If missing: use switchboard docs mutate on the drive to add via ADD_FILE
+# If missing: re-create the containment by re-running the namespaced create, or use
+# `switchboard docs mutate <drive-id> --op addFile` ONLY as a last resort (CLI stamps the
+# envelope; note containment edges since the drive-override migration live in
+# DocumentRelationship — verify with docs tree afterward). CLI-stamped ADD_FILE is sync-safe;
+# the caveat is containment completeness, not action safety.
 ```
 
 ### Step 6: Close out the source document — MANDATORY

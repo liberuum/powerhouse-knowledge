@@ -22,8 +22,8 @@ Find genuine connections between notes and create typed links. This is the "refl
 ```bash
 switchboard query 'mutation {
   addRelationship(
-    sourceIdentifier: "<source-note-id>",
-    targetIdentifier: "<target-note-id>",
+    sourceIdentifier: "<source-uuid>",
+    targetIdentifier: "<target-uuid>",
     relationshipType: "RELATES_TO",
     branch: "main"
   ) { documentType }
@@ -33,11 +33,15 @@ switchboard query 'mutation {
 Or via direct HTTP to `/graphql/r` (faster for batch loops):
 
 ```bash
-curl -s "$READ_ENDPOINT" -H 'content-type: application/json' -d '{
+GRAPHQL_ENDPOINT=<switchboard>/graphql
+curl -s "$GRAPHQL_ENDPOINT" -H 'content-type: application/json' -d '{
   "query": "mutation($s:String!,$t:String!,$r:String!,$b:String){ addRelationship(sourceIdentifier:$s,targetIdentifier:$t,relationshipType:$r,branch:$b){ documentType } }",
-  "variables": {"s":"<source-id>","t":"<target-id>","r":"RELATES_TO","b":"main"}
+  "variables": {"s":"<source-uuid>","t":"<target-uuid>","r":"RELATES_TO","b":"main"}
 }'
 ```
+
+This curl pattern is safe ONLY because `addRelationship` constructs the action server-side. Do
+not extend it to `mutateDocument` without stamping `id`/`timestampUtcMs` on every action.
 
 To remove a relationship, use `removeRelationship` with the same argument shape.
 

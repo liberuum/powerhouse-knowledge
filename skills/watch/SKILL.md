@@ -99,13 +99,26 @@ Variables:
 The same WebSocket connection can send mutations:
 
 ```graphql
-mutation AddLink($id: String!, $actions: [JSONObject!]!) {
+mutation MutateNote($id: String!, $actions: [JSONObject!]!) {
   mutateDocument(documentIdentifier: $id, actions: $actions) {
     id name
   }
 }
 ```
 
-Each action needs `timestampUtcMs` as ISO string alongside `type`, `input`, and `scope`.
+Each action must be fully stamped before it is sent:
+```json
+{
+  "id": "2b1b1b0a-6b1e-4c1a-9b1a-6b1e4c1a9b1a",
+  "type": "SET_TITLE",
+  "input": {"title": "My Note", "updatedAt": "2026-03-26T21:00:00.000Z"},
+  "scope": "global",
+  "timestampUtcMs": "2026-03-26T21:00:00.000Z"
+}
+```
+
+Required envelope fields, `id` **first**: `id` (UUID), `timestampUtcMs`, `scope`, `type`, `input`.
+An action persisted without `id` permanently breaks every browser client's sync channel
+(`pollSyncEnvelopes` -> non-nullable `Action.id`).
 
 If "$ARGUMENTS" is provided, use it as the drive UUID to watch.

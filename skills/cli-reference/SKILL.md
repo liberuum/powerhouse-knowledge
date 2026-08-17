@@ -123,10 +123,10 @@ switchboard docs mutate <id> --op setContent --input '{"content":"...","updatedA
 Linking — since the drive-override migration, relationships are stored in the reactor's `DocumentRelationship` table via the `addRelationship` / `removeRelationship` GraphQL mutations. The graph subgraph reads from this table; the legacy `--op addLink` writes to a per-doc `links[]` array that the subgraph no longer indexes.
 
 ```bash
-switchboard query 'mutation { addRelationship(sourceIdentifier:"<source-id>", targetIdentifier:"<target-id>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+switchboard query 'mutation { addRelationship(sourceIdentifier:"<source-uuid>", targetIdentifier:"<target-uuid>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
 
 # remove
-switchboard query 'mutation { removeRelationship(sourceIdentifier:"<source-id>", targetIdentifier:"<target-id>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+switchboard query 'mutation { removeRelationship(sourceIdentifier:"<source-uuid>", targetIdentifier:"<target-uuid>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
 ```
 
 Valid `relationshipType` values: `RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`, `DERIVED_FROM`, `CORE_IDEA` (MoC → note), `CHILD_MOC` (MoC → MoC). The mutation writes one row to `DocumentRelationship` and emits an `ADD_RELATIONSHIP` system action on the source document's op log; idempotent on `(source, target, type)`.
@@ -167,9 +167,10 @@ switchboard docs mutate <hr-id> --op generateReport --input '{"generatedAt":"...
 switchboard docs mutate <hr-id> --op addCheck --input '{"id":"chk-1","category":"ORPHAN_DETECTION","status":"PASS","message":"All notes linked","affectedItems":[]}'
 ```
 
-Pipeline queue (`target` is required, NOT `documentRef`):
+Pipeline queue (`target` is a human-readable title/label and is required; `documentRef` carries
+the referenced document's UUID and is optional):
 ```bash
-switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"SEED","target":"<source-uuid>","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
+switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"SEED","target":"Source Title","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
 ## CRITICAL: Operation Order Bug in `docs apply`

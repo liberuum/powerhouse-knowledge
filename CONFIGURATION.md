@@ -154,15 +154,29 @@ mutation MutateNote($id: String!, $actions: [JSONObject!]!) {
 }
 ```
 
-**IMPORTANT:** Each action must include `timestampUtcMs` as an ISO string:
+**IMPORTANT:** Each action MUST include a unique `id` (UUID) **and** `timestampUtcMs`. The
+reactor does NOT reject id-less actions — it persists them. An action persisted without `id`
+permanently breaks every browser client's sync channel (`pollSyncEnvelopes` -> non-nullable
+`Action.id`).
 ```json
 {
+  "id": "2b1b1b0a-6b1e-4c1a-9b1a-6b1e4c1a9b1a",
   "type": "SET_TITLE",
   "input": {"title": "My Note", "updatedAt": "2026-03-26T21:00:00.000Z"},
   "scope": "global",
   "timestampUtcMs": "2026-03-26T21:00:00.000Z"
 }
 ```
+
+**Any raw `mutateDocument` dispatch — HTTP, WebSocket, or script — MUST stamp `id` and
+`timestampUtcMs` on every action.** Prefer the switchboard CLI or the vetted scripts under
+`scripts/` (they stamp automatically); see the `envelope()` helper in `scripts/sync-skills.mjs`
+for the pattern if you must dispatch raw actions yourself.
+
+**GraphQL identifier arguments** (`sourceIdentifier`, `targetIdentifier`, `parentIdentifier`,
+`documentIdentifier`) take document **UUIDs**. Drive **slugs are CLI-only** (`--drive <slug>` is
+fine — the CLI resolves them). A slug passed to GraphQL `createDocument`/`createEmptyDocument`
+makes the containment job fail and the create hang forever.
 
 ### Mode 3: Switchboard CLI (Full Feature Parity)
 
@@ -252,8 +266,9 @@ switchboard docs mutate <hr-id> --op addCheck --input '{"id":"chk-1","category":
 
 Pipeline queue:
 ```bash
-# addTask: uses "target" (required), NOT "documentRef" as primary
-switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"SEED","target":"<source-uuid>","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
+# addTask: "target" is a human-readable title/label (required); "documentRef" carries the
+# referenced document's UUID (optional)
+switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"SEED","target":"Source Title","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
 **Batch actions (CLI auto-injects `timestampUtcMs` and `action.id`):**
@@ -314,7 +329,7 @@ switchboard drives fix <drive> -y
 
 **`--parent-folder` placement:** The CLI creates the doc at the drive root first, then moves it into the folder via `DocumentDrive { moveNode }`. This is a two-step process — if the move fails, the doc remains at the root.
 
-**Action `id` field:** The CLI auto-generates action IDs for all `mutateDocument` operations (ADD_FILE, DELETE_NODE, etc.). This prevents null `action.id` errors in Connect's sync stream. If you use `docs apply` with raw actions, the CLI injects IDs automatically via `stamp_actions`.
+**Action `id` field:** The CLI auto-generates action IDs for all `mutateDocument` operations (ADD_FILE, DELETE_NODE, etc.). This prevents null `action.id` errors in Connect's sync stream. If you use `docs apply` with raw actions, the CLI injects IDs automatically via `stamp_actions`. See the promoted rule under Mode 2 above — this CLI auto-stamping is *why* the CLI is the safe default; anything that bypasses it (raw HTTP/WebSocket/script `mutateDocument` calls) must stamp `id` + `timestampUtcMs` itself.
 
 **Soft delete:** `docs delete` uses non-cascading soft delete (won't destroy parent drives). `drives delete` uses CASCADE (deletes drive + all children). Ghost nodes left behind by failed operations can be cleaned up with `drives check` + `drives fix`.
 

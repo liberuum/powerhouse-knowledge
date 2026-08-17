@@ -9,6 +9,7 @@
  * write to. Ask them for their Switchboard URL if you don't have it.
  */
 
+import { randomUUID } from "node:crypto";
 import fs from "fs";
 import path from "path";
 
@@ -43,6 +44,14 @@ function now() {
   return new Date().toISOString();
 }
 
+// Every action dispatched through mutateDocument MUST carry a unique `id`
+// plus `timestampUtcMs` — an action persisted without `id` permanently
+// breaks every browser client's sync channel (pollSyncEnvelopes -> non-
+// nullable Action.id). Copied verbatim from scripts/sync-skills.mjs:68-70.
+function envelope(action) {
+  return { id: randomUUID(), timestampUtcMs: now(), scope: "global", ...action };
+}
+
 async function main() {
   const content = fs.readFileSync(FILE_PATH, "utf-8");
   const fileName = path.basename(FILE_PATH, path.extname(FILE_PATH));
@@ -68,41 +77,40 @@ async function main() {
   console.log(`Content: ${content.length} chars`);
   console.log();
 
+  // Resolve the drive identifier to its canonical UUID — GraphQL identifier
+  // arguments (parentIdentifier below) require UUIDs. A slug passed straight
+  // through makes createDocument's containment job fail and the create hang
+  // forever. Same resolution pattern as scripts/sync-skills.mjs:166-170.
+  const driveIdRes = await gql(
+    `query($id: String!){ document(identifier: $id){ document { id } } }`,
+    { id: DRIVE_ID },
+  );
+  const driveId = driveIdRes.document.document.id;
+
   // Find PipelineQueue
   const driveRes = await gql(
-    `{ document(identifier: "${DRIVE_ID}") { document { state } } }`,
+    `query($id: String!){ document(identifier: $id){ document { state } } }`,
+    { id: driveId },
   );
   const nodes = driveRes.document.document.state.global.nodes;
   const queueNode = nodes.find((n) => n.documentType === "bai/pipeline-queue");
 
-  // 1. Create source document
+  // 1. Create source document via the namespaced create (Source.createDocument)
+  // — this resolves drive containment correctly server-side, so the manual
+  // createEmptyDocument + ADD_FILE dance is unnecessary.
   console.log("1. Creating source document...");
   const r1 = await gql(
-    `mutation { createEmptyDocument(documentType: "bai/source") { id } }`,
+    `mutation($name: String!, $p: String) { Source { createDocument(name: $name, parentIdentifier: $p) { id } } }`,
+    { name: title, p: driveId },
   );
-  const sourceId = r1.createEmptyDocument.id;
+  const sourceId = r1.Source.createDocument.id;
   console.log(`   ID: ${sourceId}`);
 
-  // 2. Add to /sources/ folder
-  console.log("2. Adding to /sources/ folder...");
+  // 2. Move into /sources/ folder
+  console.log("2. Moving into sources folder...");
   await gql(
-    `mutation($id: String!, $actions: [JSONObject!]!) { mutateDocument(documentIdentifier: $id, actions: $actions) { id } }`,
-    {
-      id: DRIVE_ID,
-      actions: [
-        {
-          type: "ADD_FILE",
-          input: {
-            id: sourceId,
-            name: title,
-            documentType: "bai/source",
-            parentFolder: SOURCES_FOLDER_ID,
-          },
-          scope: "global",
-          timestampUtcMs: now(),
-        },
-      ],
-    },
+    `mutation($docId: PHID!, $input: DocumentDrive_MoveNodeInput!){ DocumentDrive { moveNode(docId: $docId, input: $input) { id } } }`,
+    { docId: driveId, input: { srcFolder: sourceId, targetParentFolder: SOURCES_FOLDER_ID } },
   );
 
   // 3. Ingest source content
@@ -112,7 +120,7 @@ async function main() {
     {
       id: sourceId,
       actions: [
-        {
+        envelope({
           type: "INGEST_SOURCE",
           input: {
             title,
@@ -124,9 +132,7 @@ async function main() {
             createdAt: now(),
             createdBy: "knowledge-agent",
           },
-          scope: "global",
-          timestampUtcMs: now(),
-        },
+        }),
       ],
     },
   );
@@ -139,18 +145,16 @@ async function main() {
       {
         id: queueNode.id,
         actions: [
-          {
+          envelope({
             type: "ADD_TASK",
             input: {
-              id: crypto.randomUUID(),
+              id: randomUUID(),
               taskType: "claim",
               target: title,
               documentRef: sourceId,
               createdAt: now(),
             },
-            scope: "global",
-            timestampUtcMs: now(),
-          },
+          }),
         ],
       },
     );
