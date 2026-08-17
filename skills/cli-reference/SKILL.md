@@ -37,7 +37,8 @@ switchboard introspect
 ## Drive Operations
 
 ```bash
-# List drives
+# List drives (table gains a "Docs" column on CLI >= 1.0.29; JSON gains
+# "documentCount" — the number of file nodes, folders excluded)
 switchboard drives list --format table
 
 # Create a Knowledge Vault drive
@@ -94,7 +95,21 @@ switchboard docs mutate <doc-id> --op setTitle --input '{"title":"My Claim","upd
 
 The CLI auto-injects `timestampUtcMs` and `action.id` on all actions.
 
-### CLI version note — `docs get --drive` (fixed in v1.0.28)
+### CLI version notes
+
+Current CLI is **1.0.30**. `switchboard --version` to check; install from source
+with `cargo install --path . --force` in the switchboard-cli checkout.
+
+- **>= 1.0.29** — `drives list` reports a document count per drive (`Docs`
+  column / `documentCount` in JSON). Handy for confirming a drive is the vault
+  and not an empty scratch drive before writing to it.
+- **>= 1.0.29** — `docs delete` also removes the drive node, so deleted
+  documents no longer linger as ghost entries in `docs tree`.
+- **>= 1.0.29** — `docs parents <id>` reports every drive containing the
+  document (it scans drive state rather than the relationship index, which
+  ADD_FILE/DELETE_NODE do not maintain).
+
+#### `docs get --drive` (fixed in v1.0.28)
 
 - `switchboard docs get <id> --drive <slug>` requires **CLI >= 1.0.28**. Older versions
   built a compound identifier the reactor cannot resolve, so every drive-scoped get
