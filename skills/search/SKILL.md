@@ -14,11 +14,14 @@ Search the Knowledge Vault using the graph indexer subgraph. Supports keyword se
 When the user asks a question or uses natural language (e.g., "how does storage work?", "notes about legal setup"), use `knowledgeGraphSemanticSearch` (package ≥ 1.0.50). Pass the question as-is — the server embeds it and ranks by meaning, and falls back to keyword search transparently if embeddings are unavailable:
 
 ```bash
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<natural language question>", mode: HYBRID, limit: 10) { similarity node { documentId title description noteType status topics } } }'
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<natural language question>", mode: HYBRID, limit: 10) { similarity matchedBy node { documentId title description noteType status topics } } }'
 ```
 
-- `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (0–1, >0.8 strong match)
-- `mode: HYBRID` — semantic + keyword rank fusion; scores are tiny RRF values (~0.016), only the order matters
+- `similarity` is **always a 0–1 relevance**, monotonic with result order — safe to show as a percentage or threshold on in either mode (package ≥ 1.0.52).
+- `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (>0.8 strong match)
+- `mode: HYBRID` — semantic + keyword fusion rescaled onto 0–1: **~1.0 = both signals matched at top rank, ~0.5 = only one signal matched**. `matchedBy` tells you which.
+- `score` is the RAW value (cosine, or an ordinal RRF weight topping out near 0.033) — **never display `score` as a percentage**.
+- **Before 1.0.52** HYBRID leaked the raw RRF weight into `similarity`, so a perfect match read as ~3%. Rank only; don't threshold.
 - If the field fails schema validation, the deployment runs an older package — use tier 2 with 1-2 keywords instead.
 
 ### 2. Keyword search (fast, exact matches)
@@ -32,6 +35,10 @@ switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "<term>", li
 # Title + description + full content match
 switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "<term>", limit: 20) { documentId title noteType } }'
 ```
+
+Ranked by where the term matched — title, then description, then body
+(package ≥ 1.0.52) — so a title hit is no longer pushed out of the `limit`
+window by incidental body mentions.
 
 ### 3. Topic search
 

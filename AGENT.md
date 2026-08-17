@@ -128,11 +128,14 @@ transparently if embeddings are unavailable, so it is always safe to call:
 
 ```bash
 # DEFAULT: semantic/hybrid search from plain query text
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: HYBRID, limit: 10) { similarity node { documentId title description noteType } } }'
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: HYBRID, limit: 10) { similarity matchedBy node { documentId title description noteType } } }'
 ```
 
-- `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (0–1, >0.8 is a strong match)
-- `mode: HYBRID` — semantic + keyword rank fusion; scores are small RRF values (~0.016), only the ORDER is meaningful
+- `similarity` is **always a 0–1 relevance** and always decreases down the result list, so it is safe to render as a percentage or threshold on in either mode (package ≥ 1.0.52).
+- `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (>0.8 is a strong match)
+- `mode: HYBRID` — semantic + keyword rank fusion, rescaled onto 0–1: **~1.0 = matched by both signals at top rank, ~0.5 = matched by only one signal**. Select `matchedBy` to see which fired (`["semantic","keyword"]`).
+- `score` carries the RAW number instead — cosine in SEMANTIC, the Reciprocal Rank Fusion weight in HYBRID. An RRF weight is ordinal and tops out near 0.033, so **never render `score` as a percentage**; use `similarity`.
+- **Before 1.0.52** the raw RRF weight leaked through `similarity`, so every HYBRID hit scored ~0.016–0.033 (a "perfect" match displayed as 3%). On those deployments only the ORDER is meaningful — do not threshold on the value.
 - If the field doesn't exist (schema validation error), the deployment runs an older package — fall back to `knowledgeGraphFullSearch` below.
 
 Keyword search still matters for exact terms:
@@ -141,6 +144,10 @@ Keyword search still matters for exact terms:
 # Full-text keyword search across title + description + content
 switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "operation store", limit: 20) { documentId title noteType } }'
 ```
+
+Results are ranked by WHERE the term matched — title, then description, then
+body — so a title match can no longer be pushed out of the result window by
+incidental body mentions (package ≥ 1.0.52).
 
 ⚠️ **`knowledgeGraphFullSearch` ANDs its terms.** A long natural-language question silently returns `[]`. Give it 1–2 distinctive keywords, not a sentence — natural-language questions belong in `knowledgeGraphSemanticSearch`.
 

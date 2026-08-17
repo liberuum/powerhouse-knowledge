@@ -456,16 +456,16 @@ The Switchboard embeds notes AND queries server-side (gte-small, 384-dim; packag
 
 ```bash
 # Semantic search — pass the question as-is, server embeds it
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does storage work?", mode: HYBRID, limit: 10) { similarity node { documentId title noteType } } }'
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does storage work?", mode: HYBRID, limit: 10) { similarity matchedBy node { documentId title noteType } } }'
 
 # Find notes similar to a given note
 switchboard query '{ knowledgeGraphSimilar(driveId: "<UUID>", documentId: "<NOTE-ID>", limit: 5) { node { documentId title } similarity } }'
 ```
 
 **When to use semantic vs keyword search:**
-- `knowledgeGraphSemanticSearch(query, mode)` — natural-language questions. SEMANTIC = cosine similarity (0–1); HYBRID = semantic+keyword rank fusion (tiny RRF scores, order matters). Falls back to keyword transparently when embeddings are unavailable. On pre-1.0.50 deployments the field fails schema validation — use fullSearch with 1-2 keywords instead.
+- `knowledgeGraphSemanticSearch(query, mode)` — natural-language questions. `similarity` is always a 0–1 relevance, monotonic with result order (package ≥ 1.0.52): SEMANTIC = cosine; HYBRID = fused rank score rescaled, where ~1.0 means both the semantic and keyword legs matched at top rank and ~0.5 means only one did (`matchedBy` says which). The raw value lives in `score` — an ordinal RRF weight capped near 0.033, so never render it as a percentage. On pre-1.0.52 deployments that raw weight leaked into `similarity`, making every hit look like ~3%; rank only. Falls back to keyword transparently when embeddings are unavailable. On pre-1.0.50 deployments the field fails schema validation — use fullSearch with 1-2 keywords instead.
 - `knowledgeGraphSearch` — fast keyword match on title + description. Use for known terms.
-- `knowledgeGraphFullSearch` — keyword match on title + description + content; ANDs terms, so 1-2 keywords only. Use when the exact term might be in the body.
+- `knowledgeGraphFullSearch` — keyword match on title + description + content, ranked title > description > body (package ≥ 1.0.52); ANDs terms, so 1-2 keywords only. Use when the exact term might be in the body.
 - `knowledgeGraphSimilar(documentId)` — vector neighbours of a known note. Use during `/connect` to discover non-obvious connections.
 
 ### Structural analysis
