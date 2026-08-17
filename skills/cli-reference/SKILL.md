@@ -94,6 +94,21 @@ switchboard docs mutate <doc-id> --op setTitle --input '{"title":"My Claim","upd
 
 The CLI auto-injects `timestampUtcMs` and `action.id` on all actions.
 
+### CLI version note — `docs get --drive` (fixed in v1.0.28)
+
+- `switchboard docs get <id> --drive <slug>` requires **CLI >= 1.0.28**. Older versions
+  built a compound identifier the reactor cannot resolve, so every drive-scoped get
+  failed with a false "Document not found" — on old CLIs, omit `--drive` on `docs get`.
+- Since 1.0.28, `--drive` on `docs get` is an honest scope: a direct hit outside the
+  drive errors with "exists but is not in drive <d>" (omit `--drive` to fetch it anyway).
+- Drive **slugs are per-server** (`drives list` shows them): `powerhouse-knowledge` only
+  exists on the remote vault; on local dev reactors the slug is often the drive UUID.
+  Never reuse a slug across profiles without checking.
+- A parallel session can switch your default profile — pin commands with `-p <profile>`
+  or run `switchboard config show` before write batches.
+- Transient "Document not found" right after a write: just retry (read-model lag).
+
+
 ```bash
 # Single action
 switchboard docs apply <doc-id> --actions '[{
