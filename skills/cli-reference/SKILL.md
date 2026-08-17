@@ -11,6 +11,7 @@ description: Switchboard CLI commands for Knowledge Vault operations. Use as an 
 > auto-stamp every action with `id` + `timestampUtcMs` and resolve drive slugs to UUIDs.
 > A single raw write missing the action `id` permanently breaks sync for every connected client.
 > Bulk writes: batch into one `switchboard docs apply --file` call.
+> If you must write raw anyway, follow every rule in CONFIGURATION.md → "Writing via raw GraphQL — the safety rules".
 
 Alternative to MCP for vault operations. All commands work against local or remote Switchboard instances.
 

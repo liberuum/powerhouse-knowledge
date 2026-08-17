@@ -185,6 +185,49 @@ for the pattern if you must dispatch raw actions yourself.
 fine — the CLI resolves them). A slug passed to GraphQL `createDocument`/`createEmptyDocument`
 makes the containment job fail and the create hang forever.
 
+
+### Writing via raw GraphQL — the safety rules
+
+If you choose to write with the raw API instead of the CLI, ALL of these are mandatory.
+Each rule exists because breaking it has already caused a production incident:
+
+1. **Stamp every action envelope** with a unique `id` (UUID v4) and `timestampUtcMs`
+   (ISO-8601 with `Z`). The reactor does NOT reject unstamped actions — it persists
+   them, and one persisted id-less action permanently bricks the sync channel of
+   every connected client. Copy the helper:
+   ```js
+   const envelope = (a) => ({ id: crypto.randomUUID(),
+     timestampUtcMs: new Date().toISOString(), scope: "global", ...a });
+   ```
+2. **UUIDs only in GraphQL identifier arguments** (`documentIdentifier`,
+   `parentIdentifier`, `sourceIdentifier`, `targetIdentifier`, `driveId`). Slugs are
+   CLI-only. A slug passed to a create makes the containment job fail and the call
+   hang forever.
+3. **Never `createEmptyDocument`.** Create through the model namespace so the
+   document enters the proper pipeline and syncs to Connect:
+   `mutation { KnowledgeNote { createDocument(name: "...", parentIdentifier: "<drive-uuid>") { id } } }`
+4. **DateTime inputs inside `input` are your job too** — full ISO with `Z`
+   (`2026-08-17T12:00:00.000Z`). Zod silently records the operation with an
+   `.error` and leaves state unchanged on bad timestamps.
+5. **Verify by read-back, never assume.** After every write, re-read the document
+   state (or its operation log) — a failed operation is still recorded, with the
+   error string on the op and no state change.
+6. **One keep-alive connection for bulk work.** Per-request connections TLS-flake
+   (~19%) on remote pods; reuse a single HTTP client/session.
+7. **Batch dependent operations one at a time**; only independent operations may
+   share a single `mutateDocument` call.
+
+A fully-formed safe action looks like:
+```json
+{
+  "id": "3e1f7c9a-8f34-4a1e-9d7b-2f4b6c8d0e12",
+  "type": "SET_TITLE",
+  "input": {"title": "My Note", "updatedAt": "2026-08-17T12:00:00.000Z"},
+  "scope": "global",
+  "timestampUtcMs": "2026-08-17T12:00:00.000Z"
+}
+```
+
 ### Mode 3: Switchboard CLI (Full Feature Parity)
 
 The Switchboard CLI (v1.0.6+) provides full feature parity with MCP for all vault operations. The plugin's `hooks/hooks.json` is already CLI-mode: on vault commands it pings the reactor, auto-introspects a stale model cache, and prints the active profile + detected vault drive.
