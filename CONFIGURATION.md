@@ -84,6 +84,13 @@ For GraphQL and WebSocket endpoints on remote, replace `localhost:4001` with you
 
 ## Connection Modes
 
+> **The golden rule: read however you like — write ONLY through the CLI.**
+> Reads (queries, searches, state checks) are safe over raw GraphQL and faster (~0.2s vs ~1-2s).
+> Writes (create, mutate, link) go through the `switchboard` CLI or the vetted scripts: they
+> auto-stamp every action with `id` + `timestampUtcMs` and resolve drive slugs to UUIDs.
+> A single raw write missing the action `id` permanently breaks sync for every connected client.
+> Bulk writes: batch into one `switchboard docs apply --file` call.
+
 The plugin supports two connection modes to the Powerhouse reactor:
 
 ### Mode 1: MCP (Default — Request/Response)

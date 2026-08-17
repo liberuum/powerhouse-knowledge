@@ -1,5 +1,12 @@
 # For AI Agents
 
+> **The golden rule: read however you like — write ONLY through the CLI.**
+> Reads (queries, searches, state checks) are safe over raw GraphQL and faster (~0.2s vs ~1-2s).
+> Writes (create, mutate, link) go through the `switchboard` CLI or the vetted scripts: they
+> auto-stamp every action with `id` + `timestampUtcMs` and resolve drive slugs to UUIDs.
+> A single raw write missing the action `id` permanently breaks sync for every connected client.
+> Bulk writes: batch into one `switchboard docs apply --file` call.
+
 You have access to a Powerhouse Knowledge Vault via the `powerhouse-knowledge` plugin. This file tells you how to get started quickly.
 
 ## Deep-dive references
