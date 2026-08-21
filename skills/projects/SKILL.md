@@ -297,6 +297,26 @@ Ground truth: `document-models/work-breakdown-structure/v1/schema.graphql`.
    a non-empty value, so there's no way to blank out `name`/`role`/`title` via
    `UPDATE_*`; use the dedicated `SET_*` op where one exists instead.
 
+10. **Progress % is a leaf-only measure — don't recompute it from `goals.length`.**
+    The editors' `goalRollup()` counts `total`/`finished`/`pct` over **leaf goals
+    only**, because parent rows are aggregates of their children rather than units of
+    work. Counting both double-counts in whichever direction the tree leans: a
+    COMPLETED phase adds a finished unit on top of the children that finished it,
+    and a TODO phase adds an incomplete unit on top of children that are already
+    TODO. The Paperless WBS reads 14/31 = 45% across all rows but 11/22 = 50% across
+    leaves — same data, 9 of those 31 rows being phase containers. `blocked` and
+    `inProgress` deliberately do count **every** row, parents included, because they
+    drive alert/activity badges and a phase explicitly marked BLOCKED must not be
+    hidden by its still-TODO children.
+    Two consequences when reporting status to a human:
+    - Adding goals lowers the displayed % with no work undone (26 -> 31 goals dropped
+      the Paperless demo 50% -> 42%). Say so explicitly rather than presenting the
+      drop as a regression.
+    - Because of semantic #4 (no cascades), a stale parent status can make the leaf
+      and all-rows numbers disagree further. Check parent/child coherence before
+      quoting a percentage: a parent that is `TODO` while a child is `COMPLETED`
+      should usually be `IN_PROGRESS`.
+
 ## Rules
 
 - **Never leave a goal `IN_PROGRESS` at session end.** Before ending a session or
