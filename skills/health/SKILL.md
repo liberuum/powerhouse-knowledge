@@ -94,7 +94,7 @@ Then compute in Python from that one file. The rules that keep the numbers hones
 - **Links** come from `edges`, never from a note's `links[]` (empty since the relationship migration). `averageLinksPerNote` = outgoing edges per note; `connectionCount` = `stats.edgeCount`.
 - **MoC coverage** = share of notes that are the target of a `CORE_IDEA` edge.
 - **MOC_COHERENCE** = notes whose `topics` is empty (the dashboard's definition): `PASS` at 0, `WARN` ≤ 3, `FAIL` above. Selecting `topics` on `knowledgeGraphNodes` costs one server-side query per node, which is fine once per run (~0.3 s / 500 notes) — just never do it inside a per-hit loop.
-- **Descriptions**: missing or > 200 chars fails; < 80 is a quality warning.
+- **Descriptions**: missing fails; < 80 is a quality warning. A description > 200 cannot exist in state — the reducer rejects it — so a missing description is often an over-long attempt that was silently dropped. Count length as UTF-16 units (JavaScript `.length`), the way the reducer does.
 - **STALE_NOTES**: `stale` entries with `status = "DRAFT"`.
 - **Lifecycle**: report the DRAFT share in `recommendations` — a vault where nearly every note is DRAFT has never been verified.
 

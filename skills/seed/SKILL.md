@@ -87,6 +87,8 @@ The lifecycle is `INBOX → EXTRACTING → EXTRACTED → ARCHIVED`; the extract 
    - Run `/powerhouse-knowledge:extract` to extract atomic claims from this source
    - Or run `/powerhouse-knowledge:pipeline` for the full extract → connect → reweave → verify flow — which also places the new notes in the MoC hierarchy (TOPIC → DOMAIN → HUB) so they are explorable by cluster
 
+**Length limits:** none on a source's title, description or content. (The only hard length limit in any model is a knowledge note's description, ≤ 200 characters.)
+
 ## Source types
 
 - **ARTICLE** — web articles, blog posts

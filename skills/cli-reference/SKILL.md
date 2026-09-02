@@ -232,7 +232,7 @@ switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":
 - **Dependent chains work.** `[ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE]` in one batch created, assigned and advanced the task; `[ADVANCE_PHASE ×3]` walked a task from `reflect` to `DONE` and bumped `completedCount` exactly once.
 - **The job does not tell you.** `--wait` returned `error: null` / `READ_READY` in every failing case, and the operation-log summary reads as if the action applied.
 
-So: **batch to save round trips, then read state back to confirm every intended effect.** Earlier versions of this file claimed order was reversed and that any failure rejected the whole batch — both are false on the current stack.
+So: **lint the file first, batch to save round trips, then read state back to confirm every intended effect.** `node scripts/lint-actions.mjs <actions.json>` (in the plugin repo) catches, before dispatch, the things the reactor rejects silently: a knowledge-note description over 200 UTF-16 units — the only hard length limit in any bai/* model — any enum outside its set (`noteType`, `sourceOrigin`, `SourceStatus`, `taskType`, `HealthCategory`, `MocTier`, `ObservationCategory`, …), missing `scope`, and double-encoded line breaks. Exit 1 with the JSON path of each finding. Earlier versions of this file claimed order was reversed and that any failure rejected the whole batch — both are false on the current stack.
 
 **Pipeline in one call:**
 ```bash

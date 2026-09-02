@@ -64,6 +64,10 @@ print(len(bad),'notes with literal backslash-n'); print(chr(10).join(bad))"
 
 Repair each: read the content, replace the two-character sequence with a newline **in Python** (`s.replace(chr(92)+'n', chr(10))`), `json.dump` a single `SET_CONTENT` action to a file, `docs apply --file`, and read back. Never do the replacement in bash — that is how the bug is made.
 
+### Over-long description (rejected on write)
+
+A description over 200 characters never reaches state — the reducer rejects it and the note is left with whatever description it had before (often none), while the batch reports success. So an "empty description" on a note whose extraction clearly produced one is usually this. When repairing, **count the way the reducer does**: JavaScript `.length` (UTF-16 units). In Python use `len(s.encode("utf-16-le")) // 2`, not `len(s)` — an emoji is 2 units, and `len()` undercounts it. Or run `node scripts/lint-actions.mjs` on the repair file before applying it.
+
 ### Missing description
 Generate a description from the title and content, then dispatch:
 ```bash

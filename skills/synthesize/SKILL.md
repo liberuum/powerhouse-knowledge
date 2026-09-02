@@ -103,6 +103,8 @@ Apply, in this order, every time you run:
 
 Example — a vault of 37 MoCs: one HUB "Powerhouse Ecosystem" → 17 DOMAIN MoCs ("Reactor and Drives", "Editors and UX", …) and the TOPIC MoCs that fit no domain; "Editors and UX" → `CHILD_MOC` → TOPIC "Document Toolbar Styling" (5 notes).
 
+**Length limits:** none on a MoC's title, description or orientation — the only hard length limit in any model is a knowledge note's description (≤ 200). Keep MoC descriptions to one or two sentences for the picker; put the substance in `orientation`.
+
 ### Step 5: Attach core ideas
 
 For each note in the topic, attach it to the MoC via an `addRelationship` mutation with type `CORE_IDEA`. Since the drive-override migration, core ideas live in the reactor's `DocumentRelationship` table — not in the MoC's `coreIdeas[]` state array. This is the same mutation used for note↔note links; only the `relationshipType` differs.
