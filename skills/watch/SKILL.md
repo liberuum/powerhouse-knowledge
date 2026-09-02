@@ -5,6 +5,14 @@ description: Start a live watch session on the Knowledge Vault. Monitors note ch
 
 # Watch Knowledge Vault
 
+> **Target first.** Every command below runs against the Switchboard the
+> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
+> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
+> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
+> `switchboard config show` and the drive detection in AGENT.md § *Find the
+> vault drive*. If it is still ambiguous which vault the user means, **ask for
+> the Switchboard URL and the drive** — never assume an endpoint.
+
 Start a real-time monitoring session that watches for changes in the Knowledge Vault and suggests actions.
 
 ## How to Watch

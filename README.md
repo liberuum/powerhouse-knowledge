@@ -64,9 +64,14 @@ ph vetra --watch   # starts reactor at localhost:4001
 
 **Remote (Switchboard):**
 ```bash
-switchboard config use remote-dev   # or your profile name
+# Point a profile at YOUR deployment's /graphql endpoint — there is no default vault.
+switchboard config add my-vault --url https://<your-switchboard-host>/graphql
+switchboard config use my-vault
 switchboard ping                     # verify connection
 ```
+
+The agent always works against the active profile. If you have several vaults,
+say which one you mean — it will ask rather than guess.
 
 See [CONFIGURATION.md](CONFIGURATION.md) for detailed connection options (MCP, CLI, GraphQL).
 

@@ -258,8 +258,9 @@ next action in `recommendations`, and tell the user what it would take.
 2. **Description max 200 chars**: Longer descriptions silently fail.
 3. **Always verify after creating**: `switchboard docs tree <drive> --format json` to confirm the node exists.
 4. **Never batch dependent operations**: Pipeline ops (ADD_TASK → ASSIGN_TASK → ADVANCE_PHASE) must be dispatched one at a time via `docs mutate`.
-5. **The CLI auto-injects timestamps and action IDs** — no need to generate them manually.
-6. **GraphQL identifier arguments take UUIDs, not slugs**: `sourceIdentifier`, `targetIdentifier`, `parentIdentifier`, and `documentIdentifier` take document UUIDs. Drive slugs are CLI-only (`--drive <slug>` is fine — the CLI resolves them). A slug passed to GraphQL `createDocument`/`createEmptyDocument` makes the containment job fail and the create hangs forever.
+5. **Never reuse a pipeline task id — a collision is unrecoverable.** `ADD_TASK` appends with no duplicate-id guard, while every other queue op resolves via `tasks.find(t => t.id === taskId)` and so always hits the first match. A second task sharing an id can never be assigned, advanced, completed or failed, and it inflates `activeCount` forever; there is no `REMOVE_TASK`. Generate a fresh UUID per `ADD_TASK`, and if a dispatch times out read the queue back before re-sending — a 502 whose commit lands late is indistinguishable from a failure.
+6. **The CLI auto-injects timestamps and action IDs** — no need to generate them manually.
+7. **GraphQL identifier arguments take UUIDs, not slugs**: `sourceIdentifier`, `targetIdentifier`, `parentIdentifier`, and `documentIdentifier` take document UUIDs. Drive slugs are CLI-only (`--drive <slug>` is fine — the CLI resolves them). A slug passed to GraphQL `createDocument`/`createEmptyDocument` makes the containment job fail and the create hangs forever.
 
 ## Available skills
 

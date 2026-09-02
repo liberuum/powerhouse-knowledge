@@ -5,6 +5,14 @@ description: Switchboard CLI commands for Knowledge Vault operations. Use as an 
 
 # Switchboard CLI Reference
 
+> **Target first.** Every command below runs against the Switchboard the
+> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
+> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
+> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
+> `switchboard config show` and the drive detection in AGENT.md § *Find the
+> vault drive*. If it is still ambiguous which vault the user means, **ask for
+> the Switchboard URL and the drive** — never assume an endpoint.
+
 > **The golden rule: read however you like — write ONLY through the CLI.**
 > Reads (queries, searches, state checks) are safe over raw GraphQL and faster (~0.2s vs ~1-2s).
 > Writes (create, mutate, link) go through the `switchboard` CLI or the vetted scripts: they
@@ -24,8 +32,9 @@ curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/insta
 ## Configuration
 
 ```bash
-# Switch to local profile (targets http://localhost:4001/graphql)
-switchboard config use local
+# Switch profiles — names are whatever the user created; e.g. a local `ph vetra`
+# profile typically points at http://localhost:4001/graphql
+switchboard config use <profile-name>
 
 # Check connection
 switchboard ping
@@ -67,13 +76,13 @@ The CLI uses `Model { createDocument(parentIdentifier) }` which goes through the
 
 ```bash
 # Create document in a drive
-switchboard docs create --type bai/knowledge-note --name "My Note" --drive knowledge-vault
+switchboard docs create --type bai/knowledge-note --name "My Note" --drive <drive-slug>
 
 # Create document in a specific folder
-switchboard docs create --type bai/source --name "Source" --drive knowledge-vault --parent-folder <folder-uuid>
+switchboard docs create --type bai/source --name "Source" --drive <drive-slug> --parent-folder <folder-uuid>
 
 # Find folder UUIDs from the tree
-switchboard docs tree knowledge-vault --format json
+switchboard docs tree <drive-slug> --format json
 ```
 
 **NOTE:** Do NOT use `createEmptyDocument` + manual `ADD_FILE` — Connect's PGLite won't sync those documents.
@@ -116,9 +125,11 @@ with `cargo install --path . --force` in the switchboard-cli checkout.
   failed with a false "Document not found" — on old CLIs, omit `--drive` on `docs get`.
 - Since 1.0.28, `--drive` on `docs get` is an honest scope: a direct hit outside the
   drive errors with "exists but is not in drive <d>" (omit `--drive` to fetch it anyway).
-- Drive **slugs are per-server** (`drives list` shows them): `powerhouse-knowledge` only
-  exists on the remote vault; on local dev reactors the slug is often the drive UUID.
-  Never reuse a slug across profiles without checking.
+- Drive **slugs are per-server** (`drives list` shows them). A human-readable slug
+  exists only on the server where that drive was created; on local dev reactors the
+  slug is often just the drive UUID. Never reuse a slug across profiles without
+  checking — read it from `drives list` (or the pre-flight hook's `VAULT_DRIVE_SLUG`)
+  on the profile you are actually targeting.
 - A parallel session can switch your default profile — pin commands with `-p <profile>`
   or run `switchboard config show` before write batches.
 - Transient "Document not found" right after a write: just retry (read-model lag).
@@ -248,14 +259,14 @@ switchboard docs apply <note-id> --actions '[
 
 ### 1. Seed Source
 ```bash
-SOURCE_ID=$(switchboard docs create --type bai/source --name "Source Title" --drive knowledge-vault --parent-folder <sources-folder> --format json | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+SOURCE_ID=$(switchboard docs create --type bai/source --name "Source Title" --drive <drive-slug> --parent-folder <sources-folder> --format json | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 
 switchboard docs mutate $SOURCE_ID --op ingestSource --input '{"title":"...","content":"...","sourceType":"ARTICLE","createdAt":"2026-03-30T12:00:00.000Z","createdBy":"agent"}'
 ```
 
 ### 2. Extract Claims
 ```bash
-NOTE_ID=$(switchboard docs create --type bai/knowledge-note --name "Claim title" --drive knowledge-vault --parent-folder <notes-folder> --format json | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+NOTE_ID=$(switchboard docs create --type bai/knowledge-note --name "Claim title" --drive <drive-slug> --parent-folder <notes-folder> --format json | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 
 # Content batch
 switchboard docs mutate $NOTE_ID --op setTitle --input '{"title":"...","updatedAt":"..."}'
@@ -276,7 +287,7 @@ switchboard query 'mutation { addRelationship(sourceIdentifier:"<note-id>", targ
 
 ### 4. Synthesize (MOC)
 ```bash
-MOC_ID=$(switchboard docs create --type bai/moc --name "Topic Name" --drive knowledge-vault --parent-folder <knowledge-folder> --format json | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+MOC_ID=$(switchboard docs create --type bai/moc --name "Topic Name" --drive <drive-slug> --parent-folder <knowledge-folder> --format json | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 
 switchboard docs mutate $MOC_ID --op createMoc --input '{"title":"Topic","description":"...","orientation":"...","tier":"TOPIC","createdAt":"..."}'
 

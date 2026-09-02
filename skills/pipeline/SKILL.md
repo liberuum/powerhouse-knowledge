@@ -5,6 +5,14 @@ description: Run the knowledge processing pipeline on a source or batch of notes
 
 # Processing Pipeline
 
+> **Target first.** Every command below runs against the Switchboard the
+> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
+> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
+> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
+> `switchboard config show` and the drive detection in AGENT.md § *Find the
+> vault drive*. If it is still ambiguous which vault the user means, **ask for
+> the Switchboard URL and the drive** — never assume an endpoint.
+
 Run the 6R processing pipeline on source material or individual notes.
 
 ## Pipeline Phases
@@ -54,7 +62,31 @@ switchboard docs get <pipeline-queue-id> --state --format json
 
 If there are PENDING tasks with a `documentRef`, process them. The source document always has the latest content regardless of how many edits the user made.
 
-**Important:** Don't create duplicate tasks. Check if a task already exists for the same `documentRef` before creating a new one.
+### ⚠️ Never reuse a task id — the model cannot recover from it
+
+`ADD_TASK` appends to `state.tasks` with **no duplicate-id guard**, but
+every other queue operation resolves its target with
+`state.tasks.find(t => t.id === taskId)`, which always returns the
+**first** match. Dispatching `ADD_TASK` twice with the same id therefore
+creates a permanently unreachable ghost task: it can never be assigned,
+advanced, completed, failed or unblocked, and it inflates `activeCount`
+for the life of the document. There is no `REMOVE_TASK` operation, so
+the only way to clear one is to recreate the queue document.
+
+**Generate a fresh UUID for every `ADD_TASK`.** Never reuse an id across
+retries — if a dispatch times out, read the queue back and check whether
+the task landed before re-sending. A 502 whose commit arrives after the
+client gives up looks exactly like a failure.
+
+```bash
+# Read back before retrying, and before adding work for a document
+switchboard docs get <pipeline-queue-id> --state --format json \
+  | python3 -c "import json,sys; g=json.load(sys.stdin)['state']['global']; \
+      print([(t['id'], t['status'], t.get('documentRef')) for t in g['tasks']])"
+```
+
+Also don't create a second task for the same `documentRef` — check the
+existing task list first.
 
 ### Step 2: Phase 1 — CREATE (Extract)
 

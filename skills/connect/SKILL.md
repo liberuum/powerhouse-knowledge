@@ -5,6 +5,14 @@ description: Find connections between knowledge notes and create links. Use afte
 
 # Connect Knowledge Notes
 
+> **Target first.** Every command below runs against the Switchboard the
+> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
+> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
+> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
+> `switchboard config show` and the drive detection in AGENT.md § *Find the
+> vault drive*. If it is still ambiguous which vault the user means, **ask for
+> the Switchboard URL and the drive** — never assume an endpoint.
+
 Find genuine connections between notes and create typed links. This is the "reflect" phase — the step that transforms isolated claims into a knowledge graph.
 
 ## Connection discovery process
