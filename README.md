@@ -67,10 +67,19 @@ ph vetra --watch   # starts reactor at localhost:4001
 **Remote (Switchboard):**
 ```bash
 # Point a profile at YOUR deployment's /graphql endpoint — there is no default vault.
-switchboard config add my-vault --url https://<your-switchboard-host>/graphql
-switchboard config use my-vault
+switchboard init --url https://<your-switchboard-host>/graphql --name my-vault --use-profile   # CLI ≥ 1.0.34; older: `switchboard init` (interactive)
 switchboard ping                     # verify connection
 ```
+
+**Sign your writes (required by the plugin's pre-write hook):**
+```bash
+ph login                             # once per machine — creates .ph/.keypair.json + .ph/.renown.json
+switchboard auth login --renown      # the profile signs every write with that key; path only, never the key
+switchboard auth status              # Signing: on … acting for <your address>
+```
+Every note, edge and tension the agent writes is then signed by *your* key and labelled
+`powerhouse-knowledge`, so the vault can tell agent writes from your own in Connect. Without this,
+the Switchboard would attribute agent writes to whoever logged the *server* in.
 
 The agent always works against the active profile. If you have several vaults,
 say which one you mean — it will ask rather than guess.
@@ -262,7 +271,7 @@ Source material goes in; connected, verified notes come out. The agent runs it a
 Record   →  /seed        ingest a source (bai/source, status INBOX → EXTRACTING) and queue a task
 Reduce   →  /extract     one bai/knowledge-note per atomic claim; ADD_EXTRACTED_CLAIM + DERIVED_FROM
                          edge per note; RECORD_EXTRACTION_STATS; source → EXTRACTED
-Reflect  →  /connect     typed relationships (addRelationship), each passing the articulation test
+Reflect  →  /connect     typed relationships (`docs link`), each passing the articulation test
 Reweave  →  /synthesize  MoCs via CORE_IDEA edges; update older notes with new context
 Verify   →  /verify      recite test, schema check, link health — auto-repair, then /health
 Rethink  →  /health + /graph   challenge the structure against the evidence

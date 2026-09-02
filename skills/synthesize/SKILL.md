@@ -51,7 +51,7 @@ switchboard docs list --drive <drive-slug> --format json
 # Find all bai/moc documents
 # Compare: if a MOC already exists for topic X, update it instead of creating a new one —
 # UPDATE_DESCRIPTION { description, updatedAt } / UPDATE_ORIENTATION { orientation, updatedAt }
-# on the existing MoC, plus addRelationship(<moc>, <note>, "CORE_IDEA") for each new member
+# on the existing MoC, plus `switchboard docs link <moc> <note> -t CORE_IDEA` for each new member
 ```
 
 ### Step 3: Find the /knowledge/ folder
@@ -107,30 +107,16 @@ Example — a vault of 37 MoCs: one HUB "Powerhouse Ecosystem" → 17 DOMAIN MoC
 
 ### Step 5: Attach core ideas
 
-For each note in the topic, attach it to the MoC via an `addRelationship` mutation with type `CORE_IDEA`. Since the drive-override migration, core ideas live in the reactor's `DocumentRelationship` table — not in the MoC's `coreIdeas[]` state array. This is the same mutation used for note↔note links; only the `relationshipType` differs.
+For each note in the topic, attach it to the MoC with `docs link … -t CORE_IDEA`. Since the drive-override migration, core ideas live in the reactor's `DocumentRelationship` table — not in the MoC's `coreIdeas[]` state array. This is the same command used for note↔note links; only the type differs, and it is signed as you when the profile has an identity.
 
 ```bash
-switchboard query 'mutation {
-  addRelationship(
-    sourceIdentifier: "<moc-id>",
-    targetIdentifier: "<note-document-id>",
-    relationshipType: "CORE_IDEA",
-    branch: "main"
-  ) { documentType }
-}'
+switchboard docs link <moc-id> <note-document-id> -t CORE_IDEA
 ```
 
 For a hub/domain hierarchy, use `CHILD_MOC` from the parent MoC to each child MoC:
 
 ```bash
-switchboard query 'mutation {
-  addRelationship(
-    sourceIdentifier: "<parent-moc-id>",
-    targetIdentifier: "<child-moc-id>",
-    relationshipType: "CHILD_MOC",
-    branch: "main"
-  ) { documentType }
-}'
+switchboard docs link <parent-moc-id> <child-moc-id> -t CHILD_MOC
 ```
 
 **Articulation lives in the note body, not on the edge.** The pre-migration `addCoreIdea` op accepted a `contextPhrase` that explained WHY each note was a core idea. The new `DocumentRelationship` row is just `(source, target, type)` — no metadata. To preserve the articulation, edit the source note's content (`--op setContent`) and add a section explaining how it fits the topic. The reader sees this when they navigate from the MoC into the note.

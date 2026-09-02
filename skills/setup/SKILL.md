@@ -26,7 +26,8 @@ Verify that a Knowledge Vault drive is ready for use — correct folder structur
 
 - Reactor running (`ph vetra --watch` or remote reactor)
 - A vault drive exists (created via Connect UI or CLI)
-- `switchboard` CLI installed and configured (`switchboard config use local` or appropriate profile, `switchboard introspect` run once)
+- `switchboard` CLI ≥ 1.0.34 installed and configured (`switchboard config use local` or appropriate profile, `switchboard introspect` run once)
+- A signing identity on that profile: `ph login` (once per machine), then `switchboard auth login --renown`. The plugin's pre-write hook blocks every vault write until `switchboard auth status` reports `Signing: on` — see AGENT.md § Signed writes.
 
 ## Setup Process
 
@@ -37,6 +38,16 @@ There is no default vault. If the session hasn't already established a target
 `.mcp.json`, or the user naming one), **ask the user for the Switchboard URL**
 (local `ph vetra` at `http://localhost:4001/graphql`, or their deployment's
 `/graphql` endpoint) before touching anything.
+
+### Step 0b: Confirm the profile signs
+
+```bash
+switchboard auth status --format json   # expect "signing": true
+```
+
+If it is `false`, stop and give the user the two commands (`ph login`, then
+`switchboard auth login --renown [--ph-dir <dir>]`). Nothing below writes
+until this is true; the hook enforces it.
 
 ### Step 1: Find the vault drive
 

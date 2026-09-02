@@ -25,33 +25,21 @@ Find genuine connections between notes and create typed links. This is the "refl
    - `knowledgeGraphSearch(query)` — keyword search on title + description
    - `knowledgeGraphFullSearch(query)` — full-text search; ANDs terms, so use 1-2 keywords
 3. **Apply the articulation test** — for each candidate, answer: "[[A]] connects to [[B]] because [specific reason]"
-4. **If the connection is genuine**, create a relationship via the `addRelationship` GraphQL mutation. Since the drive-override migration, edges live in the reactor's `DocumentRelationship` table (one row per ADD_RELATIONSHIP system action) — not in the source note's `links[]` array. The legacy `--op addLink` writes to the old per-doc array and is **not** indexed by the graph subgraph.
+4. **If the connection is genuine**, create the edge with `docs link`. Since the drive-override migration, edges live in the reactor's `DocumentRelationship` table (one row per ADD_RELATIONSHIP system action) — not in the source note's `links[]` array. The legacy `--op addLink` writes to the old per-doc array and is **not** indexed by the graph subgraph.
 
 ```bash
-switchboard query 'mutation {
-  addRelationship(
-    sourceIdentifier: "<source-uuid>",
-    targetIdentifier: "<target-uuid>",
-    relationshipType: "RELATES_TO",
-    branch: "main"
-  ) { documentType }
-}'
+switchboard docs link <source-uuid> <target-uuid> -t RELATES_TO
 ```
 
-Or via direct HTTP to `/graphql/r` (faster for batch loops):
+`docs link` (CLI ≥ 1.0.34) sends the `ADD_RELATIONSHIP` action **signed as you**
+when the profile has a signing identity (`switchboard auth login --renown` —
+the plugin's pre-write hook requires it), so the edge is attributable like any
+other agent write: the vault shows `powerhouse-knowledge · <your did:key>` acting
+for your address. The raw `addRelationship` GraphQL mutation builds the action
+server-side and is therefore always signed by the Switchboard's own identity;
+the hook steers you away from it. Idempotent on `(source, target, type)`.
 
-```bash
-GRAPHQL_ENDPOINT=<switchboard>/graphql
-curl -s "$GRAPHQL_ENDPOINT" -H 'content-type: application/json' -d '{
-  "query": "mutation($s:String!,$t:String!,$r:String!,$b:String){ addRelationship(sourceIdentifier:$s,targetIdentifier:$t,relationshipType:$r,branch:$b){ documentType } }",
-  "variables": {"s":"<source-uuid>","t":"<target-uuid>","r":"RELATES_TO","b":"main"}
-}'
-```
-
-This curl pattern is safe ONLY because `addRelationship` constructs the action server-side. Do
-not extend it to `mutateDocument` without stamping `id`/`timestampUtcMs` on every action.
-
-To remove a relationship, use `removeRelationship` with the same argument shape.
+To remove an edge: `switchboard docs unlink <source-uuid> <target-uuid> -t RELATES_TO`.
 
 ## Link types
 
@@ -98,7 +86,7 @@ switchboard docs mutate <note-id> --op setContent --input '{
 ## Tension detection
 
 **The indexer opens tensions for you.** Since the graph-indexer automation
-(vault package ≥ 1.0.55), every `addRelationship(…, "CONTRADICTS")` on the
+(vault package ≥ 1.0.55), every `CONTRADICTS` edge that lands on the
 Switchboard makes the server create a `bai/tension` in `/ops` — a short
 title (`Contradiction on <shared topics or words>`), both claims in full in
 the description, `involvedRefs [a, b]`, `observedBy: graph-indexer` — and add an

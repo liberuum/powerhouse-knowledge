@@ -170,13 +170,13 @@ switchboard docs mutate <id> --op setNoteType --input '{"noteType":"concept","up
 switchboard docs mutate <id> --op setContent --input '{"content":"...","updatedAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
-Linking — since the drive-override migration, relationships are stored in the reactor's `DocumentRelationship` table via the `addRelationship` / `removeRelationship` GraphQL mutations. The graph subgraph reads from this table; the legacy `--op addLink` writes to a per-doc `links[]` array that the subgraph no longer indexes.
+Linking — since the drive-override migration, relationships are stored in the reactor's `DocumentRelationship` table; create and remove them with `switchboard docs link` / `docs unlink` (CLI ≥ 1.0.34 — a signed `ADD_RELATIONSHIP`; the raw `addRelationship` mutation is the unsigned fallback on older CLIs). The graph subgraph reads from this table; the legacy `--op addLink` writes to a per-doc `links[]` array that the subgraph no longer indexes.
 
 ```bash
-switchboard query 'mutation { addRelationship(sourceIdentifier:"<source-uuid>", targetIdentifier:"<target-uuid>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+switchboard docs link <source-uuid> <target-uuid> -t RELATES_TO
 
 # remove
-switchboard query 'mutation { removeRelationship(sourceIdentifier:"<source-uuid>", targetIdentifier:"<target-uuid>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+switchboard docs unlink <source-uuid> <target-uuid> -t RELATES_TO
 ```
 
 Valid `relationshipType` values: `RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`, `DERIVED_FROM`, `CORE_IDEA` (MoC → note), `CHILD_MOC` (MoC → MoC). The mutation writes one row to `DocumentRelationship` and emits an `ADD_RELATIONSHIP` system action on the source document's op log; idempotent on `(source, target, type)`.
@@ -202,11 +202,11 @@ MOC:
 # Create the MoC document and set its title/orientation/tier
 switchboard docs mutate <moc-id> --op createMoc --input '{"title":"Topic","description":"...","orientation":"...","tier":"TOPIC","createdAt":"2026-03-30T15:00:00.000Z"}'
 
-# Attach a note as a CORE_IDEA of this MoC — same addRelationship path as note↔note links
-switchboard query 'mutation { addRelationship(sourceIdentifier:"<moc-id>", targetIdentifier:"<note-uuid>", relationshipType:"CORE_IDEA", branch:"main"){ documentType } }'
+# Attach a note as a CORE_IDEA of this MoC — same docs link path as note↔note links
+switchboard docs link <moc-id> <note-uuid> -t CORE_IDEA
 
 # Attach a child MoC under a parent (hub/domain hierarchy)
-switchboard query 'mutation { addRelationship(sourceIdentifier:"<parent-moc-id>", targetIdentifier:"<child-moc-id>", relationshipType:"CHILD_MOC", branch:"main"){ documentType } }'
+switchboard docs link <parent-moc-id> <child-moc-id> -t CHILD_MOC
 ```
 
 Note: the legacy `--op addCoreIdea` / `--op addChildMoc` ops wrote `contextPhrase` and ordering fields into the MoC's state. The drive-override pattern drops these — articulation (why this note belongs to this MoC) lives in the source note's content body rather than as metadata on the edge.
@@ -288,7 +288,7 @@ switchboard docs mutate $NOTE_ID --op setProvenance --input '{"author":"agent","
 ### 3. Connect
 ```bash
 # Note-to-note (or note-to-MoC) relationship — writes to DocumentRelationship table
-switchboard query 'mutation { addRelationship(sourceIdentifier:"<note-id>", targetIdentifier:"<target-id>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+switchboard docs link <note-id> <target-id> -t RELATES_TO
 ```
 
 ### 4. Synthesize (MOC)
@@ -297,8 +297,8 @@ MOC_ID=$(switchboard docs create --type bai/moc --name "Topic Name" --drive <dri
 
 switchboard docs mutate $MOC_ID --op createMoc --input '{"title":"Topic","description":"...","orientation":"...","tier":"TOPIC","createdAt":"..."}'
 
-# Attach notes as CORE_IDEA edges — same addRelationship surface as note↔note
-switchboard query 'mutation { addRelationship(sourceIdentifier:"<moc-id>", targetIdentifier:"<note-uuid>", relationshipType:"CORE_IDEA", branch:"main"){ documentType } }'
+# Attach notes as CORE_IDEA edges — same docs link surface as note↔note
+switchboard docs link <moc-id> <note-uuid> -t CORE_IDEA
 ```
 
 ### 5. Pipeline Tracking (batchable — read the task back afterwards)

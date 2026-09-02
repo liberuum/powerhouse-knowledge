@@ -304,10 +304,10 @@ Ground truth: `document-models/work-breakdown-structure/v1/schema.graphql`.
    "detach children first" step and no confirmation — read the subtree before
    deleting if you need to preserve any of it elsewhere.
 7. **`knowledgeRefs` are PHIDs, not a relationship-table edge.** Unlike
-   knowledge-note-to-note links (which go through `addRelationship` /
+   knowledge-note-to-note links (which go through `docs link` /
    `DocumentRelationship`), a project's `knowledgeRefs[]` is a plain PHID array in
    `ProjectState`, managed directly with `ADD_KNOWLEDGE_REF` / `REMOVE_KNOWLEDGE_REF`
-   on the project document — do not use `addRelationship` for these. Cite the notes
+   on the project document — do not use `docs link` for these. Cite the notes
    and MOCs the project actually builds on, not everything tangentially related.
 8. **`SET_REFERENCES` replaces, it doesn't append** — on both models. Read the
    current `references[]` first if you want to keep existing entries.

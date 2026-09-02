@@ -33,13 +33,22 @@ def find_writes(command: str):
             cur.append(t)
     groups.append(cur)
     for g in groups:
-        if len(g) < 3 or os.path.basename(g[0]) != "switchboard" or g[1] != "docs":
+        # Skip leading VAR=value words and global options (`-p X`, `--format json`)
+        # so `FOO=1 switchboard -p prod docs apply …` is still linted.
+        while g and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", g[0]):
+            g = g[1:]
+        if not g or os.path.basename(g[0]) != "switchboard":
+            continue
+        g = g[1:]
+        while g and g[0].startswith("-"):
+            g = g[2:] if g[0] in ("-p", "--profile", "--format") and len(g) > 1 else g[1:]
+        if len(g) < 2 or g[0] != "docs":
             continue
         def val(flag):
             return g[g.index(flag) + 1] if flag in g and g.index(flag) + 1 < len(g) else None
-        if g[2] == "apply":
+        if g[1] == "apply":
             yield ("apply", val("--file"), val("--actions"))
-        elif g[2] == "mutate":
+        elif g[1] == "mutate":
             yield ("mutate", val("--op"), val("--input-file"), val("--input"))
 
 def main():

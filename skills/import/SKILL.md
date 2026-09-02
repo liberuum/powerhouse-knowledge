@@ -83,19 +83,12 @@ switchboard docs mutate <drive-id> --op addFile --input '{
 
 For each note that has references (wiki links, related notes):
 1. Look up the target document ID from the title mapping
-2. Create the relationship via `addRelationship` (writes to the reactor's `DocumentRelationship` table — the indexed source of truth since the drive-override migration):
+2. Create the relationship with `docs link` (writes to the reactor's `DocumentRelationship` table — the indexed source of truth since the drive-override migration — signed as you):
 ```bash
-switchboard query 'mutation {
-  addRelationship(
-    sourceIdentifier: "<source-note-id>",
-    targetIdentifier: "<resolved-target-id>",
-    relationshipType: "RELATES_TO",
-    branch: "main"
-  ) { documentType }
-}'
+switchboard docs link <source-note-id> <resolved-target-id> -t RELATES_TO
 ```
 
-The mutation is idempotent on `(source, target, type)`, so re-running an import is safe.
+Edges are idempotent on `(source, target, type)`, so re-running an import is safe.
 
 ### Step 5: Create MOCs from folder structure or tags (optional)
 
@@ -104,7 +97,7 @@ If the source has categories/folders/tags with 3+ notes, create MOC documents (t
 switchboard docs create --type bai/moc --name "<topic-name>" --drive <drive-slug> --parent-folder <knowledge-folder-uuid> --format json
 ```
 
-Then attach the notes with `addRelationship(<moc-uuid>, <note-uuid>, "CORE_IDEA")` — one call per note; there is no per-document core-idea operation any more
+Then attach the notes with `switchboard docs link <moc-uuid> <note-uuid> -t CORE_IDEA` — one call per note; there is no per-document core-idea operation any more
 
 ### Step 6: Verify and report
 
@@ -123,7 +116,7 @@ Convert `[[wiki link]]` to relationship rows:
 ```
 For each [[target title]] in note content:
   1. Find document with matching title in the title-to-id map
-  2. If found: call addRelationship(source, target, RELATES_TO)
+  2. If found: call `switchboard docs link source target -t RELATES_TO`
   3. If not found: log as unresolved (may be an external reference)
 ```
 

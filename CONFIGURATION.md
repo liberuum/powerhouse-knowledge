@@ -237,8 +237,13 @@ The Switchboard CLI (≥ 1.0.28 for drive-scoped `docs get`; see `skills/cli-ref
 # Install CLI
 curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash
 
-# Configure local profile
-switchboard config use <profile-name>   # e.g. a local `ph vetra` profile pointing at http://localhost:4001/graphql
+# Create / select a profile (no default vault — point it at the Switchboard the user names)
+switchboard init --url http://localhost:4001/graphql --name local --use-profile   # CLI ≥ 1.0.34, non-interactive
+switchboard config use <profile-name>   # switch between existing profiles
+
+# Sign writes with your `ph login` identity (the plugin's pre-write hook requires this)
+ph login                                # once per machine
+switchboard auth login --renown         # profile now signs docs apply / mutate / link / unlink as you
 
 # Introspect models (discovers bai/* types correctly — bai/source, not powerhouse/source)
 switchboard introspect
@@ -278,10 +283,10 @@ Topics (per-document state):
 switchboard docs mutate <id> --op addTopic --input '{"id":"topic-unique-id","name":"zettelkasten"}'
 ```
 
-Relationships (since the drive-override migration, edges live in the reactor's `DocumentRelationship` table, NOT in per-document `links[]`). Use the `addRelationship` GraphQL mutation — the legacy `--op addLink` is bypassed by the graph subgraph:
+Relationships (since the drive-override migration, edges live in the reactor's `DocumentRelationship` table, NOT in per-document `links[]`). Use `switchboard docs link` (CLI ≥ 1.0.34; signed as you) — the legacy `--op addLink` is bypassed by the graph subgraph:
 ```bash
-switchboard query 'mutation { addRelationship(sourceIdentifier:"<source-uuid>", targetIdentifier:"<target-uuid>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
-switchboard query 'mutation { removeRelationship(sourceIdentifier:"<source-uuid>", targetIdentifier:"<target-uuid>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+switchboard docs link <source-uuid> <target-uuid> -t RELATES_TO
+switchboard docs unlink <source-uuid> <target-uuid> -t RELATES_TO
 ```
 
 Valid `relationshipType`: `RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`, `DERIVED_FROM`, `CORE_IDEA` (MoC → note), `CHILD_MOC` (MoC → MoC). Mutation is idempotent on `(source, target, type)`.
@@ -299,11 +304,11 @@ MOC mutations:
 # createMoc requires createdAt — sets title/description/orientation/tier on the MoC's state
 switchboard docs mutate <moc-id> --op createMoc --input '{"title":"Topic","description":"...","orientation":"...","tier":"TOPIC","createdAt":"2026-03-30T15:00:00.000Z"}'
 
-# Attach a note as a core idea — addRelationship with type CORE_IDEA (NOT --op addCoreIdea)
-switchboard query 'mutation { addRelationship(sourceIdentifier:"<moc-id>", targetIdentifier:"<note-uuid>", relationshipType:"CORE_IDEA", branch:"main"){ documentType } }'
+# Attach a note as a core idea — docs link with type CORE_IDEA (NOT --op addCoreIdea)
+switchboard docs link <moc-id> <note-uuid> -t CORE_IDEA
 
-# Attach a child MoC — addRelationship with type CHILD_MOC (NOT --op addChildMoc)
-switchboard query 'mutation { addRelationship(sourceIdentifier:"<parent-moc-id>", targetIdentifier:"<child-moc-id>", relationshipType:"CHILD_MOC", branch:"main"){ documentType } }'
+# Attach a child MoC — docs link with type CHILD_MOC (NOT --op addChildMoc)
+switchboard docs link <parent-moc-id> <child-moc-id> -t CHILD_MOC
 ```
 
 The pre-migration `--op addCoreIdea` accepted a `contextPhrase` (the articulation: WHY this note matters in this MoC). The new `DocumentRelationship` row stores only `(source, target, type)` — articulation now lives in the source note's content body instead of on the edge.
@@ -472,7 +477,7 @@ Subscribe to note changes, find related notes, auto-create links:
 ```
 1. Subscribe to bai/knowledge-note changes
 2. On new note: search for notes with overlapping topics
-3. For each match: call `addRelationship(source, target, RELATES_TO)`
+3. For each match: call `switchboard docs link source target -t RELATES_TO`
 4. Re-entrancy guard: skip if the change was our own ADD_RELATIONSHIP system action
 ```
 

@@ -11,7 +11,7 @@ tools:
   - WebFetch
   - Agent
 ---
-<!-- GENERATED from AGENT.md (sha256:54b132407268b8ed) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:fe7a73764dc34183) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -89,8 +89,7 @@ A hosted vault needs no auth for reads. Point a profile at the Switchboard and
 confirm the models are deployed:
 
 ```bash
-switchboard config add remote-vault --url https://<host>-switchboard.vetra.io/graphql
-switchboard config use remote-vault
+switchboard init --url https://<host>-switchboard.vetra.io/graphql --name remote-vault --use-profile   # CLI ≥ 1.0.34 (non-interactive)
 switchboard ping
 ```
 
@@ -148,7 +147,7 @@ Content enters as a **source** and leaves as **connected, verified notes inside 
 ```
 Record   →  /seed        bai/source in /sources/, INGEST_SOURCE, status → EXTRACTING, ADD_TASK (taskType "claim")
 Reduce   →  /extract     one bai/knowledge-note per atomic claim (phase "create")
-Reflect  →  /connect     typed relationships via addRelationship, each passing the articulation test (phase "reflect")
+Reflect  →  /connect     typed relationships via `docs link`, each passing the articulation test (phase "reflect")
 Reweave  →  /synthesize  MoC membership (CORE_IDEA), MoC hierarchy (CHILD_MOC), update older notes (phase "reweave")
 Verify   →  /verify      recite test, schema, link health; auto-repair; then /health and rewrite the report (phase "verify")
 Rethink  →  /health, /graph   challenge the structure against the evidence
@@ -239,12 +238,12 @@ over-long descriptions and bad timestamps all fail silently).
 - [ ] title (a declarative claim), description (<= 200 chars, adds information beyond the title), `noteType` (one of the ten lowercase values), content
 - [ ] topics added; provenance set in a SEPARATE dispatch from content
 - [ ] >= 2 typed relationships, each passing the articulation test
-- [ ] attached to a MoC (`addRelationship(<moc-uuid>, <note-uuid>, "CORE_IDEA")` — the MoC editor only renders `CORE_IDEA`/`CHILD_MOC` edges as membership; a `RELATES_TO` edge is indexed but never shows as belonging to the MoC)
+- [ ] attached to a MoC (`switchboard docs link <moc-uuid> <note-uuid> -t CORE_IDEA` — the MoC editor only renders `CORE_IDEA`/`CHILD_MOC` edges as membership; a `RELATES_TO` edge is indexed but never shows as belonging to the MoC)
 - [ ] lifecycle walked to CANONICAL (submit, then approve as a different actor — approval is only legal from `IN_REVIEW`)
 
 **Extracting from a source**
 - [ ] every claim is atomic; skip rate reported honestly
-- [ ] `ADD_EXTRACTED_CLAIM` per note + `DERIVED_FROM` edge per note (`addRelationship(<note>, <source>, "DERIVED_FROM")`)
+- [ ] `ADD_EXTRACTED_CLAIM` per note + `DERIVED_FROM` edge per note (`switchboard docs link <note> <source> -t DERIVED_FROM`)
 - [ ] `RECORD_EXTRACTION_STATS`, then `SET_SOURCE_STATUS` -> `EXTRACTED`
 - [ ] no source left in INBOX/EXTRACTING once its notes exist
 
@@ -392,11 +391,11 @@ See [skills/projects/SKILL.md](skills/projects/SKILL.md) for the 30 operations a
 
 ## Relationships
 
-Edges between documents live in the reactor's `DocumentRelationship` table. Create them with the `addRelationship` GraphQL mutation — **not** the legacy `ADD_LINK` / `ADD_CORE_IDEA` / `ADD_CHILD_MOC` document actions, which the graph does not index:
+Edges between documents live in the reactor's `DocumentRelationship` table. Create them with `switchboard docs link` (CLI ≥ 1.0.34; a signed `ADD_RELATIONSHIP`, see § Signed writes) — **not** the legacy `ADD_LINK` / `ADD_CORE_IDEA` / `ADD_CHILD_MOC` document actions, which the graph does not index:
 
 ```bash
-switchboard query 'mutation { addRelationship(sourceIdentifier:"<source-uuid>", targetIdentifier:"<target-uuid>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
-switchboard query 'mutation { removeRelationship(sourceIdentifier:"<source-uuid>", targetIdentifier:"<target-uuid>", relationshipType:"RELATES_TO", branch:"main"){ documentType } }'
+switchboard docs link <source-uuid> <target-uuid> -t RELATES_TO
+switchboard docs unlink <source-uuid> <target-uuid> -t RELATES_TO
 ```
 
 | Type | Direction | Meaning |
@@ -408,10 +407,34 @@ switchboard query 'mutation { removeRelationship(sourceIdentifier:"<source-uuid>
 | `DERIVED_FROM` | note → source | Extracted from this source |
 | `CORE_IDEA` | MoC → note | This note is a core idea of the MoC (membership) |
 | `CHILD_MOC` | MoC → MoC | Parent → child in the hierarchy |
-| `INVOLVES` | tension → note | **Derived** by the indexer from a tension's `involvedRefs`; not created with `addRelationship` |
+| `INVOLVES` | tension → note | **Derived** by the indexer from a tension's `involvedRefs`; not created with `docs link` |
 | `PROMOTED_TO` | observation → note | **Derived** from an observation's `promotedTo` |
 
 The two derived types appear in `knowledgeGraphEdges`, backlinks and forward links so a reader sees what involves a note, but they are **not** knowledge edges: `stats.edgeCount`, density, orphans, triangles and bridges count the seven types above only. Idempotent on `(source, target, type)`. The edge carries no context phrase — the *reason* a link exists belongs in the source note's body (the articulation test). An **orphan** is a node with zero **incoming** edges; outgoing links from it do not change that.
+
+## Signed writes — the first step before writing
+
+A Switchboard signs every unsigned action with **its own** Renown identity and
+stamps the user from **its own** `ph login` session. An agent writing unsigned
+is therefore attributed to whoever logged the *server* in, or to nobody. The
+plugin's pre-write hook **blocks** `docs apply` / `mutate` / `link` / `unlink`
+/ `create` until the active profile has a signing identity, and labels every
+allowed write `SWITCHBOARD_APP_NAME=powerhouse-knowledge` so the vault's
+Activity view and every note's History tab read *"powerhouse-knowledge ·
+<did:key> for <address>"* with a verified ✓.
+
+```bash
+ph login                          # once per machine: .ph/.keypair.json + .ph/.renown.json
+switchboard auth login --renown   # CLI ≥ 1.0.34; --ph-dir <dir> if the login lives elsewhere
+switchboard auth status           # Signing: on as switchboard-cli (did:key:z…) acting for 0x…
+```
+
+If the hook blocks you, relay those three commands to the user — do not
+work around the block with raw GraphQL (`addRelationship`, `mutateDocument`):
+those are server-signed and the hook refuses them for that reason.
+`POWERHOUSE_KNOWLEDGE_ALLOW_UNSIGNED=1` exists for deliberate unsigned writes
+only. The Renown credential binding key→address lasts 7 days; `auth status`
+warns when it has expired (`ph login` renews it — signatures stay valid).
 
 ## MoC hierarchy
 
@@ -435,7 +458,7 @@ Read the hierarchy with `knowledgeGraphEdges(driveId)` filtered to `CHILD_MOC` (
 
 ## Graph indexer queries (quick reference)
 
-All queries take `driveId: "<UUID>"` (a slug is also accepted). Five kinds are indexed — `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation` — and every node carries `documentType` so you can tell them apart (see [skills/search/SKILL.md](skills/search/SKILL.md) for the table). Tensions and observations are indexed to be *found*, not counted as knowledge: they never appear in `orphans`, and `stats` reports `noteCount`, `mocCount`, `claimCount`, `tensionCount`, `openTensionCount`, `observationCount` beside the total `nodeCount`. Knowledge edges come from `addRelationship`; `INVOLVES` / `PROMOTED_TO` are derived from state.
+All queries take `driveId: "<UUID>"` (a slug is also accepted). Five kinds are indexed — `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation` — and every node carries `documentType` so you can tell them apart (see [skills/search/SKILL.md](skills/search/SKILL.md) for the table). Tensions and observations are indexed to be *found*, not counted as knowledge: they never appear in `orphans`, and `stats` reports `noteCount`, `mocCount`, `claimCount`, `tensionCount`, `openTensionCount`, `observationCount` beside the total `nodeCount`. Knowledge edges come from `docs link` (ADD_RELATIONSHIP); `INVOLVES` / `PROMOTED_TO` are derived from state.
 
 | Query | Use when |
 |-------|----------|
