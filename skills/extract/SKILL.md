@@ -86,6 +86,54 @@ switchboard docs mutate <new-note-id> --op setProvenance --input '{"author": "<a
 
 **CRITICAL: Every note MUST have a description.** Descriptions enable progressive disclosure (title -> description -> content). A note without a description fails health checks and is invisible to scanning workflows. The description should be ~150 chars and add information beyond the title. **Max 200 characters** — longer descriptions silently fail and the entire batch is rejected.
 
+### Step 4b: Populate the structured metadata — in the same batch
+
+A knowledge note is a **typed document**, not a markdown file: it has 18 string fields and 9 list fields that make claims filterable and comparable across the vault, and every write to them is in the operation history. Notes extracted without them are prose with a title. Fill the fields the source **actually supports**; leave the rest empty — an empty field is honest, an invented `severity` is not.
+
+**On every note where the source says so:**
+
+| Field | Put here | Vocabulary |
+|---|---|---|
+| `scope` | how widely the claim holds | `global` (true of the stack), `team`, `personal` |
+| `confidence` | how the claim is known | `grounded` (verified in code or data), `established` (documented, widely agreed), `speculative` (inferred) |
+| `version` | the stack/package version the claim was observed on | e.g. `6.2.2-dev.71` — only when the source states it |
+| `filePath` | the file or module the claim is about | e.g. `document-models/pipeline-queue/v1/src/reducers/queue-management.ts` |
+| `model` | the kind of artifact | `reducer`, `hook`, `component`, `processor`, `subgraph`, `editor`, `cli`, `document-model` |
+| `modelId` | the document type, when the claim is about one | e.g. `bai/pipeline-queue` |
+| `editor` | who wrote this version of the note | your agent id, e.g. `knowledge-agent` |
+
+**Then by `noteType` — the fields that carry that type's signal:**
+
+| noteType | Populate |
+|---|---|
+| `bug-pattern` | `severity` (`critical` / `warning` / `info`), `errorMessage` (the exact error class or text), `rootCause`, `correctPattern` |
+| `decision` | `decisionStatus` (`proposed` / `accepted` / `rejected` / `superseded`), `context` (what forced the decision), `alternatives[]`, `consequences[]` |
+| `architecture` | `models[]` (document types involved), `modules[]`, `computes` (what the design derives), `inputs[]`, `outputs[]`, `consumedBy[]`, `dispatchTargets[]` |
+| `integration` | `sourceType`, `targetType` (e.g. `API` → `component`), `relationType` (`depends-on`, `extends`, `emits`), `cardinality` (`one-to-many`…), `inputs[]`, `outputs[]` |
+| `pattern` | `correctPattern`, `context` (when it applies), `hooksUsed[]`, `alternatives[]` |
+| `procedure` | `context`, `inputs[]` (prerequisites), `outputs[]` (results), `filePath`, `version` |
+| `workflow` | `inputs[]`, `outputs[]`, `consumedBy[]`, `dispatchTargets[]` |
+| `reference` | `modelId`, `version`, `filePath`, `model` |
+| `concept` | `scope`, `confidence` — the rest is prose |
+| `observation` | `confidence`, `severity`, `context` |
+
+Strings go through `SET_METADATA_FIELD { field, value, updatedAt }`; lists **only** through `SET_METADATA_LIST_FIELD { field, values[], updatedAt }` (the scalar op rejects a list field name). Both ride in the same `docs apply` batch as the content — no extra round trip — and both field names are whitelisted by the reducer, so a typo is rejected silently; `lint-actions.mjs` checks them. Example, for a `bug-pattern`:
+
+```json
+[
+  { "type": "SET_METADATA_FIELD", "input": { "field": "severity", "value": "critical", "updatedAt": "<ISO>" }, "scope": "global" },
+  { "type": "SET_METADATA_FIELD", "input": { "field": "errorMessage", "value": "completedCount incremented twice; no operation decrements it", "updatedAt": "<ISO>" }, "scope": "global" },
+  { "type": "SET_METADATA_FIELD", "input": { "field": "rootCause", "value": "completeTaskOperation repeats the bookkeeping the final advancePhaseOperation already did", "updatedAt": "<ISO>" }, "scope": "global" },
+  { "type": "SET_METADATA_FIELD", "input": { "field": "correctPattern", "value": "Advance through every phase and stop; use COMPLETE_TASK only to end a task early", "updatedAt": "<ISO>" }, "scope": "global" },
+  { "type": "SET_METADATA_FIELD", "input": { "field": "filePath", "value": "document-models/pipeline-queue/v1/src/reducers/queue-management.ts", "updatedAt": "<ISO>" }, "scope": "global" },
+  { "type": "SET_METADATA_FIELD", "input": { "field": "model", "value": "reducer", "updatedAt": "<ISO>" }, "scope": "global" },
+  { "type": "SET_METADATA_FIELD", "input": { "field": "modelId", "value": "bai/pipeline-queue", "updatedAt": "<ISO>" }, "scope": "global" },
+  { "type": "SET_METADATA_FIELD", "input": { "field": "confidence", "value": "grounded", "updatedAt": "<ISO>" }, "scope": "global" }
+]
+```
+
+Read back afterwards: the editor's Metadata panel shows a count — `Metadata (8)` — and a note whose panel reads `Metadata (0)` after extraction from a code or documentation source is under-extracted.
+
 ### Step 5: Verify drive nodes
 
 After creating all notes, verify they all appear as file nodes in the drive:
@@ -185,6 +233,7 @@ These ten lowercase values are the canonical set (the note editor's type select)
 - [ ] Descriptions add information beyond the title (~150 chars)
 - [ ] Content includes arguments/evidence, not just assertions
 - [ ] All notes have at least one topic tag
+- [ ] Metadata populated for what the source supports — at least `confidence`, plus the type-specific fields (a code-derived `bug-pattern` with `Metadata (0)` is under-extracted)
 - [ ] `noteType` is one of the ten lowercase values (never `CONCEPT`)
 - [ ] Content read back contains real line breaks (no literal `\n`) — the classic shell-interpolation bug
 - [ ] Description ≤ 200 UTF-16 units — checked by `lint-actions.mjs`, not by eye (an over-long one is rejected and the note is left with no description while the batch reports success)

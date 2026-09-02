@@ -40,6 +40,9 @@ export const ENUMS = {
   "ADD_TASK.taskType": ["claim", "enrichment"],
   "CREATE_MOC.tier": ["HUB", "DOMAIN", "TOPIC"],
   "CREATE_OBSERVATION.category": ["METHODOLOGY", "PROCESS", "FRICTION", "SURPRISE", "QUALITY"],
+  // knowledge-note metadata: the reducers whitelist field names and throw InvalidMetadataFieldError otherwise
+  "SET_METADATA_FIELD.field": ["scope", "confidence", "severity", "editor", "modelId", "version", "filePath", "computes", "context", "decisionStatus", "model", "sourceType", "targetType", "relationType", "cardinality", "errorMessage", "rootCause", "correctPattern"],
+  "SET_METADATA_LIST_FIELD.field": ["models", "hooksUsed", "dispatchTargets", "modules", "inputs", "outputs", "consumedBy", "alternatives", "consequences"],
 };
 
 /** JavaScript string length — what the reducers compare against. */
@@ -93,6 +96,9 @@ function selfTest() {
   ok("real newline passes", lintActions([{ type: "SET_CONTENT", input: { content: "a\nb", updatedAt: "t" }, scope: "global" }]).length === 0);
   ok("missing scope fails", lintActions([{ type: "SET_TITLE", input: { title: "t", updatedAt: "t" } }]).length === 1);
   ok("title has no limit", lintActions([{ type: "SET_TITLE", input: { title: "x".repeat(1000), updatedAt: "t" }, scope: "global" }]).length === 0);
+  ok("unknown metadata field fails", lintActions([{ type: "SET_METADATA_FIELD", input: { field: "priority", value: "high", updatedAt: "t" }, scope: "global" }]).length === 1);
+  ok("list field written with the scalar op fails", lintActions([{ type: "SET_METADATA_FIELD", input: { field: "models", value: "x", updatedAt: "t" }, scope: "global" }]).length === 1);
+  ok("valid list field passes", lintActions([{ type: "SET_METADATA_LIST_FIELD", input: { field: "alternatives", values: ["a", "b"], updatedAt: "t" }, scope: "global" }]).length === 0);
 }
 
 const isMain = import.meta.url === `file://${process.argv[1]}`;

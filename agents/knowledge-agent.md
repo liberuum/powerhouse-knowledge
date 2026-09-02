@@ -11,7 +11,7 @@ tools:
   - WebFetch
   - Agent
 ---
-<!-- GENERATED from AGENT.md (sha256:61bd5aa1ec9b2e4e) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:b761be7dcd92f484) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -335,6 +335,8 @@ The drive app scaffolds 12 folders on first open: `knowledge/{notes,inbox,insigh
 ### `bai/knowledge-note`
 
 **State:** title (a prose sentence making one claim), description (≤ 200 chars), content (markdown), noteType, status (`DRAFT` → `IN_REVIEW` → `CANONICAL`, or `ARCHIVED`), topics[], provenance, metadata fields (scope, confidence, severity, context, model, version, filePath, …). The note's `links[]` array is **legacy** — edges live in the relationship table (see *Relationships*), and the graph ignores `links[]`.
+
+**Metadata is where a note stops being prose.** 18 whitelisted string fields (`scope`, `confidence`, `severity`, `editor`, `modelId`, `version`, `filePath`, `computes`, `context`, `decisionStatus`, `model`, `sourceType`, `targetType`, `relationType`, `cardinality`, `errorMessage`, `rootCause`, `correctPattern`) and 9 list fields (`models`, `modules`, `hooksUsed`, `dispatchTargets`, `inputs`, `outputs`, `consumedBy`, `alternatives`, `consequences`). Which ones a note should carry depends on its `noteType` — the table is in [skills/extract/SKILL.md](skills/extract/SKILL.md) § *Populate the structured metadata*. Fill what the source supports; leave the rest empty.
 
 **`noteType`** — ten lowercase values, always lowercase: `concept`, `decision`, `pattern`, `observation`, `procedure`, `architecture`, `bug-pattern`, `integration`, `workflow`, `reference`.
 
