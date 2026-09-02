@@ -41,6 +41,7 @@ Check the note has all expected fields populated:
 - [ ] **Not an orphan**: at least one **incoming** edge. An orphan is a node with zero incoming knowledge edges — this is what `knowledgeGraphOrphans` returns; outgoing links do not make a note non-orphan
 - [ ] **Real line breaks**: `content` contains no literal `\n` sequence (see repair below)
 - [ ] **Link resolution**: every `targetDocumentId` in the note's forward edges points to an existing document
+- [ ] **Link articulation**: every knowledge edge out of the note (`RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`, `DERIVED_FROM`) carries a `reason` (`knowledgeGraphForwardLinks { targetDocumentId linkType reason confidence }`). A bare edge is a WARN on the note, not a FAIL — but it is never silently PASS
 - [ ] **Topic coverage**: Note belongs to at least one topic
 - [ ] **Description length**: Between 80-200 characters
 - [ ] **Content length**: At least 200 characters of substantive prose
@@ -103,6 +104,23 @@ Identify key topics from the content and add them:
 switchboard docs mutate <note-id> --op addTopic --input '{"id": "<unique-id>", "name": "<topic>"}'
 ```
 
+### Bare edges (a link with no reason)
+
+Read both notes; if the connection is real, write the sentence onto the edge —
+this is the one repair in this skill that needs judgment, so it is repaired
+only when you can actually state the reason:
+
+```bash
+switchboard docs annotate <note-id> <target-id> -t BUILDS_ON \
+  --reason "<note> extends <target>'s claim about X to Y" --confidence established
+```
+
+If, having read both, you cannot complete "A connects to B because …", the
+edge fails the articulation test: `docs unlink` it and say so in the report.
+Never write a reason that restates the type or the two titles to turn the
+WARN green — an unarticulated edge honestly reported beats a fake sentence.
+Count both outcomes in the summary (`articulated: N, unlinked: M, left bare: K`).
+
 ## Batch verification
 
 When verifying all notes in the vault (no specific note targeted):
@@ -124,6 +142,7 @@ switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title
 
 Verified: N notes
 Auto-repaired: N issues (M descriptions, P provenance, Q types)
+Edges: N articulated (docs annotate), M unlinked (failed the articulation test), K left bare
 
 Note: "<title>"
   Recite:   PASS | WARN | FAIL — <explanation>

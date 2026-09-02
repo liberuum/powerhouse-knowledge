@@ -98,7 +98,7 @@ Use `/powerhouse-knowledge:extract` on the source document:
 - **Verify all notes appear in the drive tree** after creation
 - **Close out the source (mandatory, verify by read-back):** `ADD_EXTRACTED_CLAIM`
   per note, `RECORD_EXTRACTION_STATS`, then `SET_SOURCE_STATUS` to `EXTRACTED`,
-  plus an `switchboard docs link <note> <source> -t DERIVED_FROM` edge per note.
+  plus a `switchboard docs link <note> <source> -t DERIVED_FROM --reason "<where in the source>" --confidence grounded` edge per note.
   A source left in `EXTRACTING` reads as unprocessed in the app forever —
   this is the single most-missed step when driving the pipeline by script
   instead of by skill.
@@ -130,8 +130,8 @@ switchboard docs mutate <pipeline-queue-id> --op advancePhase --input '{
 
 Use `/powerhouse-knowledge:connect` on each extracted note:
 - Find related notes (both new and existing) via search and graph queries
-- Apply articulation test: explain WHY each link exists
-- Create typed links (RELATES_TO, BUILDS_ON, CONTRADICTS, SUPERSEDES, DERIVED_FROM)
+- Apply the articulation test: the WHY of each link goes on the edge as `--reason` (the hook blocks a bare knowledge edge); add `--confidence` where you can say
+- Create typed links (RELATES_TO, BUILDS_ON, CONTRADICTS, SUPERSEDES, DERIVED_FROM) with `docs link … --reason "…"`; articulate pre-existing bare edges on the note with `docs annotate`
 - Target: >= 2 links per note, no orphans
 
 Then **cross-reference with local methodology files** in the plugin's `data/methodology/`:

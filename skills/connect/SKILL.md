@@ -24,20 +24,49 @@ Find genuine connections between notes and create typed links. This is the "refl
    - `knowledgeGraphRelatedByTopic(documentId)` — notes sharing the most topics
    - `knowledgeGraphSearch(query)` — keyword search on title + description
    - `knowledgeGraphFullSearch(query)` — full-text search; ANDs terms, so use 1-2 keywords
-3. **Apply the articulation test** — for each candidate, answer: "[[A]] connects to [[B]] because [specific reason]"
-4. **If the connection is genuine**, create the edge with `docs link`. Since the drive-override migration, edges live in the reactor's `DocumentRelationship` table (one row per ADD_RELATIONSHIP system action) — not in the source note's `links[]` array. The legacy `--op addLink` writes to the old per-doc array and is **not** indexed by the graph subgraph.
+3. **Apply the articulation test** — for each candidate, answer: "[[A]] connects to [[B]] because [specific reason]". The sentence you write here IS the edge's `--reason` in the next step; if you cannot write it, there is no link.
+4. **If the connection is genuine**, create the edge with `docs link --reason`. Since the drive-override migration, edges live in the reactor's `DocumentRelationship` table (one row per ADD_RELATIONSHIP system action) — not in the source note's `links[]` array. The legacy `--op addLink` writes to the old per-doc array and is **not** indexed by the graph subgraph.
 
 ```bash
-switchboard docs link <source-uuid> <target-uuid> -t RELATES_TO
+switchboard docs link <source-uuid> <target-uuid> -t BUILDS_ON \
+  --reason "<A> extends <B>'s claim that X holds for one read model to every read model" \
+  --confidence established
 ```
 
-`docs link` (CLI ≥ 1.0.34) sends the `ADD_RELATIONSHIP` action **signed as you**
+**The reason lives on the edge.** `--reason` (CLI ≥ 1.0.36) is stored as
+relationship metadata and comes back on every edge read
+(`knowledgeGraphEdges { reason confidence }`, the Links panel, the sidebar's
+Connections list, the chat's `linked_notes`); `/health` reports the share of
+knowledge edges that carry one. The pre-write hook **blocks** a `RELATES_TO`,
+`BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES` or `DERIVED_FROM` link without a
+real one (≥ 20 chars; not the type name, not "because"). Write it as the
+specific sentence you would give a reader — name the claim, not the titles.
+`--confidence` says how well-founded the link is: `grounded` (evidence or a
+source backs it), `established` (well accepted, not evidenced here),
+`speculative` (a lead worth recording). `CORE_IDEA` / `CHILD_MOC` edges have
+no reason to give — their meaning is the type.
+
+**Existing bare edges** (created before 1.0.36, or by an import) are the
+backlog this skill works through: `knowledgeGraphForwardLinks` returns
+`reason: null` for them. Articulate each one in place — a repeated
+`docs link` is a no-op, metadata included:
+
+```bash
+switchboard docs annotate <source-uuid> <target-uuid> -t RELATES_TO \
+  --reason "…" --confidence grounded
+```
+
+If you cannot articulate an existing edge after reading both notes, that is
+the finding: `docs unlink` it rather than invent a sentence.
+
+`docs link` sends the `ADD_RELATIONSHIP` action **signed as you**
 when the profile has a signing identity (`switchboard auth login --renown` —
 the plugin's pre-write hook requires it), so the edge is attributable like any
-other agent write: the vault shows `powerhouse-knowledge · <your did:key>` acting
-for your address. The raw `addRelationship` GraphQL mutation builds the action
-server-side and is therefore always signed by the Switchboard's own identity;
-the hook steers you away from it. Idempotent on `(source, target, type)`.
+other agent write: the vault shows `powerhouse-knowledge` acting for your
+address. The raw `addRelationship` GraphQL mutation builds the action
+server-side, cannot carry a reason and is always signed by the Switchboard's
+own identity; the hook steers you away from it. Idempotent on
+`(source, target, type)`.
 
 To remove an edge: `switchboard docs unlink <source-uuid> <target-uuid> -t RELATES_TO`.
 
@@ -141,7 +170,7 @@ switchboard docs mutate <moc-id> --op addTension --input '{"id":"<tension-id>","
 
 ## Quality rules
 
-- Every connection must pass the **articulation test** — bare links without reasons are address books, not knowledge graphs
+- Every connection must pass the **articulation test** — and the sentence goes on the edge (`--reason`). Bare links without reasons are address books, not knowledge graphs; a reason that only restates the type or the titles is a bare link in disguise
 - Prefer specific link types over generic RELATES_TO when the relationship is clear
 - Create bidirectional links when appropriate (if A builds on B, B may also relate to A)
 - Minimum 2 connections per note. Separately, an **orphan** is a note with zero *incoming* edges (what `knowledgeGraphOrphans` returns) — adding outgoing links from it does not fix that; a link *to* it does

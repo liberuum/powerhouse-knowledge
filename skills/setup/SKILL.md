@@ -26,7 +26,7 @@ Verify that a Knowledge Vault drive is ready for use — correct folder structur
 
 - Reactor running (`ph vetra --watch` or remote reactor)
 - A vault drive exists (created via Connect UI or CLI)
-- `switchboard` CLI ≥ 1.0.34 installed and configured (`switchboard config use local` or appropriate profile, `switchboard introspect` run once)
+- `switchboard` CLI ≥ 1.0.36 installed and configured (`switchboard config use local` or appropriate profile, `switchboard introspect` run once)
 - A signing identity on that profile: `ph login` (once per machine), then `switchboard auth login --renown`. The plugin's pre-write hook blocks every vault write until `switchboard auth status` reports `Signing: on` — see AGENT.md § Signed writes.
 
 ## Setup Process

@@ -119,7 +119,7 @@ For a hub/domain hierarchy, use `CHILD_MOC` from the parent MoC to each child Mo
 switchboard docs link <parent-moc-id> <child-moc-id> -t CHILD_MOC
 ```
 
-**Articulation lives in the note body, not on the edge.** The pre-migration `addCoreIdea` op accepted a `contextPhrase` that explained WHY each note was a core idea. The new `DocumentRelationship` row is just `(source, target, type)` — no metadata. To preserve the articulation, edit the source note's content (`--op setContent`) and add a section explaining how it fits the topic. The reader sees this when they navigate from the MoC into the note.
+**The old `contextPhrase` has a home again — on the edge, optionally.** The pre-migration `addCoreIdea` op accepted a `contextPhrase` explaining WHY each note was a core idea. Since CLI 1.0.36 the relationship row carries metadata, so that phrase can go on the edge: `docs link <moc> <note> -t CORE_IDEA --reason "<why this note anchors the topic>"`. The hook does not require it for `CORE_IDEA` / `CHILD_MOC` (membership is the meaning), but when you know why a note is central to the map, say it there — the MoC editor and the sidebar read `reason` off the edge, and a reader navigating from the MoC sees it before opening the note.
 
 ### Step 5b: Place every new MoC in the tree
 

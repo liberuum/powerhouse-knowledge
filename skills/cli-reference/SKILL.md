@@ -170,16 +170,21 @@ switchboard docs mutate <id> --op setNoteType --input '{"noteType":"concept","up
 switchboard docs mutate <id> --op setContent --input '{"content":"...","updatedAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
-Linking — since the drive-override migration, relationships are stored in the reactor's `DocumentRelationship` table; create and remove them with `switchboard docs link` / `docs unlink` (CLI ≥ 1.0.34 — a signed `ADD_RELATIONSHIP`; the raw `addRelationship` mutation is the unsigned fallback on older CLIs). The graph subgraph reads from this table; the legacy `--op addLink` writes to a per-doc `links[]` array that the subgraph no longer indexes.
+Linking — since the drive-override migration, relationships are stored in the reactor's `DocumentRelationship` table; create, annotate and remove them with `switchboard docs link` / `docs annotate` / `docs unlink` (CLI ≥ 1.0.36 — signed `ADD_RELATIONSHIP` / `UPDATE_RELATIONSHIP` / `REMOVE_RELATIONSHIP` actions). The graph subgraph reads from this table; the legacy `--op addLink` writes to a per-doc `links[]` array that the subgraph no longer indexes.
 
 ```bash
-switchboard docs link <source-uuid> <target-uuid> -t RELATES_TO
+# knowledge edge: the reason is stored ON the edge (relationship metadata)
+switchboard docs link <source-uuid> <target-uuid> -t BUILDS_ON \
+  --reason "<source> extends <target>'s claim about X to Y" --confidence established
+
+# change the reason / confidence of an existing edge (UPDATE_RELATIONSHIP)
+switchboard docs annotate <source-uuid> <target-uuid> -t BUILDS_ON --reason "…" [--confidence grounded|established|speculative]
 
 # remove
-switchboard docs unlink <source-uuid> <target-uuid> -t RELATES_TO
+switchboard docs unlink <source-uuid> <target-uuid> -t BUILDS_ON
 ```
 
-Valid `relationshipType` values: `RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`, `DERIVED_FROM`, `CORE_IDEA` (MoC → note), `CHILD_MOC` (MoC → MoC). The mutation writes one row to `DocumentRelationship` and emits an `ADD_RELATIONSHIP` system action on the source document's op log; idempotent on `(source, target, type)`.
+Valid `relationshipType` values: `RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`, `DERIVED_FROM`, `CORE_IDEA` (MoC → note), `CHILD_MOC` (MoC → MoC). Each command emits one system action on the source document's op log; `ADD_RELATIONSHIP` is idempotent on `(source, target, type)` — a repeat is a no-op, metadata included, hence `docs annotate`. The pre-write hook requires `--reason` (≥ 20 chars, a real sentence) on the five knowledge types; `CORE_IDEA` / `CHILD_MOC` may stay bare. Read reasons back with `knowledgeGraphEdges { reason confidence }` / `knowledgeGraphForwardLinks` / `knowledgeGraphBacklinks`; coverage is `knowledgeGraphStats { articulatedEdgeCount edgeCount }`.
 
 Topics use `id` + `name` (NOT `topic`):
 ```bash
@@ -209,7 +214,7 @@ switchboard docs link <moc-id> <note-uuid> -t CORE_IDEA
 switchboard docs link <parent-moc-id> <child-moc-id> -t CHILD_MOC
 ```
 
-Note: the legacy `--op addCoreIdea` / `--op addChildMoc` ops wrote `contextPhrase` and ordering fields into the MoC's state. The drive-override pattern drops these — articulation (why this note belongs to this MoC) lives in the source note's content body rather than as metadata on the edge.
+Note: the legacy `--op addCoreIdea` / `--op addChildMoc` ops wrote `contextPhrase` and ordering fields into the MoC's state. The drive-override pattern drops these. A `CORE_IDEA` edge may carry a `--reason` too (why this note belongs to this MoC) but the hook does not require one — membership is the meaning.
 
 Health report:
 ```bash
@@ -287,8 +292,9 @@ switchboard docs mutate $NOTE_ID --op setProvenance --input '{"author":"agent","
 
 ### 3. Connect
 ```bash
-# Note-to-note (or note-to-MoC) relationship — writes to DocumentRelationship table
-switchboard docs link <note-id> <target-id> -t RELATES_TO
+# Note-to-note relationship — writes to DocumentRelationship table, reason on the edge
+switchboard docs link <note-id> <target-id> -t RELATES_TO \
+  --reason "<note> and <target> describe the same failure from the storage and the sync side" --confidence established
 ```
 
 ### 4. Synthesize (MOC)

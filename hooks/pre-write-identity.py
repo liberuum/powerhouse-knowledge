@@ -31,7 +31,7 @@ import json, os, re, shlex, subprocess, sys
 
 APP_NAME = "powerhouse-knowledge"
 MIN_CLI = "1.0.34"
-WRITE_SUBCOMMANDS = {"apply", "mutate", "link", "unlink", "create"}
+WRITE_SUBCOMMANDS = {"apply", "mutate", "link", "unlink", "annotate", "create"}
 
 def split_groups(command: str):
     try:

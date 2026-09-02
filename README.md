@@ -271,7 +271,7 @@ Source material goes in; connected, verified notes come out. The agent runs it a
 Record   →  /seed        ingest a source (bai/source, status INBOX → EXTRACTING) and queue a task
 Reduce   →  /extract     one bai/knowledge-note per atomic claim; ADD_EXTRACTED_CLAIM + DERIVED_FROM
                          edge per note; RECORD_EXTRACTION_STATS; source → EXTRACTED
-Reflect  →  /connect     typed relationships (`docs link`), each passing the articulation test
+Reflect  →  /connect     typed relationships (`docs link --reason`), the articulation stored on the edge
 Reweave  →  /synthesize  MoCs via CORE_IDEA edges; update older notes with new context
 Verify   →  /verify      recite test, schema check, link health — auto-repair, then /health
 Rethink  →  /health + /graph   challenge the structure against the evidence

@@ -83,12 +83,26 @@ switchboard docs mutate <drive-id> --op addFile --input '{
 
 For each note that has references (wiki links, related notes):
 1. Look up the target document ID from the title mapping
-2. Create the relationship with `docs link` (writes to the reactor's `DocumentRelationship` table — the indexed source of truth since the drive-override migration — signed as you):
+2. Create the relationship with `docs link` (writes to the reactor's `DocumentRelationship` table — the indexed source of truth since the drive-override migration — signed as you). When the import data carries a reason (a sentence around the wiki link, a `related:` note, frontmatter), put it on the edge:
 ```bash
-switchboard docs link <source-note-id> <resolved-target-id> -t RELATES_TO
+switchboard docs link <source-note-id> <resolved-target-id> -t RELATES_TO \
+  --reason "<the sentence in the source note that made the link>" --confidence established
 ```
 
-Edges are idempotent on `(source, target, type)`, so re-running an import is safe.
+**When the import has no reasons** — a bare `[[wiki link]]` says only that two
+notes touch — do not invent one. Run the import with the hook's escape hatch
+and be honest about the result:
+
+```bash
+POWERHOUSE_KNOWLEDGE_ALLOW_BARE_LINKS=1 switchboard docs link <source-note-id> <resolved-target-id> -t RELATES_TO
+```
+
+The edges land with `reason: null`; `/health` reports them under LINK_HEALTH
+as unarticulated coverage, and `/connect` works through them with
+`docs annotate` (or unlinks the ones nobody can explain). Report the count of
+bare edges in the import summary so the backlog is visible from day one.
+
+Edges are idempotent on `(source, target, type)`, so re-running an import is safe (a repeat never changes an existing reason — use `docs annotate` for that).
 
 ### Step 5: Create MOCs from folder structure or tags (optional)
 
@@ -101,7 +115,7 @@ Then attach the notes with `switchboard docs link <moc-uuid> <note-uuid> -t CORE
 
 ### Step 6: Verify and report
 
-- Count: notes created, links resolved, links unresolved
+- Count: notes created, links resolved (articulated vs bare), links unresolved
 - Verify all documents in drive tree (no ghost nodes)
 - Report orphan notes that need manual connection
 
@@ -116,7 +130,7 @@ Convert `[[wiki link]]` to relationship rows:
 ```
 For each [[target title]] in note content:
   1. Find document with matching title in the title-to-id map
-  2. If found: call `switchboard docs link source target -t RELATES_TO`
+  2. If found: call `switchboard docs link source target -t RELATES_TO --reason "<sentence around the link>"` (or bare, under POWERHOUSE_KNOWLEDGE_ALLOW_BARE_LINKS=1, when the source gives no reason)
   3. If not found: log as unresolved (may be an external reference)
 ```
 

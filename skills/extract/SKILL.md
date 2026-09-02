@@ -159,7 +159,19 @@ and a read-back that confirms them.
 Provenance lives in **two** places and both are required:
 - `extractedClaims[]` on the source (document state — what the app renders)
 - a `DERIVED_FROM` relationship per note (graph edges — what the subgraph
-  traverses): `switchboard docs link <note-id> <source-id> -t DERIVED_FROM`
+  traverses), with the place in the source the claim comes from as its
+  reason — that is the articulation of a derivation, and it is what lets a
+  reader (or `/verify`) check the claim against the source:
+
+  ```bash
+  switchboard docs link <note-id> <source-id> -t DERIVED_FROM \
+    --reason "§ 'Storage', para 3: the author states the cache is invalidated per read model" \
+    --confidence grounded
+  ```
+
+  `grounded` is the right confidence for a faithful extraction; use
+  `speculative` when the note is your inference from the source rather than
+  a claim the source makes.
 
 Track what was extracted:
 ```bash
@@ -237,7 +249,7 @@ These ten lowercase values are the canonical set (the note editor's type select)
 - [ ] `noteType` is one of the ten lowercase values (never `CONCEPT`)
 - [ ] Content read back contains real line breaks (no literal `\n`) — the classic shell-interpolation bug
 - [ ] Description ≤ 200 UTF-16 units — checked by `lint-actions.mjs`, not by eye (an over-long one is rejected and the note is left with no description while the batch reports success)
-- [ ] One `DERIVED_FROM` edge per note (`switchboard docs link <note> <source> -t DERIVED_FROM`) — this is how `/health` finds a note's source; the source's `extractedClaims` alone is not traversable from the note
+- [ ] One `DERIVED_FROM` edge per note (`switchboard docs link <note> <source> -t DERIVED_FROM --reason "<where in the source>" --confidence grounded`) — this is how `/health` finds a note's source; the source's `extractedClaims` alone is not traversable from the note, and the reason is how anyone checks the claim against it
 - [ ] Provenance traces back to the source (sourceOrigin: DERIVED)
 - [ ] Skip rate < 10% for domain-relevant content
 - [ ] **All created notes verified in drive tree** — read the drive after creation and confirm each note exists as a file node

@@ -11,7 +11,7 @@ tools:
   - WebFetch
   - Agent
 ---
-<!-- GENERATED from AGENT.md (sha256:fe7a73764dc34183) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:1a3d0abd37bdacb7) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -147,7 +147,7 @@ Content enters as a **source** and leaves as **connected, verified notes inside 
 ```
 Record   →  /seed        bai/source in /sources/, INGEST_SOURCE, status → EXTRACTING, ADD_TASK (taskType "claim")
 Reduce   →  /extract     one bai/knowledge-note per atomic claim (phase "create")
-Reflect  →  /connect     typed relationships via `docs link`, each passing the articulation test (phase "reflect")
+Reflect  →  /connect     typed relationships via `docs link --reason`, the articulation stored on the edge (phase "reflect")
 Reweave  →  /synthesize  MoC membership (CORE_IDEA), MoC hierarchy (CHILD_MOC), update older notes (phase "reweave")
 Verify   →  /verify      recite test, schema, link health; auto-repair; then /health and rewrite the report (phase "verify")
 Rethink  →  /health, /graph   challenge the structure against the evidence
@@ -237,13 +237,13 @@ over-long descriptions and bad timestamps all fail silently).
 **Creating a note**
 - [ ] title (a declarative claim), description (<= 200 chars, adds information beyond the title), `noteType` (one of the ten lowercase values), content
 - [ ] topics added; provenance set in a SEPARATE dispatch from content
-- [ ] >= 2 typed relationships, each passing the articulation test
+- [ ] >= 2 typed relationships, each created with `--reason` (the articulation test, on the edge) and `--confidence` where you can say
 - [ ] attached to a MoC (`switchboard docs link <moc-uuid> <note-uuid> -t CORE_IDEA` — the MoC editor only renders `CORE_IDEA`/`CHILD_MOC` edges as membership; a `RELATES_TO` edge is indexed but never shows as belonging to the MoC)
 - [ ] lifecycle walked to CANONICAL (submit, then approve as a different actor — approval is only legal from `IN_REVIEW`)
 
 **Extracting from a source**
 - [ ] every claim is atomic; skip rate reported honestly
-- [ ] `ADD_EXTRACTED_CLAIM` per note + `DERIVED_FROM` edge per note (`switchboard docs link <note> <source> -t DERIVED_FROM`)
+- [ ] `ADD_EXTRACTED_CLAIM` per note + `DERIVED_FROM` edge per note (`switchboard docs link <note> <source> -t DERIVED_FROM --reason "<where in the source the claim comes from>" --confidence grounded`)
 - [ ] `RECORD_EXTRACTION_STATS`, then `SET_SOURCE_STATUS` -> `EXTRACTED`
 - [ ] no source left in INBOX/EXTRACTING once its notes exist
 
@@ -268,7 +268,10 @@ has about itself. Specifically — do not:
 - **Fabricate links or grounding** to raise coverage. A relationship that
   cannot complete "A connects to B because [specific reason]" is noise, and
   grounding a note about PGlite tables in note-taking research is a lie that
-  fails the articulation test.
+  fails the articulation test. The same goes for the reason itself: a
+  `--reason` that restates the type ("relates to B") or the two titles is a
+  bare edge wearing a costume — articulated coverage counts sentences a
+  reader can check, not filler that satisfies the hook.
 - **Move a finding to a category that happens to be green,** or file it under
   an unrelated enum value to make a FAIL disappear.
 - **Report PASS from what you dispatched.** Read it back first.
@@ -391,12 +394,20 @@ See [skills/projects/SKILL.md](skills/projects/SKILL.md) for the 30 operations a
 
 ## Relationships
 
-Edges between documents live in the reactor's `DocumentRelationship` table. Create them with `switchboard docs link` (CLI ≥ 1.0.34; a signed `ADD_RELATIONSHIP`, see § Signed writes) — **not** the legacy `ADD_LINK` / `ADD_CORE_IDEA` / `ADD_CHILD_MOC` document actions, which the graph does not index:
+Edges between documents live in the reactor's `DocumentRelationship` table. Create them with `switchboard docs link` (CLI ≥ 1.0.36; a signed `ADD_RELATIONSHIP`, see § Signed writes) — **not** the legacy `ADD_LINK` / `ADD_CORE_IDEA` / `ADD_CHILD_MOC` document actions, which the graph does not index:
 
 ```bash
-switchboard docs link <source-uuid> <target-uuid> -t RELATES_TO
-switchboard docs unlink <source-uuid> <target-uuid> -t RELATES_TO
+# A knowledge edge carries its reason ON THE EDGE (relationship metadata)
+switchboard docs link <source-uuid> <target-uuid> -t BUILDS_ON \
+  --reason "<source> extends <target>'s claim about X to Y" --confidence established
+# Change the reason / confidence of an existing edge (UPDATE_RELATIONSHIP)
+switchboard docs annotate <source-uuid> <target-uuid> -t BUILDS_ON --reason "…"
+switchboard docs unlink <source-uuid> <target-uuid> -t BUILDS_ON
+# Navigation edges have no reason to give — their meaning is the type
+switchboard docs link <moc-uuid> <note-uuid> -t CORE_IDEA
 ```
+
+`--reason` is the **articulation test in data**: "A connects to B because [specific reason]". The pre-write hook blocks a `RELATES_TO` / `BUILDS_ON` / `CONTRADICTS` / `SUPERSEDES` / `DERIVED_FROM` link without one (a real sentence, ≥ 20 chars — not the type name, not "because"); `CORE_IDEA` and `CHILD_MOC` may stay bare. `--confidence` ∈ `grounded` (backed by evidence or a source) · `established` (well accepted, not evidenced here) · `speculative` (a lead). The graph exposes both on every edge (`knowledgeGraphEdges { reason confidence }`) and `knowledgeGraphStats.articulatedEdgeCount / edgeCount` is the coverage `/health` reports. A repeated `docs link` for the same `(source, target, type)` is a no-op in the reactor, metadata included — that is why changing a reason is `docs annotate`.
 
 | Type | Direction | Meaning |
 |------|-----------|---------|
@@ -410,7 +421,7 @@ switchboard docs unlink <source-uuid> <target-uuid> -t RELATES_TO
 | `INVOLVES` | tension → note | **Derived** by the indexer from a tension's `involvedRefs`; not created with `docs link` |
 | `PROMOTED_TO` | observation → note | **Derived** from an observation's `promotedTo` |
 
-The two derived types appear in `knowledgeGraphEdges`, backlinks and forward links so a reader sees what involves a note, but they are **not** knowledge edges: `stats.edgeCount`, density, orphans, triangles and bridges count the seven types above only. Idempotent on `(source, target, type)`. The edge carries no context phrase — the *reason* a link exists belongs in the source note's body (the articulation test). An **orphan** is a node with zero **incoming** edges; outgoing links from it do not change that.
+The two derived types appear in `knowledgeGraphEdges`, backlinks and forward links so a reader sees what involves a note, but they are **not** knowledge edges: `stats.edgeCount`, density, orphans, triangles and bridges count the seven types above only. Idempotent on `(source, target, type)`. The *reason* a link exists lives on the edge (`--reason`, above); the note body may still carry the longer argument, but the edge is what the graph and the health report can check. An **orphan** is a node with zero **incoming** edges; outgoing links from it do not change that.
 
 ## Signed writes — the first step before writing
 
@@ -495,7 +506,7 @@ Each file has YAML frontmatter: `description`, `kind` (`research|foundation|meth
 ## Quality principles
 
 - Each note makes **one atomic claim**; its title is a declarative sentence.
-- Every link passes the **articulation test**: "A connects to B because [specific reason]".
+- Every link passes the **articulation test**: "A connects to B because [specific reason]" — and since CLI 1.0.36 that sentence is stored on the edge (`docs link --reason`), where `/health` counts it. A bare knowledge edge is an address-book entry, not knowledge.
 - **Progressive disclosure**: title → description → content, each layer adds detail. Descriptions 80–200 characters, aim ~150.
 - **Minimum 2 connections** per note, and a `CORE_IDEA` edge from a MoC.
 - **Comprehensive extraction**: skip rate < 10% for domain-relevant sources — and report it honestly when it isn't.

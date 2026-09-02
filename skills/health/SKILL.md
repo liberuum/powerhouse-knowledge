@@ -61,7 +61,7 @@ Run these queries **in parallel** (they are independent):
 
 ```bash
 # Graph stats
-switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount noteCount mocCount claimCount tensionCount openTensionCount observationCount } }'
+switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount noteCount mocCount claimCount tensionCount openTensionCount observationCount articulatedEdgeCount } }'
 
 # Density
 switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
@@ -76,7 +76,7 @@ Do **not** read notes one by one with `docs get` — on a 500-note vault that is
 
 ```bash
 switchboard query "{
-  stats:   knowledgeGraphStats(driveId:\"$D\"){ nodeCount edgeCount orphanCount noteCount mocCount claimCount tensionCount openTensionCount observationCount }
+  stats:   knowledgeGraphStats(driveId:\"$D\"){ nodeCount edgeCount orphanCount noteCount mocCount claimCount tensionCount openTensionCount observationCount articulatedEdgeCount }
   density: knowledgeGraphDensity(driveId:\"$D\")
   orphans: knowledgeGraphOrphans(driveId:\"$D\"){ documentId title noteType status }
   mocs:    knowledgeGraphNodesByStatus(driveId:\"$D\", status:\"MOC\"){ documentId title noteType }
@@ -84,7 +84,7 @@ switchboard query "{
   stale:   knowledgeGraphStale(driveId:\"$D\", since:\"<ISO 30 days ago>\", limit:500){ documentId status }
   nodes:   knowledgeGraphNodes(driveId:\"$D\"){ documentId title description status noteType documentType topics content }
   tensions: knowledgeGraphNodesByType(driveId:\"$D\", documentType:\"bai/tension\"){ documentId title status }
-  edges:   knowledgeGraphEdges(driveId:\"$D\"){ sourceDocumentId targetDocumentId linkType }
+  edges:   knowledgeGraphEdges(driveId:\"$D\"){ sourceDocumentId targetDocumentId linkType reason confidence }
 }" --format json > /tmp/health.json
 ```
 
@@ -94,6 +94,7 @@ Then compute in Python from that one file. The rules that keep the numbers hones
 - **Open tensions** = `stats.openTensionCount` (or `tensions` filtered to `status = "OPEN"`). This is what THREE_SPACE_BOUNDARIES grades. A tension whose `observedBy` is `graph-indexer` was opened automatically from a CONTRADICTS edge — it still needs a human to resolve or dissolve it, so it counts.
 - **Orphan** = a note with zero incoming edges — exactly what `orphans` returns. Outgoing links do not change it.
 - **Links** come from `edges`, never from a note's `links[]` (empty since the relationship migration). `averageLinksPerNote` = outgoing edges per note; `connectionCount` = `stats.edgeCount`.
+- **Articulation coverage** = `stats.articulatedEdgeCount / stats.edgeCount` — the share of knowledge edges whose relationship metadata carries a `reason` (what `docs link --reason` writes). `edges[].reason` is null on the bare ones; list the notes with the most bare outgoing edges so `/connect` knows where to start. On a pre-1.0.36 Switchboard the field is absent — say so instead of reporting 0%.
 - **MoC coverage** = share of notes that are the target of a `CORE_IDEA` edge.
 - **MOC_COHERENCE** = notes whose `topics` is empty (the dashboard's definition): `PASS` at 0, `WARN` ≤ 3, `FAIL` above. Selecting `topics` on `knowledgeGraphNodes` costs one server-side query per node, which is fine once per run (~0.3 s / 500 notes) — just never do it inside a per-hit loop.
 - **Descriptions**: missing fails; < 80 is a quality warning. A description > 200 cannot exist in state — the reducer rejects it — so a missing description is often an over-long attempt that was silently dropped. Count length as UTF-16 units (JavaScript `.length`), the way the reducer does.
@@ -120,6 +121,8 @@ From the Step 2 data: a note is covered when it is the target of a `CORE_IDEA` e
 | THREE_SPACE_BOUNDARIES | 0 open tensions | 1-3 open tensions | 4+ open tensions |
 | PROCESSING_THROUGHPUT | 0 pending observations, 0 stuck tasks, 0 stranded sources | 1–5 pending observations, or 1–2 stuck tasks / stranded sources | >5 pending observations (the dashboard's own rule), or 3+ stuck/FAILED tasks or stranded sources |
 | STALE_NOTES | 0 DRAFT notes > 30 days | 1-3 stale | 4+ stale |
+
+**LINK_HEALTH message carries articulation coverage.** The grade stays on average links per note (the dashboard's rule — grading it differently would make `/health` and the in-app check disagree on the same vault), but the check's `message` states both numbers — `Avg 2.4 links/note; 1,180 of 2,257 knowledge edges (52%) carry a reason` — and `recommendations` names the backlog: how many bare edges, which notes hold most of them, and that `/connect` articulates them with `docs annotate` (or unlinks the ones nobody can explain). A vault at 100% average links and 0% reasons is an address book; the report must say so even while LINK_HEALTH shows PASS.
 
 **Description quality check (not just presence):**
 - Length: 80-200 chars (aim ~150). < 30 = too terse, > 200 = **will silently fail SET_DESCRIPTION** (kill entire batch)
@@ -228,7 +231,7 @@ Avg links/note: N | Methodology grounding: N/N
 
 PASS  SCHEMA_COMPLIANCE      All N notes have title, type, provenance
 PASS  ORPHAN_DETECTION       0 orphan notes
-PASS  LINK_HEALTH            Avg 2.4 links/note, density 0.6
+PASS  LINK_HEALTH            Avg 2.4 links/note, density 0.6; 1,180/2,257 edges (52%) carry a reason
 PASS  DESCRIPTION_QUALITY    All descriptions present and informative
 WARN  MOC_COHERENCE          2 note(s) without topics
 WARN  THREE_SPACE_BOUNDARIES 2 open tensions awaiting resolution

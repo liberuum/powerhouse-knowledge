@@ -283,13 +283,15 @@ Topics (per-document state):
 switchboard docs mutate <id> --op addTopic --input '{"id":"topic-unique-id","name":"zettelkasten"}'
 ```
 
-Relationships (since the drive-override migration, edges live in the reactor's `DocumentRelationship` table, NOT in per-document `links[]`). Use `switchboard docs link` (CLI ≥ 1.0.34; signed as you) — the legacy `--op addLink` is bypassed by the graph subgraph:
+Relationships (since the drive-override migration, edges live in the reactor's `DocumentRelationship` table, NOT in per-document `links[]`). Use `switchboard docs link` (CLI ≥ 1.0.36; signed as you) — the legacy `--op addLink` is bypassed by the graph subgraph:
 ```bash
-switchboard docs link <source-uuid> <target-uuid> -t RELATES_TO
-switchboard docs unlink <source-uuid> <target-uuid> -t RELATES_TO
+# knowledge edge: the reason travels as relationship metadata { reason, confidence }
+switchboard docs link <source-uuid> <target-uuid> -t BUILDS_ON --reason "<why>" --confidence established
+switchboard docs annotate <source-uuid> <target-uuid> -t BUILDS_ON --reason "<new why>"   # UPDATE_RELATIONSHIP
+switchboard docs unlink <source-uuid> <target-uuid> -t BUILDS_ON
 ```
 
-Valid `relationshipType`: `RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`, `DERIVED_FROM`, `CORE_IDEA` (MoC → note), `CHILD_MOC` (MoC → MoC). Mutation is idempotent on `(source, target, type)`.
+Valid `relationshipType`: `RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`, `DERIVED_FROM`, `CORE_IDEA` (MoC → note), `CHILD_MOC` (MoC → MoC). `ADD_RELATIONSHIP` is idempotent on `(source, target, type)` — metadata included, so a changed reason is `docs annotate`. The pre-write hook requires `--reason` on the five knowledge types (≥ 20 chars); `POWERHOUSE_KNOWLEDGE_ALLOW_BARE_LINKS=1` lifts that for bulk imports.
 
 Lifecycle mutations require `id`, `actor`, `timestamp`:
 ```bash
@@ -311,7 +313,7 @@ switchboard docs link <moc-id> <note-uuid> -t CORE_IDEA
 switchboard docs link <parent-moc-id> <child-moc-id> -t CHILD_MOC
 ```
 
-The pre-migration `--op addCoreIdea` accepted a `contextPhrase` (the articulation: WHY this note matters in this MoC). The new `DocumentRelationship` row stores only `(source, target, type)` — articulation now lives in the source note's content body instead of on the edge.
+The pre-migration `--op addCoreIdea` accepted a `contextPhrase` (the articulation: WHY this note matters in this MoC). The `DocumentRelationship` row carries that as `metadata.reason` now — `docs link <moc> <note> -t CORE_IDEA --reason "…"` — optional for navigation edges, required by the hook for knowledge edges.
 
 Health report mutations:
 ```bash
@@ -477,7 +479,7 @@ Subscribe to note changes, find related notes, auto-create links:
 ```
 1. Subscribe to bai/knowledge-note changes
 2. On new note: search for notes with overlapping topics
-3. For each match: call `switchboard docs link source target -t RELATES_TO`
+3. For each match: call `switchboard docs link source target -t RELATES_TO --reason "<the shared claim>"`
 4. Re-entrancy guard: skip if the change was our own ADD_RELATIONSHIP system action
 ```
 
