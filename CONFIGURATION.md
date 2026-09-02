@@ -230,7 +230,7 @@ A fully-formed safe action looks like:
 
 ### Mode 3: Switchboard CLI (Full Feature Parity)
 
-The Switchboard CLI (v1.0.6+) provides full feature parity with MCP for all vault operations. The plugin's `hooks/hooks.json` is already CLI-mode: on vault commands it pings the reactor, auto-introspects a stale model cache, and prints the active profile + detected vault drive.
+The Switchboard CLI (≥ 1.0.28 for drive-scoped `docs get`; see `skills/cli-reference` for version-gated features) provides full feature parity with MCP for all vault operations. The plugin's `hooks/hooks.json` is already CLI-mode: on vault commands it pings the reactor, auto-introspects a stale model cache, and prints the active profile + detected vault drive.
 
 **Setup:**
 ```bash
@@ -238,7 +238,7 @@ The Switchboard CLI (v1.0.6+) provides full feature parity with MCP for all vaul
 curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash
 
 # Configure local profile
-switchboard config use local   # targets http://localhost:4001/graphql
+switchboard config use <profile-name>   # e.g. a local `ph vetra` profile pointing at http://localhost:4001/graphql
 
 # Introspect models (discovers bai/* types correctly — bai/source, not powerhouse/source)
 switchboard introspect
@@ -268,7 +268,7 @@ Content mutations require `updatedAt: DateTime!`:
 # setTitle, setDescription, setNoteType, setContent all need updatedAt
 switchboard docs mutate <id> --op setTitle --input '{"title":"My Claim","updatedAt":"2026-03-30T15:00:00.000Z"}'
 switchboard docs mutate <id> --op setDescription --input '{"description":"Summary","updatedAt":"2026-03-30T15:00:00.000Z"}'
-switchboard docs mutate <id> --op setNoteType --input '{"noteType":"CONCEPT","updatedAt":"2026-03-30T15:00:00.000Z"}'
+switchboard docs mutate <id> --op setNoteType --input '{"noteType":"concept","updatedAt":"2026-03-30T15:00:00.000Z"}'
 switchboard docs mutate <id> --op setContent --input '{"content":"Full body","updatedAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
@@ -318,7 +318,7 @@ Pipeline queue:
 ```bash
 # addTask: "target" is a human-readable title/label (required); "documentRef" carries the
 # referenced document's UUID (optional)
-switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"SEED","target":"Source Title","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
+switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"claim","target":"Source Title","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
 **Batch actions (CLI auto-injects `timestampUtcMs` and `action.id`):**
@@ -398,8 +398,8 @@ switchboard drives create --name "My Knowledge Vault" --preferred-editor knowled
 ```
 
 3. Open in Connect at `http://localhost:3001` — the vault app auto-creates:
-   - Folder structure (`/knowledge/notes/`, `/sources/`, `/ops/`, `/self/`, `/research/`)
-   - Singleton documents (PipelineQueue, KnowledgeGraph, VaultConfig)
+   - Folder structure: `knowledge/{notes,inbox,insights}`, `sources`, `projects`, `ops/{sessions,health,queue}`, `self/methodology` (no `/research/` folder)
+   - Singleton documents: PipelineQueue (`/ops/queue/`), HealthReport (`/ops/health/`), VaultConfig (`/self/`) — there is no graph singleton
 
 4. Note the drive ID (UUID) — you'll need it for queries.
 
@@ -449,7 +449,7 @@ mcp__reactor-mcp__createDocument({
 
 ## Processor
 
-The GraphIndexer processor automatically indexes all `bai/knowledge-note` operations into a relational database. Query the indexed data via:
+The GraphIndexer processor indexes `bai/knowledge-note` and `bai/moc` documents (and the drive's `ADD_RELATIONSHIP` edges) into a relational database. Sources, tensions, observations, projects and WBS are **not** indexed — read them by id. Query the indexed data via:
 
 ```graphql
 query {

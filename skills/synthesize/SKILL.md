@@ -46,7 +46,9 @@ switchboard query '{ knowledgeGraphNodes(driveId: "<UUID>") { documentId title n
 ```bash
 switchboard docs list --drive <drive-slug> --format json
 # Find all bai/moc documents
-# Compare: if a MOC already exists for topic X, update it instead of creating a new one
+# Compare: if a MOC already exists for topic X, update it instead of creating a new one —
+# UPDATE_DESCRIPTION { description, updatedAt } / UPDATE_ORIENTATION { orientation, updatedAt }
+# on the existing MoC, plus addRelationship(<moc>, <note>, "CORE_IDEA") for each new member
 ```
 
 ### Step 3: Find the /knowledge/ folder
@@ -165,6 +167,6 @@ MOC creation should happen during the **reflect** or **reweave** phase:
 - Create MOCs for uncovered topics
 - Update existing MOCs with new core ideas from the latest extraction
 
-The `/health` check for MOC_COHERENCE will pass once MOCs exist for all active topics.
+Note that the `/health` check MOC_COHERENCE grades **notes without topics**, not topic clusters without a MoC — creating MoCs does not move it; tagging notes does.
 
 If "$ARGUMENTS" is provided, focus on that specific topic.

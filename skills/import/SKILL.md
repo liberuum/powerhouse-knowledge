@@ -99,12 +99,12 @@ The mutation is idempotent on `(source, target, type)`, so re-running an import 
 
 ### Step 5: Create MOCs from folder structure or tags (optional)
 
-If the source has categories/folders/tags with 2+ notes, create MOC documents:
+If the source has categories/folders/tags with 3+ notes, create MOC documents (the same threshold `synthesize` and `health` use):
 ```bash
 switchboard docs create --type bai/moc --name "<topic-name>" --drive <drive-slug> --parent-folder <knowledge-folder-uuid> --format json
 ```
 
-Then add core ideas linking to the notes in that category.
+Then attach the notes with `addRelationship(<moc-uuid>, <note-uuid>, "CORE_IDEA")` — one call per note; there is no per-document core-idea operation any more
 
 ### Step 6: Verify and report
 
@@ -134,8 +134,9 @@ For each [[target title]] in note content:
 title: "Note Title"           -> SET_TITLE
 description: "Summary"        -> SET_DESCRIPTION
 type: pattern                  -> SET_NOTE_TYPE
-topics: ["topic-a", "topic-b"] -> ADD_TOPIC (x2)
-confidence: established        -> SET_METADATA_FIELD
+topics: ["topic-a", "topic-b"] -> ADD_TOPIC (x2; each needs its own `id` plus `name`)
+confidence: established        -> SET_METADATA_FIELD (`field`, `value`, and required `updatedAt`)
+models: [...] / inputs: [...]  -> SET_METADATA_LIST_FIELD (`field`, `values[]`, `updatedAt`) — the scalar op cannot write lists
 ---
 Content body                   -> SET_CONTENT
 ```

@@ -11,7 +11,9 @@ This plugin gives you (human or AI agent) the ability to manage a structured kno
 - **Connection to a Powerhouse reactor** via MCP or Switchboard CLI
 - **Access to the Graph Indexer** — a relational index with keyword search, topic queries, provenance filtering, and AI-powered semantic search
 
-The vault stores knowledge as `bai/knowledge-note` documents — atomic claims with typed links, topics, provenance, and lifecycle states. Notes are organized by Maps of Content (MOCs), processed through a 6-phase pipeline, and visualized as an interactive graph.
+The vault stores knowledge as `bai/knowledge-note` documents — atomic claims with typed links, topics, provenance, and lifecycle states. Notes are organized by Maps of Content (MOCs), processed through a pipeline, and visualized as an interactive graph.
+
+**This plugin is the vault's write path.** Its job is to run the pipeline well: take in source material, extract atomic notes and create them correctly (title, description, type, topics, provenance), connect them with typed relationships, attach them to MoCs, and verify the result. Humans read the vault in the Knowledge Vault app — including its built-in Chat, which answers questions over the same graph index this plugin populates, read-only.
 
 ## Prerequisites
 
@@ -184,7 +186,7 @@ The vault includes a **Graph Indexer processor** that maintains a relational ind
 
 ### What's indexed
 
-Every `bai/knowledge-note` operation triggers the indexer to update:
+Every `bai/knowledge-note` and `bai/moc` operation — plus every `ADD_RELATIONSHIP` on the drive — triggers the indexer to update (sources, tensions, observations, projects and WBS are **not** indexed; read those by id):
 - **graph_nodes** — title, description, content, noteType, status, author, sourceOrigin, createdAt
 - **graph_edges** — source, target, linkType, targetTitle
 - **graph_topics** — document_id, topic name
@@ -193,10 +195,10 @@ Every `bai/knowledge-note` operation triggers the indexer to update:
 ### Available queries
 
 **Search:**
+- `knowledgeGraphSemanticSearch(query, mode: HYBRID|SEMANTIC)` — meaning + keyword, ranked; `similarity` is a 0–1 relevance (package ≥ 1.0.52). **Default for natural-language questions.**
 - `knowledgeGraphSearch(query)` — keyword match on title + description
-- `knowledgeGraphFullSearch(query)` — keyword match on title + description + content
-- `knowledgeGraphFullSearch(query)` — full-text over title, description and content (ANDs terms)
-- `knowledgeGraphSimilar(documentId)` — find semantically similar notes
+- `knowledgeGraphFullSearch(query)` — keyword match on title + description + content (ANDs terms; use 1–2 keywords)
+- `knowledgeGraphSimilar(documentId)` — semantically similar notes to a given note
 
 **Topics:**
 - `knowledgeGraphTopics` — all topics with note counts
@@ -211,7 +213,9 @@ Every `bai/knowledge-note` operation triggers the indexer to update:
 **Structure:**
 - `knowledgeGraphStats` — node count, edge count, orphan count
 - `knowledgeGraphNodes` / `knowledgeGraphEdges` — all indexed data
-- `knowledgeGraphOrphans` — notes with no incoming links
+- `knowledgeGraphOrphans` — nodes with no incoming links (MoCs are nodes too — check `noteType`)
+- `knowledgeGraphNodesByStatus(status)` / `knowledgeGraphNodeByDocumentId(documentId)` — filter or fetch single nodes
+- `knowledgeGraphStale(since)` / `knowledgeGraphHistory(documentId)` / `knowledgeGraphActivity(since)` — change tracking
 - `knowledgeGraphBacklinks` / `knowledgeGraphForwardLinks` — directional edges
 - `knowledgeGraphConnections(documentId, depth)` — BFS traversal
 - `knowledgeGraphTriangles` — synthesis opportunities (A,B both link to C)
@@ -226,7 +230,7 @@ Every `bai/knowledge-note` operation triggers the indexer to update:
 
 | User intent | Best query |
 |-------------|-----------|
-| Natural language question | `knowledgeGraphFullSearch` with 1-2 keywords |
+| Natural language question | `knowledgeGraphSemanticSearch` (mode: HYBRID), question passed verbatim |
 | Known keyword/term | `knowledgeGraphSearch` or `knowledgeGraphFullSearch` |
 | "Notes about topic X" | `knowledgeGraphByTopic` |
 | "Notes similar to this one" | `knowledgeGraphSimilar` |
@@ -240,7 +244,6 @@ Every `bai/knowledge-note` operation triggers the indexer to update:
 | Knowledge Note | `bai/knowledge-note` | Atomic knowledge claims |
 | Map of Content | `bai/moc` | Topic navigation hubs |
 | Source | `bai/source` | Ingested source material |
-| Knowledge Graph | `bai/knowledge-graph` | Materialized graph singleton |
 | Pipeline Queue | `bai/pipeline-queue` | Processing task tracker |
 | Health Report | `bai/health-report` | Point-in-time diagnostics |
 | Vault Config | `bai/vault-config` | Vault configuration |
@@ -252,16 +255,26 @@ Every `bai/knowledge-note` operation triggers the indexer to update:
 
 ## Processing Pipeline
 
-The 6R pipeline transforms raw sources into structured, connected knowledge:
+Source material goes in; connected, verified notes come out. The agent runs it as
+`/powerhouse-knowledge:pipeline`, or one skill at a time:
 
 ```
-1. Record   →  /seed (ingest source material)
-2. Reduce   →  /extract (extract atomic claims)
-3. Reflect  →  /connect (find links between notes)
-4. Reweave  →  /synthesize (create MOCs, update old notes)
-5. Verify   →  /verify (quality gate, auto-repair)
-6. Rethink  →  /health + /graph (challenge assumptions)
+Record   →  /seed        ingest a source (bai/source, status INBOX → EXTRACTING) and queue a task
+Reduce   →  /extract     one bai/knowledge-note per atomic claim; ADD_EXTRACTED_CLAIM + DERIVED_FROM
+                         edge per note; RECORD_EXTRACTION_STATS; source → EXTRACTED
+Reflect  →  /connect     typed relationships (addRelationship), each passing the articulation test
+Reweave  →  /synthesize  MoCs via CORE_IDEA edges; update older notes with new context
+Verify   →  /verify      recite test, schema check, link health — auto-repair, then /health
+Rethink  →  /health + /graph   challenge the structure against the evidence
 ```
+
+The six R names are the vocabulary. The **pipeline-queue task** underneath has four phases —
+`create → reflect → reweave → verify` for a `claim` task (`enrich → reflect → reweave → verify`
+for `enrichment`). Advance it with `ADVANCE_PHASE` and a handoff per phase; the final advance
+completes the task by itself. Every note the pipeline creates must end with: title, description
+(≤ 200 chars, adds information beyond the title), lowercase `noteType`, topics, provenance
+(dispatched separately), ≥ 2 typed relationships, a MoC `CORE_IDEA` edge, and a walk to
+`CANONICAL`.
 
 ## Architecture
 

@@ -37,8 +37,9 @@ Check the note has all expected fields populated:
 
 ### 3. Health Checks
 
-- [ ] **Link density**: Note has >= 2 outgoing links (not an orphan)
-- [ ] **Link resolution**: All linked document IDs point to existing documents
+- [ ] **Link density**: Note has >= 2 links (read from `knowledgeGraphForwardLinks` / `knowledgeGraphBacklinks`, not the note's `links[]`)
+- [ ] **Not an orphan**: at least one **incoming** edge. An orphan is a node with zero incoming knowledge edges — this is what `knowledgeGraphOrphans` returns; outgoing links do not make a note non-orphan
+- [ ] **Link resolution**: every `targetDocumentId` in the note's forward edges points to an existing document
 - [ ] **Topic coverage**: Note belongs to at least one topic
 - [ ] **Description length**: Between 80-200 characters
 - [ ] **Content length**: At least 200 characters of substantive prose
@@ -121,7 +122,7 @@ Summary:
 
 After verification, update confidence based on results:
 ```bash
-switchboard docs mutate <note-id> --op setMetadataField --input '{"field": "confidence", "value": "established|emerging|speculative", "updatedAt": "<ISO>"}'
+switchboard docs mutate <note-id> --op setMetadataField --input '{"field": "confidence", "value": "grounded|established|speculative", "updatedAt": "<ISO>"}'
 ```
 
 ## Pipeline integration

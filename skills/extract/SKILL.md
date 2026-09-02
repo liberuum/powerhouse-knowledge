@@ -163,6 +163,11 @@ Choose the most specific type for each claim:
 - **observation** — an empirical finding
 - **procedure** — a how-to or workflow step
 - **reference** — factual information for lookup
+- **bug-pattern** — a recurring failure and its cause
+- **integration** — how two systems or components connect
+- **workflow** — an end-to-end process across steps or roles
+
+These ten lowercase values are the canonical set (the note editor's type select). `noteType` is a free string in the schema, so `CONCEPT` is accepted on write but never matches the editor or the health dashboard's filters — always write lowercase.
 
 ## Quality gates
 
@@ -171,9 +176,14 @@ Choose the most specific type for each claim:
 - [ ] Descriptions add information beyond the title (~150 chars)
 - [ ] Content includes arguments/evidence, not just assertions
 - [ ] All notes have at least one topic tag
+- [ ] `noteType` is one of the ten lowercase values (never `CONCEPT`)
+- [ ] Description ≤ 200 characters (longer fails silently and rejects the whole batch)
+- [ ] One `DERIVED_FROM` edge per note (`addRelationship(<note>, <source>, "DERIVED_FROM")`) — this is how `/health` finds a note's source; the source's `extractedClaims` alone is not traversable from the note
 - [ ] Provenance traces back to the source (sourceOrigin: DERIVED)
 - [ ] Skip rate < 10% for domain-relevant content
 - [ ] **All created notes verified in drive tree** — read the drive after creation and confirm each note exists as a file node
 - [ ] **Content and provenance in separate batches** — never batch SET_PROVENANCE with content actions
+- [ ] Source closed out: `ADD_EXTRACTED_CLAIM` per note, `RECORD_EXTRACTION_STATS`, status `EXTRACTED`
+- [ ] Handoff recorded with `ADVANCE_PHASE` (phase `create`); connecting, MoC attachment and the walk to `CANONICAL` happen in the reflect/reweave/verify phases — see AGENT.md § Definition of done for the full per-note list
 
 If "$ARGUMENTS" is provided, treat it as the source document ID to extract from.

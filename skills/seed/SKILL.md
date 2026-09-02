@@ -75,7 +75,13 @@ switchboard docs mutate <pipeline-queue-id> --op addTask --input '{
 }'
 ```
 
-**Important:** Check if a pipeline task already exists for this `documentRef` before creating a duplicate. If one exists and isn't DONE/FAILED, skip creating a new task.
+**Important:** Check if a pipeline task already exists for this `documentRef` before creating a duplicate. If one exists and isn't DONE/FAILED, skip creating a new task. Generate a fresh UUID for the task `id` — a reused id creates an unreachable ghost task (see the pipeline skill).
+
+Then mark the source as queued. `INGEST_SOURCE` leaves it in `INBOX`; the app's own "Queue for Processing" button moves it to `EXTRACTING` at the same time it adds the task, and `/health` reports a source left in `INBOX` with a task or notes behind it as stranded:
+```bash
+switchboard docs mutate <source-doc-id> --op setSourceStatus --input '{"status":"EXTRACTING"}'
+```
+The lifecycle is `INBOX → EXTRACTING → EXTRACTED → ARCHIVED`; the extract skill sets `EXTRACTED` when the notes exist.
 
 6. **Suggest next steps**:
    - Run `/powerhouse-knowledge:extract` to extract atomic claims from this source
@@ -99,6 +105,7 @@ switchboard docs mutate <pipeline-queue-id> --op addTask --input '{
 - [ ] Source type is set correctly
 - [ ] Provenance records the origin (author, URL)
 - [ ] No duplicate source exists (search first)
-- [ ] Pipeline task created for processing
+- [ ] Pipeline task created for processing (fresh UUID, `taskType: "claim"`)
+- [ ] Source status set to `EXTRACTING` once queued
 
 If "$ARGUMENTS" is provided, treat it as the source material or URL to seed.

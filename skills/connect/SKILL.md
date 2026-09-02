@@ -139,7 +139,7 @@ switchboard docs mutate <moc-id> --op addTension --input '{
 - Every connection must pass the **articulation test** — bare links without reasons are address books, not knowledge graphs
 - Prefer specific link types over generic RELATES_TO when the relationship is clear
 - Create bidirectional links when appropriate (if A builds on B, B may also relate to A)
-- Minimum 2 connections per note — orphan notes indicate incomplete processing
+- Minimum 2 connections per note. Separately, an **orphan** is a note with zero *incoming* edges (what `knowledgeGraphOrphans` returns) — adding outgoing links from it does not fix that; a link *to* it does
 - Update the target note's content if the connection reveals new context
 - When creating CONTRADICTS links, always check if a `bai/tension` document should be created
 

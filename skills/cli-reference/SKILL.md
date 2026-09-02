@@ -165,7 +165,7 @@ Content mutations require `updatedAt: DateTime!`:
 ```bash
 switchboard docs mutate <id> --op setTitle --input '{"title":"...","updatedAt":"2026-03-30T15:00:00.000Z"}'
 switchboard docs mutate <id> --op setDescription --input '{"description":"...","updatedAt":"2026-03-30T15:00:00.000Z"}'
-switchboard docs mutate <id> --op setNoteType --input '{"noteType":"CONCEPT","updatedAt":"2026-03-30T15:00:00.000Z"}'
+switchboard docs mutate <id> --op setNoteType --input '{"noteType":"concept","updatedAt":"2026-03-30T15:00:00.000Z"}'
 switchboard docs mutate <id> --op setContent --input '{"content":"...","updatedAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
@@ -219,7 +219,7 @@ switchboard docs mutate <hr-id> --op addCheck --input '{"id":"chk-1","category":
 Pipeline queue (`target` is a human-readable title/label and is required; `documentRef` carries
 the referenced document's UUID and is optional):
 ```bash
-switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"SEED","target":"Source Title","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
+switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"claim","target":"Source Title","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
 ## CRITICAL: Operation Order Bug in `docs apply`
@@ -244,7 +244,7 @@ Separate content from provenance to prevent batch failures:
 switchboard docs apply <note-id> --actions '[
   {"type": "SET_TITLE", "input": {"title": "...", "updatedAt": "..."}, "scope": "global"},
   {"type": "SET_DESCRIPTION", "input": {"description": "...", "updatedAt": "..."}, "scope": "global"},
-  {"type": "SET_NOTE_TYPE", "input": {"noteType": "CONCEPT", "updatedAt": "..."}, "scope": "global"},
+  {"type": "SET_NOTE_TYPE", "input": {"noteType": "concept", "updatedAt": "..."}, "scope": "global"},
   {"type": "SET_CONTENT", "input": {"content": "...", "updatedAt": "..."}, "scope": "global"},
   {"type": "ADD_TOPIC", "input": {"id": "t1", "name": "topic"}, "scope": "global"}
 ]'
@@ -271,7 +271,7 @@ NOTE_ID=$(switchboard docs create --type bai/knowledge-note --name "Claim title"
 # Content batch
 switchboard docs mutate $NOTE_ID --op setTitle --input '{"title":"...","updatedAt":"..."}'
 switchboard docs mutate $NOTE_ID --op setDescription --input '{"description":"...","updatedAt":"..."}'
-switchboard docs mutate $NOTE_ID --op setNoteType --input '{"noteType":"CONCEPT","updatedAt":"..."}'
+switchboard docs mutate $NOTE_ID --op setNoteType --input '{"noteType":"concept","updatedAt":"..."}'
 switchboard docs mutate $NOTE_ID --op setContent --input '{"content":"...","updatedAt":"..."}'
 switchboard docs mutate $NOTE_ID --op addTopic --input '{"id":"t1","name":"topic"}'
 

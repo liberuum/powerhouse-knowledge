@@ -15,6 +15,8 @@ description: Interactive knowledge graph analysis — find synthesis opportuniti
 
 Structural, topical, and semantic analysis of the knowledge graph to find patterns, gaps, and opportunities.
 
+> `knowledgeGraphStats.nodeCount`, `density`, `orphans`, `triangles` and `bridges` all include **MoC nodes** (`status = "MOC"`, `noteType = "MOC (<tier>)"`). "N orphan notes" may be MoCs — check `noteType` before reporting. For a vault-wide ranking of hubs/authorities use one `knowledgeGraphEdges(driveId)` call and count in Python, not `backlinks`/`forwardLinks` per note. Also available: `knowledgeGraphHistory(documentId)`, `knowledgeGraphActivity(since)`, `knowledgeGraphActivityByType(operationType)`, `knowledgeGraphStale(since)`, `knowledgeGraphNodesByStatus(status)`, `knowledgeGraphNodeByDocumentId(documentId)`.
+
 ## Core queries
 
 ```bash

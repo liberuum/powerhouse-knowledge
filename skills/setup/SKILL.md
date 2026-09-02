@@ -61,7 +61,12 @@ The vault needs these folders:
 | `/ops/` | Operational documents |
 | `/ops/queue/` | Pipeline queue singleton |
 | `/ops/health/` | Health report singleton |
-| `/self/` | Config and graph singletons |
+| `/self/` | Config singleton |
+| `/knowledge/inbox/` | Notes awaiting processing |
+| `/knowledge/insights/` | Synthesised insights |
+| `/projects/` | Projects and their WBS |
+| `/ops/sessions/` | Session records |
+| `/self/methodology/` | Reserved (methodology is read from the plugin, not the vault) |
 
 If folders are missing, the vault hasn't been initialized — suggest opening it in Connect first (the Knowledge Vault app auto-creates the folder structure).
 
@@ -73,8 +78,10 @@ switchboard docs list --drive <drive-slug> --format json
 
 Check that these exist:
 - `bai/vault-config` in `/self/`
-- `bai/knowledge-graph` in `/self/`
+- `bai/health-report` in `/ops/health/`
 - `bai/pipeline-queue` in `/ops/queue/`
+
+There is **no** `bai/knowledge-graph` document — the graph lives in the indexer's tables and is read through `knowledgeGraph*` queries. If a checklist ever asks for a graph singleton, it is stale.
 
 If missing, create them:
 ```bash
@@ -103,7 +110,7 @@ cp -r /tmp/pk-methodology/data/methodology/ <plugin-dir>/data/methodology/
 === Vault Setup Complete ===
 Drive: <drive-name> (<drive-uuid>)
 Folders: ✓ all present
-Singletons: ✓ pipeline-queue, vault-config, knowledge-graph
+Singletons: ✓ pipeline-queue, health-report, vault-config
 Methodology: ✓ 249 claims available locally (not imported to vault)
 Status: Ready for use
 ```

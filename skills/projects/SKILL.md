@@ -260,6 +260,17 @@ Ground truth: `document-models/work-breakdown-structure/v1/schema.graphql`.
 | `SET_REFERENCES` | `{ references! }` — **replaces** the whole array | — |
 | `SET_PROJECT_REF` | `{ projectRef }` (falsy unlinks) | — |
 
+## Enums (write exactly these values)
+
+| Field | Values |
+|---|---|
+| `ProjectStatus` | `PLANNING`, `ACTIVE`, `ON_HOLD`, `COMPLETED`, `ARCHIVED` |
+| `DeliverableStatus` | `PLANNED`, `IN_PROGRESS`, `DELIVERED`, `CANCELLED` |
+| `MemberKind` | `HUMAN`, `AGENT` |
+| `GoalStatus` | `TODO`, `IN_PROGRESS`, `BLOCKED`, `IN_REVIEW`, `COMPLETED`, `WONT_DO` |
+
+`IN_REVIEW` and `WONT_DO` are legal goal states that earlier drafts of this skill never named. `BLOCKED` requires a `blockReason` (`MISSING_BLOCK_REASON` otherwise). `WONT_DO` is excluded from progress denominators.
+
 ## Key semantics
 
 1. **Goal order is meaningful.** `goals[]` is always kept depth-first (parents before

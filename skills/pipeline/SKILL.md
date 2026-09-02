@@ -141,8 +141,8 @@ Then **cross-reference with local methodology files** in the plugin's `data/meth
 **MANDATORY: Create MOCs via `/powerhouse-knowledge:synthesize`:**
 - Group notes by shared topics (aggregate `topics[]` from all note states)
 - Create `bai/moc` documents in `/knowledge/` for any topic with 3+ notes that doesn't already have a MOC
-- Add core ideas with articulated context phrases (WHY each note matters to the topic)
-- Set tier (HUB for 20+ notes, DOMAIN for 10+, TOPIC for 3+)
+- Add core ideas with `addRelationship(<moc>, <note>, "CORE_IDEA")`; the edge carries no context phrase any more — put WHY the note matters to the topic in the note's own body
+- Set tier: TOPIC for a focused cluster (3–9 notes), DOMAIN for a broad area (10+), HUB for a top-level entry point that organises other MoCs
 - **Verify each MOC appears in the drive tree after creation** — don't skip this
 - This is NOT optional — the health check will flag missing MOCs as WARN
 
@@ -223,7 +223,7 @@ After the pipeline task completes, **automatically run /health and act on recomm
 | "N notes missing descriptions" | Generate descriptions from title + content, dispatch SET_DESCRIPTION |
 | "N notes not grounded in methodology" | Search local methodology files, add grounding references to note content |
 | "N notes missing types" | Infer from content, dispatch SET_NOTE_TYPE |
-| "Broken PENDING pipeline task" | Dispatch COMPLETE_TASK to clean up |
+| "Stranded PENDING pipeline task → if its work is actually done, `ADVANCE_PHASE` it through the remaining phases (the final advance auto-completes it); use `COMPLETE_TASK` only to end a task early — never after a final advance, which would double-count `completedCount`
 
 4. **Re-run health** after fixes to confirm improvement
 5. **Report final status:**

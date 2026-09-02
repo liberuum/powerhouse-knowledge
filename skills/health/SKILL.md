@@ -84,7 +84,7 @@ Extract per note:
 - `noteType` — present or missing
 - `status` — DRAFT, IN_REVIEW, CANONICAL, ARCHIVED
 - `topics[]` — count
-- `links[]` — count and types
+- links — **not** from the note's `links[]` (empty for anything linked since the relationship migration; the app's own dashboard ignores it). Read edges from the graph: `knowledgeGraphForwardLinks(driveId, documentId)` per note, or `knowledgeGraphEdges(driveId)` once for the whole vault; `knowledgeGraphStats.edgeCount` for the total
 - `provenance.sourceOrigin` — present or missing
 - `content` — present and length
 
@@ -117,19 +117,21 @@ From the drive tree, find all `bai/moc` documents. For each topic that appears o
 | ORPHAN_DETECTION | 0 orphans | 1-3 orphans | 4+ orphans |
 | LINK_HEALTH | avg links >= 2.0 | avg >= 1.0 | avg < 1.0 |
 | DESCRIPTION_QUALITY | all present + informative | 1-2 missing or restated | 3+ missing |
-| MOC_COHERENCE | all 3+ note topics have MOCs | 1-2 gaps | 3+ gaps |
+| MOC_COHERENCE | every note has ≥1 topic | 1-3 notes without topics | 4+ notes without topics |
 | THREE_SPACE_BOUNDARIES | 0 open tensions | 1-3 open tensions | 4+ open tensions |
 | PROCESSING_THROUGHPUT | 0 pending tasks AND no stranded sources | 1-2 pending/stranded | 3+ pending, FAILED, or stranded |
 | STALE_NOTES | 0 DRAFT notes > 30 days | 1-3 stale | 4+ stale |
 
 **Description quality check (not just presence):**
-- Length: 50-200 chars ideal. < 30 = too terse, > 200 = **will silently fail SET_DESCRIPTION** (kill entire batch)
+- Length: 80-200 chars (aim ~150). < 30 = too terse, > 200 = **will silently fail SET_DESCRIPTION** (kill entire batch)
 - Restatement: if description uses >70% same words as title = WARN
 - Must add scope, mechanism, or implication beyond the title
 
 **Methodology-grounding check (report in `recommendations`, NOT as a check):** For each knowledge note, check if its content includes a "Methodology grounding" section referencing at least one claim from the plugin's local `data/methodology/` files. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation. The verify skill auto-repairs this by searching local methodology files and appending grounding references to the note's content.
 
 **CRITICAL: Verify, don't assume.** After auto-fixing any health recommendation, **re-read the drive tree and re-query the subgraph** to confirm. Don't report PASS based on what you dispatched — report PASS based on what you verified. Silent failures are common with remote reactors (race conditions, CLI bugs, network latency).
+
+**Two counting traps.** `knowledgeGraphStats.nodeCount` counts MoC nodes too (they carry `status = "MOC"` and `noteType = "MOC (<tier>)"`), so `noteCount` must exclude them or it over-counts by the MoC total. And MOC_COHERENCE above is defined the way the shipped dashboard defines it — **notes without topics** — not "topics without a MoC"; grading it differently makes `/health` and the in-app check contradict each other on the same vault. For STALE_NOTES prefer `knowledgeGraphStale(driveId, since, limit)` and `knowledgeGraphNodesByStatus(driveId, status: "DRAFT")` over reading every note.
 
 ## Step 6: Save to bai/health-report document
 
@@ -229,7 +231,7 @@ PASS  SCHEMA_COMPLIANCE      All N notes have title, type, provenance
 PASS  ORPHAN_DETECTION       0 orphan notes
 PASS  LINK_HEALTH            Avg 2.4 links/note, density 0.6
 PASS  DESCRIPTION_QUALITY    All descriptions present and informative
-WARN  MOC_COHERENCE          No MOC for 'document-toolbar' (5 notes)
+WARN  MOC_COHERENCE          2 note(s) without topics
 WARN  THREE_SPACE_BOUNDARIES 2 open tensions awaiting resolution
 PASS  PROCESSING_THROUGHPUT  0 pending pipeline tasks
 PASS  STALE_NOTES            No stale notes detected

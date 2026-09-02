@@ -83,7 +83,20 @@ switchboard query '{ knowledgeGraphByOrigin(driveId: "<UUID>", origin: "DERIVED"
 switchboard query '{ knowledgeGraphRecent(driveId: "<UUID>", limit: 10) { documentId title createdAt } }'
 ```
 
-### 6. Fallback: Full document scan
+### 6. Other useful queries
+
+```bash
+# One node by id (full node incl. content)
+switchboard query '{ knowledgeGraphNodeByDocumentId(driveId: "<UUID>", documentId: "<NOTE-ID>") { title description noteType status content topics } }'
+# All notes in a lifecycle state
+switchboard query '{ knowledgeGraphNodesByStatus(driveId: "<UUID>", status: "DRAFT") { documentId title } }'
+# Notes untouched since a date
+switchboard query '{ knowledgeGraphStale(driveId: "<UUID>", since: "<ISO>", limit: 50) { documentId title updatedAt } }'
+```
+
+**MoCs are graph nodes too.** They come back from every query above with `status = "MOC"` (not a `NoteStatus` value) and `noteType = "MOC (<tier>)"`. Filter them out when the question is about notes, and don't render `"MOC"` through a note-status badge.
+
+### 7. Fallback: Full document scan
 
 If the subgraph returns empty (index needs rebuilding), scan directly:
 

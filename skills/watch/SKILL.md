@@ -29,13 +29,13 @@ This opens a WebSocket connection and streams every document change as JSON even
 
 ### 1. New Notes Without Links (Orphan Alert)
 When a new `bai/knowledge-note` is created:
-- Check if it has 0 links after a few seconds
-- If orphan: suggest running `/powerhouse-knowledge:connect` on it
+- After a few seconds, check `knowledgeGraphForwardLinks` and `knowledgeGraphBacklinks` for it (not the note's `links[]`, which is not the edge store)
+- If it has no incoming edge (an orphan): suggest running `/powerhouse-knowledge:connect` on it
 - Log: "New note '{title}' has no connections — consider linking it"
 
 ### 2. Notes Modified Without Re-verification
 When a note's content changes:
-- Check if it was previously verified (confidence = "established" or "foundational")
+- Check if it was previously verified (confidence = "grounded" or "established")
 - If verified content changed: suggest re-verification
 - Log: "Verified note '{title}' was modified — verification may be stale"
 
@@ -76,7 +76,7 @@ AGENT: Starting vault watch session...
 
 ## GraphQL Subscription (Advanced)
 
-For direct WebSocket integration, subscribe at `ws://localhost:4001/graphql/subscriptions`:
+For direct WebSocket integration, subscribe at `ws://<the-switchboard-host>/graphql/subscriptions` (the same host as the active profile's `/graphql`):
 
 ```graphql
 subscription WatchVault($search: SearchFilterInput) {

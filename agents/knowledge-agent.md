@@ -245,7 +245,9 @@ Each note has this state structure:
 - `SET_DESCRIPTION { description, updatedAt }`
 - `SET_NOTE_TYPE { noteType, updatedAt }`
 - `SET_CONTENT { content, updatedAt }`
-- `SET_METADATA_FIELD { field, value, updatedAt }`
+- `SET_METADATA_FIELD { field, value, updatedAt }` — scalar metadata
+- `SET_METADATA_LIST_FIELD { field, values[], updatedAt }` — the **only** way to write list metadata (`models`, `inputs`, `outputs`, `modules`, `alternatives`, `consequences`, `hooksUsed`, `dispatchTargets`, `consumedBy`)
+- `PATCH_CONTENT { offset, removeCount, insert, updatedAt }` — splice the body without resending it
 
 ### Linking — `DocumentRelationship` (system actions) since the drive-override migration
 - Use the `addRelationship` / `removeRelationship` GraphQL mutations — **not** `ADD_LINK` / `REMOVE_LINK`.
@@ -265,7 +267,7 @@ Valid `relationshipType`: `RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`
 
 ### Lifecycle
 - `SUBMIT_FOR_REVIEW { id, actor, timestamp, comment? }`
-- `APPROVE_NOTE { id, actor, timestamp, comment? }` (actor != author)
+- `APPROVE_NOTE { id, actor, timestamp, comment? }` — only from `IN_REVIEW` (`InvalidStatusTransitionError` otherwise), and actor != author (`SelfApprovalError`)
 - `REJECT_NOTE { id, actor, timestamp, comment }`
 - `ARCHIVE_NOTE { id, actor, timestamp, comment }`
 - `RESTORE_NOTE { id, actor, timestamp, comment? }`
@@ -285,6 +287,8 @@ Maps of Content — navigation documents organizing notes by topic. Live in `/kn
 - `ADD_TENSION { id, description, involvedRefs[], addedAt }`
 - `ADD_OPEN_QUESTION { question }`
 - `UPDATE_ORIENTATION { orientation, updatedAt }`
+- `UPDATE_DESCRIPTION { description, updatedAt }` — use this (and `UPDATE_ORIENTATION`) when a MoC for the topic already exists instead of creating a second one
+- `REMOVE_TENSION { id }`, `REMOVE_OPEN_QUESTION { id }`, `SET_METADATA_FIELD { field, value, updatedAt }`
 
 **Edges from a MoC — use `addRelationship`, not legacy `ADD_CORE_IDEA` / `ADD_CHILD_MOC` actions.** The drive-override migration moved core-idea and child-MoC relationships into the `DocumentRelationship` table. Articulation that previously lived in `contextPhrase` now belongs in the source note's content body.
 
@@ -317,6 +321,14 @@ Unresolved contradictions between knowledge claims. Live in `/ops/`.
 
 **Always also add the tension to the relevant MOC** via `ADD_TENSION` on the MOC document.
 
+## Document model: `bai/observation`
+
+Operational signals about how the vault is being worked (friction, surprises, process notes). Live in `/ops/`. The dashboard files **PENDING** observations under `PROCESSING_THROUGHPUT`.
+
+**State:** title, description, content, category (`METHODOLOGY` | `PROCESS` | `FRICTION` | `SURPRISE` | `QUALITY`), status (`PENDING` → `PROMOTED` → `IMPLEMENTED`, or `ARCHIVED`), observedAt, observedBy
+
+**Operations:** `CREATE_OBSERVATION { title, description, content?, category, observedAt, observedBy? }`, `PROMOTE_OBSERVATION`, `IMPLEMENT_OBSERVATION`, `ARCHIVE_OBSERVATION`
+
 ## Document model: `bai/source`
 
 Source material that feeds the extraction pipeline. Lives in `/sources/` folder.
@@ -325,7 +337,7 @@ Source material that feeds the extraction pipeline. Lives in `/sources/` folder.
 **Status lifecycle:** INBOX → EXTRACTING → EXTRACTED → ARCHIVED
 
 **Operations:**
-- `INGEST_SOURCE { title, content, sourceType, description?, author?, url?, createdAt, createdBy? }`
+- `INGEST_SOURCE { title, content, sourceType, description?, author?, url?, publishedAt?, method?, tool?, createdAt, createdBy? }` — `method` is where the skills sync stores a `sha256:<hash>` for change detection
 - `SET_SOURCE_STATUS { status }` — INBOX, EXTRACTING, EXTRACTED, ARCHIVED
 - `ADD_EXTRACTED_CLAIM { claimRef }` — link extracted note ID to source
 - `RECORD_EXTRACTION_STATS { claimCount, skippedCount, skipRate, extractedAt, extractedBy? }`
@@ -371,7 +383,7 @@ Singleton document tracking processing tasks. Lives in `/ops/queue/`.
 - `BLOCK_TASK { taskId, reason, updatedAt }`
 - `UNBLOCK_TASK { taskId, updatedAt }`
 
-**Phase order:** create → reflect → reweave → verify (for claim tasks)
+**Phase order:** `claim` tasks: create → reflect → reweave → verify. `enrichment` tasks: enrich → reflect → reweave → verify. These two are the only `taskType` values in `phaseOrder`; any other value (e.g. `SEED`) yields a task that can never advance or complete. The **final `ADVANCE_PHASE` auto-completes** the task — do not follow it with `COMPLETE_TASK`, which would double-count `completedCount`.
 
 **Important:** Check for existing tasks with the same `documentRef` before creating duplicates.
 
@@ -385,9 +397,10 @@ Documents must be placed in the correct folders:
 | bai/moc | /knowledge/ | Maps of Content |
 | bai/source | /sources/ | Raw input material |
 | bai/pipeline-queue | /ops/queue/ | Pipeline singleton |
-| bai/observation | /ops/sessions/ | Operational signals |
-| bai/knowledge-graph | /self/ | Graph singleton |
-| bai/vault-config | /self/ | Config singleton |
+| bai/observation | /ops/ | Operational signals |
+| bai/tension | /ops/ | Unresolved contradictions |
+| bai/health-report | /ops/health/ | Diagnostics singleton |
+| bai/vault-config | /self/ | Config singleton (the drive is detected by this document) |
 | bai/project | /projects/ | Project tracking (status, owner, team, deliverables) |
 | bai/wbs | /projects/ | Work-breakdown goal tree for a project |
 | _(methodology)_ | _(local: data/methodology/)_ | _(plugin reference, not in vault)_ |

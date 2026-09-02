@@ -62,8 +62,12 @@ created: <state.global.provenance.createdAt>
 
 ---
 Links:
-- [[<link.targetTitle>]] — <link.linkType>
+- [[<edge.targetTitle>]] — <edge.linkType>
 ```
+
+Read the links from the **graph**, not from `state.global.links[]` — that array is empty for anything linked since the relationship migration, so an export built from it has no links. One call per note (`knowledgeGraphForwardLinks(driveId, documentId) { targetDocumentId targetTitle linkType }`) or one call for the vault (`knowledgeGraphEdges(driveId)`), then join on the note id.
+
+Note that `knowledgeGraphDebug` returns only the indexed types (`bai/knowledge-note`, `bai/moc`): sources, tensions, observations, projects and WBS are not in it, so it is not a complete export on its own.
 
 3. Write to local filesystem:
 ```

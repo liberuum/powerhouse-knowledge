@@ -197,7 +197,7 @@ switchboard docs create --type bai/knowledge-note --name "my-note-slug" --drive 
 switchboard docs apply <doc-id> --actions '[
   {"type":"SET_TITLE","input":{"title":"My claim","updatedAt":"<ISO>"},"scope":"global"},
   {"type":"SET_DESCRIPTION","input":{"description":"Brief summary","updatedAt":"<ISO>"},"scope":"global"},
-  {"type":"SET_NOTE_TYPE","input":{"noteType":"CONCEPT","updatedAt":"<ISO>"},"scope":"global"},
+  {"type":"SET_NOTE_TYPE","input":{"noteType":"concept","updatedAt":"<ISO>"},"scope":"global"},
   {"type":"SET_CONTENT","input":{"content":"Full body...","updatedAt":"<ISO>"},"scope":"global"}
 ]'
 
@@ -217,7 +217,7 @@ over-long descriptions and bad timestamps all fail silently).
 - [ ] title, description (<= 200 chars, adds information beyond the title), noteType, content
 - [ ] topics added; provenance set in a SEPARATE dispatch from content
 - [ ] >= 2 typed relationships, each passing the articulation test
-- [ ] attached to a MoC (`addRelationship(<moc-uuid>, <note-uuid>, "RELATES_TO")`)
+- [ ] attached to a MoC (`addRelationship(<moc-uuid>, <note-uuid>, "CORE_IDEA")` — the MoC editor only renders `CORE_IDEA`/`CHILD_MOC` edges as membership; a `RELATES_TO` edge is indexed but never shows as belonging to the MoC)
 - [ ] lifecycle walked to CANONICAL (submit, then approve as a different actor)
 
 **Extracting from a source**
@@ -227,7 +227,7 @@ over-long descriptions and bad timestamps all fail silently).
 - [ ] no source left in INBOX/EXTRACTING once its notes exist
 
 **Any pipeline run**
-- [ ] task advanced through each phase with a handoff, then COMPLETE_TASK
+- [ ] task advanced through each phase with a handoff — the **final `ADVANCE_PHASE` auto-completes** the task (sets DONE, `completedCount+1`, `activeCount-1`). Do **not** follow it with `COMPLETE_TASK`: that increments `completedCount` a second time and the metrics never recover. `COMPLETE_TASK` is only for a task you are ending early.
 - [ ] no PENDING or FAILED tasks left behind
 - [ ] `/health` re-run and the report rewritten (the dashboard shows the LAST report)
 
@@ -310,10 +310,13 @@ All queries require `driveId: "<UUID>"`.
 | `bai/source` | Raw source material | `/sources/` |
 | `bai/pipeline-queue` | Task tracker (singleton) | `/ops/queue/` |
 | `bai/health-report` | Diagnostics (singleton) | `/ops/health/` |
-| `bai/knowledge-graph` | Graph (singleton) | `/self/` |
-| `bai/vault-config` | Config (singleton) | `/self/` |
+| `bai/vault-config` | Config (singleton; the drive is detected by this document) | `/self/` |
+| `bai/tension` | Unresolved contradictions | `/ops/` |
+| `bai/observation` | Operational signals | `/ops/` |
 | `bai/project` | Project tracking: status, owner, team, deliverables | `/projects/` |
 | `bai/wbs` | Work-breakdown goal tree for a project | `/projects/` |
+
+The drive app scaffolds 12 folders on first open: `knowledge/{notes,inbox,insights}`, `sources`, `projects`, `ops/{sessions,health,queue}`, `self/methodology`. There is **no** graph singleton and **no** `bai/knowledge-graph` document — the graph lives in the indexer's tables and is read through `knowledgeGraph*` queries. The three singletons are PipelineQueue (`/ops/queue/`), HealthReport (`/ops/health/`) and VaultConfig (`/self/`).
 
 ## Relationships
 
