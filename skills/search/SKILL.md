@@ -75,6 +75,17 @@ For known terms or exact phrases:
 ```bash
 # Title + description match
 switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "<term>", limit: 20) { documentId title noteType status } }'
+```
+
+**Archived notes are not returned** by any discovery query — `knowledgeGraphSearch`, `FullSearch`, `SemanticSearch`, `Similar`, `ByTopic`, `RelatedByTopic` — because an `ARCHIVED` note is a claim the vault no longer holds as current. When the user asks what the vault *used* to say, or you are checking whether a claim was already retired before creating a duplicate, pass `includeArchived: true`:
+
+```bash
+switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "<term>", includeArchived: true) { documentId title status } }'
+```
+
+An archived hit should be reported as history; follow its incoming `SUPERSEDES` edge (`knowledgeGraphBacklinks`) to the current claim.
+```bash
+# (structural reads — nodes, backlinks, forward links, nodesByStatus — are never filtered)
 
 # Title + description + full content match
 switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "<term>", limit: 20) { documentId title noteType } }'

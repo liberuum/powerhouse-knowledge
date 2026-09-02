@@ -11,7 +11,7 @@ tools:
   - WebFetch
   - Agent
 ---
-<!-- GENERATED from AGENT.md (sha256:1a3d0abd37bdacb7) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:b6e7cad10bf2c353) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -511,3 +511,4 @@ Each file has YAML frontmatter: `description`, `kind` (`research|foundation|meth
 - **Minimum 2 connections** per note, and a `CORE_IDEA` edge from a MoC.
 - **Comprehensive extraction**: skip rate < 10% for domain-relevant sources — and report it honestly when it isn't.
 - Confidence vocabulary, where used: `grounded` | `established` | `speculative`.
+- **Knowledge is retired, not deleted.** When new information disregards a claim: write the new note, `docs link <new> <old> -t SUPERSEDES --reason "…"`, then `ARCHIVE_NOTE` the old one with a comment. Archived notes leave search, topic browsing and semantic neighbours (`includeArchived: true` brings them back for archaeology) but keep their history, backlinks and the `SUPERSEDES` chain — the editor shows "Superseded by →" and chat chips mark them. Duplicates: merge, `SUPERSEDES` from the survivor, archive the duplicate. `docs delete` is for things that were never knowledge — test artefacts, accidental creates — because deletion breaks provenance in three places at once (the source's `extractedClaims`, `DERIVED_FROM` edges, and every chat citation that pointed at it) while saving nothing in an event-sourced store.
