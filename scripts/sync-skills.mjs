@@ -17,12 +17,21 @@
  *
  * There is NO default endpoint (the user chooses the vault):
  *   node scripts/sync-skills.mjs --endpoint <.../graphql> --drive <uuid-or-slug> \
- *     [--skills-dir <dir>]... [--dry-run]
+ *     --profile <switchboard-cli profile> [--skills-dir <dir>]... [--dry-run]
+ *
+ * Writes go through the switchboard CLI (`--profile`), so every operation
+ * is SIGNED by the profile's identity — the person running the sync — and
+ * every DERIVED_FROM edge carries its reason, the same rules the plugin's
+ * pre-write hooks hold the agent to. Reads stay on GraphQL. Without
+ * --profile the legacy raw-GraphQL path is used: unsigned (the Switchboard
+ * signs with its own identity) and bare edges — it warns.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 
 // ── args ────────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -34,16 +43,23 @@ function arg(flag, multi = false) {
 }
 const ENDPOINT = arg("--endpoint");
 const DRIVE = arg("--drive");
+const PROFILE = arg("--profile");
+/** Restrict the run to these skill names (comma-separated) — for a careful first run. */
+const ONLY = new Set((arg("--only") ?? "").split(",").map((x) => x.trim()).filter(Boolean));
 const DRY = args.includes("--dry-run");
 const APPROVER = arg("--approver") ?? "knowledge-agent";
 const skillDirs = arg("--skills-dir", true);
 if (!ENDPOINT || !DRIVE) {
   console.error(
-    "usage: node scripts/sync-skills.mjs --endpoint <switchboard /graphql URL> --drive <uuid-or-slug> [--skills-dir <dir>]... [--dry-run]\n" +
+    "usage: node scripts/sync-skills.mjs --endpoint <switchboard /graphql URL> --drive <uuid-or-slug> --profile <cli profile> [--skills-dir <dir>]... [--dry-run]\n" +
       "No default endpoint: ask the user which vault to sync into.",
   );
   process.exit(1);
 }
+if (!PROFILE && !DRY)
+  console.warn(
+    "⚠ no --profile: writes go through raw GraphQL — UNSIGNED (attributed to the Switchboard's identity) and edges without reasons. Pass --profile <name> for signed, articulated writes.",
+  );
 const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const defaultDirs = [join(pluginRoot, "skills")];
 if (existsSync(join(pluginRoot, "external-skills")))
@@ -51,6 +67,38 @@ if (existsSync(join(pluginRoot, "external-skills")))
 const dirs = skillDirs.length ? skillDirs : defaultDirs;
 const READER = ENDPOINT.replace(/\/graphql\/?$/, "/graphql/r");
 const AUTHOR = "skill-sync";
+
+// ── switchboard CLI (signed writes) ────────────────────────────────────
+// The CLI signs with the profile's identity, stamps ids/timestamps, and
+// resolves ids or slugs. SWITCHBOARD_APP_NAME labels the operations as the
+// plugin's, the way the agent's pre-write hook does.
+const CLI_ENV = {
+  ...process.env,
+  SWITCHBOARD_APP_NAME: process.env.SWITCHBOARD_APP_NAME ?? "powerhouse-knowledge",
+};
+function cli(cliArgs) {
+  const out = execFileSync("switchboard", ["-p", PROFILE, ...cliArgs, "--format", "json"], {
+    env: CLI_ENV,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  try {
+    return JSON.parse(out);
+  } catch {
+    return out;
+  }
+}
+if (PROFILE && !DRY) {
+  const st = cli(["auth", "status"]);
+  if (!st || typeof st !== "object" || !("signing" in st))
+    throw new Error("switchboard CLI too old for signed writes (need >= 1.0.36): run `switchboard update`");
+  if (!st.signing)
+    throw new Error(
+      `profile '${PROFILE}' has no signing identity — run: switchboard -p ${PROFILE} auth login --renown`,
+    );
+  console.log(`signing as ${st.app_name ?? "?"} (${String(st.did ?? "").slice(0, 24)}…) for ${st.address}`);
+}
 
 // ── tiny gql client (keep-alive via global fetch; volume is small) ─────
 async function gql(query, variables, endpoint = READER) {
@@ -68,20 +116,49 @@ const now = () => new Date().toISOString(); // always Z-suffixed
 function envelope(action) {
   return { id: randomUUID(), timestampUtcMs: now(), scope: "global", ...action };
 }
-async function mutate(docId, actions) {
+async function mutate(docId, actions, { verbatim = false } = {}) {
   if (DRY) return;
+  const stamped = actions.map(envelope);
+  if (PROFILE) {
+    // One file per batch: the CLI signs each action and waits for the job.
+    // `verbatim` is for source ingestion: a SKILL.md may legitimately
+    // contain the two characters backslash-n as prose (the skills that
+    // document that very bug do), which the CLI's double-encoding guard
+    // would otherwise refuse. Generated note content keeps the guard.
+    const file = join(tmpdir(), `sync-skills-${randomUUID()}.json`);
+    writeFileSync(file, JSON.stringify(stamped));
+    try {
+      cli(["docs", "apply", docId, "--file", file, "--wait", ...(verbatim ? ["--allow-literal-escapes"] : [])]);
+    } finally {
+      unlinkSync(file);
+    }
+    return;
+  }
   await gql(
     "mutation($id: String!, $actions: [JSONObject!]!){ mutateDocument(documentIdentifier: $id, actions: $actions){ documentType } }",
-    { id: docId, actions: actions.map(envelope) },
+    { id: docId, actions: stamped },
   );
 }
-async function createDoc(ns, name) {
+const NS_TYPE = { Source: "bai/source", KnowledgeNote: "bai/knowledge-note", Moc: "bai/moc" };
+/** Create a document inside `folder`; returns its id. */
+async function createDoc(ns, name, folder) {
+  if (PROFILE) {
+    const r = cli([
+      "docs", "create", "--type", NS_TYPE[ns], "--name", name,
+      "--drive", driveId, "--parent-folder", folder,
+    ]);
+    const id = r?.id ?? r?.documentId;
+    if (!id) throw new Error(`docs create returned no id for ${name}: ${JSON.stringify(r).slice(0, 200)}`);
+    return id;
+  }
   const d = await gql(
     `mutation($name: String!, $p: String) { ${ns} { createDocument(name: $name, parentIdentifier: $p) { id } } }`,
     { name, p: driveId },
     ENDPOINT,
   );
-  return d[ns].createDocument.id;
+  const id = d[ns].createDocument.id;
+  await moveNode(id, folder);
+  return id;
 }
 async function moveNode(id, folder) {
   // `srcFolder` is the reactor's name for the moved node, folder OR file.
@@ -91,8 +168,13 @@ async function moveNode(id, folder) {
     ENDPOINT,
   );
 }
-async function addRel(source, target, type) {
+/** Add an edge; `reason` is the articulation stored on it (knowledge edges must have one). */
+async function addRel(source, target, type, reason) {
   if (DRY) return;
+  if (PROFILE) {
+    cli(["docs", "link", source, target, "-t", type, ...(reason ? ["--reason", reason, "--confidence", "grounded"] : [])]);
+    return;
+  }
   await gql(
     "mutation($s: String!, $t: String!, $r: String!){ addRelationship(sourceIdentifier: $s, targetIdentifier: $t, relationshipType: $r, branch: \"main\"){ documentType } }",
     { s: source, t: target, r: type },
@@ -226,8 +308,7 @@ for (const m of mocDocs) {
 
 // ── MOC ─────────────────────────────────────────────────────────────────
 if (!mocId && !DRY) {
-  mocId = await createDoc("Moc", "agent-skills");
-  await moveNode(mocId, knowledgeId);
+  mocId = await createDoc("Moc", "agent-skills", knowledgeId);
   await mutate(mocId, [{
     type: "CREATE_MOC",
     input: {
@@ -252,6 +333,7 @@ if (mocId && ecosystemMocId && !DRY) {
 // ── per-skill sync ──────────────────────────────────────────────────────
 let created = 0, updated = 0, skipped = 0;
 for (const sk of skills) {
+  if (ONLY.size > 0 && !ONLY.has(sk.name)) continue;
   const prior = existingSources[sk.name];
   if (prior && prior.hash === sk.hash) { skipped++; continue; }
   const verb = prior ? "update" : "create";
@@ -260,7 +342,7 @@ for (const sk of skills) {
 
   // source
   let srcId = prior?.id;
-  if (!srcId) { srcId = await createDoc("Source", `skill-${sk.name}`); await moveNode(srcId, sourcesFolder); }
+  if (!srcId) srcId = await createDoc("Source", `skill-${sk.name}`, sourcesFolder);
   await mutate(srcId, [{
     type: "INGEST_SOURCE",
     input: {
@@ -275,12 +357,12 @@ for (const sk of skills) {
       createdAt: now(),
       createdBy: AUTHOR,
     },
-  }]);
+  }], { verbatim: true });
 
   // note
   let noteId = existingNotes[sk.name];
   const isNew = !noteId;
-  if (isNew) { noteId = await createDoc("KnowledgeNote", `skill-${sk.name}`); await moveNode(noteId, notesFolder); }
+  if (isNew) noteId = await createDoc("KnowledgeNote", `skill-${sk.name}`, notesFolder);
   const firstSentence = sk.description.split(/(?<=\.)\s/)[0] ?? sk.description;
   const content = [
     `## When to use`,
@@ -319,10 +401,21 @@ for (const sk of skills) {
     await mutate(noteId, [{ type: "APPROVE_NOTE", input: { id: randomUUID(), actor: APPROVER, timestamp: now(), comment: "mechanical sync from canonical repo copy" } }]);
   }
 
-  // edges + source close-out (mandatory)
-  await addRel(noteId, srcId, "DERIVED_FROM");
+  // edges + source close-out (mandatory). The DERIVED_FROM reason says
+  // exactly what was distilled from where; CORE_IDEA is navigation and
+  // needs none. Both are idempotent, so an update re-asserts them.
+  await addRel(
+    noteId,
+    srcId,
+    "DERIVED_FROM",
+    `Discovery note distilled by sync-skills from the skill's SKILL.md frontmatter description and its section headings (source hash sha256:${sk.hash.slice(0, 12)}); the full procedure is the source text`,
+  );
   if (mocId) await addRel(mocId, noteId, "CORE_IDEA");
-  await mutate(srcId, [{ type: "ADD_EXTRACTED_CLAIM", input: { claimRef: noteId } }]);
+  // ADD_EXTRACTED_CLAIM appends without deduplicating; a re-sync must not
+  // grow the source's claim list with the same note again.
+  const before = await readState(srcId);
+  if (!(before.extractedClaims ?? []).includes(noteId))
+    await mutate(srcId, [{ type: "ADD_EXTRACTED_CLAIM", input: { claimRef: noteId } }]);
   await mutate(srcId, [{ type: "RECORD_EXTRACTION_STATS", input: { claimCount: 1, skippedCount: 0, skipRate: 0, extractedAt: now(), extractedBy: AUTHOR } }]);
   await mutate(srcId, [{ type: "SET_SOURCE_STATUS", input: { status: "EXTRACTED" } }]);
 
