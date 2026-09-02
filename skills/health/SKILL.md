@@ -110,13 +110,13 @@ From the Step 2 data: a note is covered when it is the target of a `CORE_IDEA` e
 
 | Category | PASS | WARN | FAIL |
 |---|---|---|---|
-| SCHEMA_COMPLIANCE | all notes have title, type, provenance | 1-2 missing fields | 3+ missing |
+| SCHEMA_COMPLIANCE | all notes have title, lowercase type, provenance | any missing (the dashboard never grades this FAIL) | — |
 | ORPHAN_DETECTION | 0 orphans | 1-3 orphans | 4+ orphans |
 | LINK_HEALTH | avg links >= 2.0 | avg >= 1.0 | avg < 1.0 |
 | DESCRIPTION_QUALITY | all present + informative | 1-2 missing or restated | 3+ missing |
 | MOC_COHERENCE | every note has ≥1 topic | 1-3 notes without topics | 4+ notes without topics |
 | THREE_SPACE_BOUNDARIES | 0 open tensions | 1-3 open tensions | 4+ open tensions |
-| PROCESSING_THROUGHPUT | 0 pending tasks AND no stranded sources | 1-2 pending/stranded | 3+ pending, FAILED, or stranded |
+| PROCESSING_THROUGHPUT | 0 pending observations, 0 stuck tasks, 0 stranded sources | 1–5 pending observations, or 1–2 stuck tasks / stranded sources | >5 pending observations (the dashboard's own rule), or 3+ stuck/FAILED tasks or stranded sources |
 | STALE_NOTES | 0 DRAFT notes > 30 days | 1-3 stale | 4+ stale |
 
 **Description quality check (not just presence):**
@@ -221,7 +221,7 @@ Drive: <drive-name> (<drive-slug>)
 Saved to: bai/health-report (<doc-id>)
 
 Notes: N | Links: N | Density: N%
-Orphans: N | Research claims: N | MOCs: N
+Orphans: N | MOCs: N (hierarchy: 1 HUB, N unreachable)
 Avg links/note: N | Methodology grounding: N/N
 
 PASS  SCHEMA_COMPLIANCE      All N notes have title, type, provenance

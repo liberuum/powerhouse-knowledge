@@ -19,6 +19,7 @@ description: Switchboard CLI commands for Knowledge Vault operations. Use as an 
 > auto-stamp every action with `id` + `timestampUtcMs` and resolve drive slugs to UUIDs.
 > A single raw write missing the action `id` permanently breaks sync for every connected client.
 > Bulk writes: batch into one `switchboard docs apply --file` call.
+> CLI ≥ 1.0.32 refuses `apply`/`mutate` payloads whose strings carry a literal `\n`/`\t`/`\r` (double-encoded line breaks) and names the field; `--allow-literal-escapes` overrides for a string that genuinely contains that text.
 > If you must write raw anyway, follow every rule in CONFIGURATION.md → "Writing via raw GraphQL — the safety rules".
 
 Alternative to MCP for vault operations. All commands work against local or remote Switchboard instances.
@@ -222,13 +223,13 @@ the referenced document's UUID and is optional):
 switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"claim","target":"Source Title","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
-## CRITICAL: Operation Order Bug in `docs apply`
+## Batching with `docs apply`: order is preserved — but a batch fails as a unit
 
-**`docs apply` reverses operation order** when batching dependent actions. If action B depends on action A creating state, B executes before A and fails with errors like "Task not found".
+**Verified 2026-09-02 (CLI 1.0.32, current reactor): `docs apply` preserves operation order.** Two `SET_TITLE`s in one batch landed at increasing indices in the order given and the last one won. Earlier versions of this file claimed the order was reversed; if you are on an old deployment and see "Task not found" from a batch, that is the symptom — otherwise ignore it.
 
-**Safe to batch:** Independent actions (SET_TITLE + SET_DESCRIPTION + SET_CONTENT) — order doesn't matter.
+**Safe to batch:** independent actions (SET_TITLE + SET_DESCRIPTION + SET_CONTENT + ADD_TOPIC).
 
-**Must be sequential:** Dependent actions (ADD_TASK then ASSIGN_TASK then ADVANCE_PHASE) — use `docs mutate` one at a time:
+**Still dispatch pipeline ops one at a time** (ADD_TASK, then ASSIGN_TASK, then ADVANCE_PHASE) — not because of ordering, but because a validation failure anywhere in a batch rejects the *whole* batch, and these ops each validate against state the previous one created. Separate `docs mutate` calls give you one clear failure point and let you read the queue back between steps:
 ```bash
 switchboard docs mutate <id> --op addTask --input '{...}'
 switchboard docs mutate <id> --op assignTask --input '{...}'
@@ -297,7 +298,7 @@ switchboard query 'mutation { addRelationship(sourceIdentifier:"<moc-id>", targe
 
 ### 5. Pipeline Tracking (MUST be sequential — never batch!)
 
-**`docs apply` reverses dependent operations.** Always use `docs mutate` one at a time:
+**Dispatch these one at a time with `docs mutate`** — a failure in a batch rejects the whole batch, and each op validates against the previous one's result:
 
 ```bash
 PQ=<pipeline-queue-id>

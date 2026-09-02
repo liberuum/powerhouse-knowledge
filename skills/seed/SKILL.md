@@ -24,7 +24,7 @@ switchboard docs tree <drive-slug> --format json
 # Find: kind="folder", name="sources", parentFolder=null
 ```
 
-3. **Create the source document** in the correct folder:
+3. **Create the source document** in the correct folder. Use the source's real title as `--name`: sources are not graph-indexed, so the drive node name is what the note editor shows next to a `DERIVED_FROM` link — a slug here reads as a slug there.
 ```bash
 switchboard docs create --type bai/source --name "<source title>" --drive <drive-slug> --parent-folder <sources-folder-uuid> --format json
 ```

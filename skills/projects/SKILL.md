@@ -103,10 +103,10 @@ switchboard docs mutate $WBS --op createGoal --input '{"id":"<goal-1>","descript
 switchboard docs mutate $WBS --op createGoal --input '{"id":"<goal-1a>","description":"<...>","parentId":"<goal-1>"}'
 ```
 
-**Dispatch goal creation one at a time via `docs mutate`, never batched through `docs
-apply`.** A child's `CREATE_GOAL` depends on its parent already existing in state, and
-`docs apply` is documented elsewhere in this plugin to reverse operation order for
-dependent actions.
+**Dispatch goal creation one at a time via `docs mutate` rather than one `docs apply`
+batch.** `docs apply` preserves order (verified on CLI 1.0.32), but a child's `CREATE_GOAL`
+validates against its parent existing, and a validation failure anywhere in a batch
+rejects the whole batch — one call per goal gives one clear failure point.
 
 ## Step 3: Read a project and its linked WBS
 

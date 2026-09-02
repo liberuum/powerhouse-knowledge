@@ -13,13 +13,15 @@ description: Run the knowledge processing pipeline on a source or batch of notes
 > vault drive*. If it is still ambiguous which vault the user means, **ask for
 > the Switchboard URL and the drive** — never assume an endpoint.
 
-Run the 6R processing pipeline on source material or individual notes.
+Carry a source through to connected, verified notes in the MoC hierarchy. The six R names (Record, Reduce, Reflect, Reweave, Verify, Rethink) are the vocabulary; the pipeline-queue task underneath has **four phases**, and this skill drives them:
 
 ## Pipeline Phases
 
 ```
-Source -> CREATE (extract claims) -> REFLECT (connect) -> REWEAVE (update old notes) -> VERIFY (quality gate + auto-repair)
+Source -> CREATE (extract claims) -> REFLECT (connect) -> REWEAVE (MoC membership + hierarchy, update old notes) -> VERIFY (quality gate + auto-repair)
 ```
+
+Record (`/seed`) happens before the task exists; Rethink (`/health`, `/graph`) after it completes.
 
 Each phase is tracked in the `bai/pipeline-queue` singleton document.
 
@@ -27,7 +29,7 @@ Each phase is tracked in the `bai/pipeline-queue` singleton document.
 
 **Every pipeline run MUST update the `bai/pipeline-queue` document.** After completing each phase (create, reflect, reweave, verify), immediately record the handoff via ASSIGN_TASK + ADVANCE_PHASE. The task must reach DONE status by the end of the pipeline. Never skip pipeline tracking — the app's Pipeline view reads from this document.
 
-Pipeline operations (ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE, COMPLETE_TASK, FAIL_TASK) are **dependent** — each requires the previous one to have created state. **Always use sequential `switchboard docs mutate` calls, never `docs apply`** (which reverses operation order for dependent actions).
+Pipeline operations (ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE, COMPLETE_TASK, FAIL_TASK) are **dependent** — each requires the previous one to have created state. **Use sequential `switchboard docs mutate` calls, not one `docs apply` batch.** Not for ordering — `docs apply` preserves order (verified on CLI 1.0.32) — but because a validation failure anywhere in a batch rejects the whole batch, and each of these ops validates against the state the previous one created. One call per op gives one clear failure point and lets you read the queue back between steps.
 
 The CLI auto-injects `timestampUtcMs` and `action.id` on all actions — no need to generate them manually.
 
