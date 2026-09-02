@@ -256,7 +256,7 @@ for (const sk of skills) {
   if (prior && prior.hash === sk.hash) { skipped++; continue; }
   const verb = prior ? "update" : "create";
   console.log(`${verb}: ${sk.name}`);
-  if (DRY) { prior ? updated++ : created++; continue; }
+  if (DRY) { if (prior) updated++; else created++; continue; }
 
   // source
   let srcId = prior?.id;
@@ -331,7 +331,7 @@ for (const sk of skills) {
   const nSt = await readState(noteId);
   const ok = sSt.status === "EXTRACTED" && (sSt.provenance?.method ?? "").endsWith(sk.hash) && (nSt.title ?? "").startsWith(`Agent skill: /${sk.name}`);
   if (!ok) { console.error(`VERIFY FAILED for ${sk.name}: source=${sSt.status}/${sSt.method}, note=${nSt.title}`); process.exitCode = 1; }
-  prior ? updated++ : created++;
+  if (prior) updated++; else created++;
 }
 // Vault-native skills: present in the vault, not bundled with the plugin.
 // That is a fully supported home — added via scripts/add-skill.mjs or any

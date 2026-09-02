@@ -22,7 +22,7 @@ When the user wants an **answer**, not a list, do not fetch hits one at a time. 
 **Call 1 — the best notes, with their full text** (~1 s):
 
 ```bash
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<the question, verbatim>", mode: HYBRID, limit: 6) { similarity matchedBy node { documentId title description content noteType status } } }' --format json > /tmp/hits.json
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<the question, verbatim>", mode: HYBRID, limit: 6) { similarity matchedBy node { documentId title description content noteType status documentType } } }' --format json > /tmp/hits.json
 ```
 
 **Call 2 — the neighbourhood of the top 3, and the MoC map, in ONE request** (~0.4 s). Substitute the three ids from call 1:
@@ -45,7 +45,7 @@ switchboard query '{
 What that gives you, and how to use it:
 
 - **`content` of the 6 hits** — quote the notes' own words; cite each by `documentId`.
-- **`out*` / `in*` edges** — `CONTRADICTS` edges are findings (say so and cite both sides); `BUILDS_ON` / `SUPERSEDES` tell you which claim is current. A `CORE_IDEA` **backlink** is the MoC that owns the note — resolve its title from `mocs` and tell the user which cluster the answer lives in, so they can explore around it.
+- **`out*` / `in*` edges** — `CONTRADICTS` edges are findings (say so and cite both sides); `BUILDS_ON` / `SUPERSEDES` tell you which claim is current. A `CORE_IDEA` **backlink** is the MoC that owns the note — resolve its title from `mocs` and tell the user which cluster the answer lives in, so they can explore around it. An `INVOLVES` **backlink** is a tension that involves the note: the claim is contested — read the tension (`docs get`) and report its status.
 - **`sim*`** — notes that say similar things without a link: candidates for a follow-up, or for `/connect`.
 - If a hit is a MoC (`status = "MOC"`), its `content` is the orientation — a ready-made summary of the whole cluster; mention it and its `CHILD_MOC` children rather than re-deriving.
 
@@ -130,7 +130,17 @@ switchboard query '{ knowledgeGraphNodesByStatus(driveId: "<UUID>", status: "DRA
 switchboard query '{ knowledgeGraphStale(driveId: "<UUID>", since: "<ISO>", limit: 50) { documentId title updatedAt } }'
 ```
 
-**MoCs are graph nodes too.** They come back from every query above with `status = "MOC"` (not a `NoteStatus` value) and `noteType = "MOC (<tier>)"`. Filter them out when the question is about notes, and don't render `"MOC"` through a note-status badge.
+**Five kinds of node come back from every query above.** Select `documentType` to tell them apart:
+
+| `documentType` | what it is | `status` carries | how to use it |
+|---|---|---|---|
+| `bai/knowledge-note` | an atomic claim | DRAFT / IN_REVIEW / CANONICAL / ARCHIVED | cite as knowledge |
+| `bai/research-claim` | a methodology claim | `CANONICAL` | cite as knowledge (imported research) |
+| `bai/moc` | a map of a cluster | `"MOC"` (sentinel; `noteType = "MOC (<tier>)"`) | its `content` is the orientation — a ready summary; don't render through a note-status badge |
+| `bai/tension` | a recorded contradiction between notes | OPEN / RESOLVED / DISSOLVED | report as a disagreement, never as a fact; its `INVOLVES` edges point at the notes |
+| `bai/observation` | a note about the vault's own process | PENDING / PROMOTED / IMPLEMENTED / ARCHIVED | process signal, not subject knowledge |
+
+Filter to `bai/knowledge-note` (and `bai/research-claim`) when the question is about the subject. A tension in the hits is itself a finding — say the notes disagree and cite both sides. `knowledgeGraphNodesByType(driveId, documentType)` lists one kind directly.
 
 ### 7. Fallback: Full document scan
 

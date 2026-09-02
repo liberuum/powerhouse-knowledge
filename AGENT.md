@@ -87,7 +87,7 @@ Two things to verify before trusting results, because both fail quietly:
 switchboard query '{ __schema { types { name } } }' --format json | grep -c KnowledgeNote
 
 # 2. Has the graph projection been built for this drive?
-switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount } }'
+switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount noteCount edgeCount orphanCount openTensionCount } }'
 ```
 
 If step 2 errors with `relation "<hash>.graph_nodes" does not exist`, the
@@ -351,7 +351,9 @@ Provenance: `SET_PROVENANCE { author, sourceOrigin, sessionId?, createdAt }` —
 
 Unresolved contradictions between claims. Live in `/ops/`. **State:** title, description, content, involvedRefs[], status (`OPEN` | `RESOLVED` | `DISSOLVED`), observedAt, observedBy, resolution, resolvedAt.
 
-`CREATE_TENSION { title, description, content?, involvedRefs[], observedAt, observedBy? }` · `RESOLVE_TENSION { resolution, resolvedAt }` (one side is right) · `DISSOLVE_TENSION { resolution, resolvedAt }` (both compatible) · `ADD_INVOLVED_REF { ref }`. Create one whenever you add a `CONTRADICTS` edge, and also `ADD_TENSION` on the relevant MoC. Open tensions are what `/health` grades under `THREE_SPACE_BOUNDARIES`.
+`CREATE_TENSION { title, description, content?, involvedRefs[], observedAt, observedBy? }` · `RESOLVE_TENSION { resolution, resolvedAt }` (one side is right) · `DISSOLVE_TENSION { resolution, resolvedAt }` (both compatible) · `ADD_INVOLVED_REF { ref }`.
+
+**Opened automatically.** On a Switchboard running vault package ≥ 1.0.55 the graph-indexer opens a tension the moment a `CONTRADICTS` relationship lands — in `/ops` with a short title (`Contradiction on <shared topics or words>`; both claims in full in the description), `observedBy: graph-indexer`, one per unordered pair, and it adds an `ADD_TENSION` entry (id = the tension's document id) to every MoC holding either note as a `CORE_IDEA`. After adding a CONTRADICTS edge, read the tension back (it is the `INVOLVES` backlink on either note) and **articulate** the conflict in both notes' content, then resolve or dissolve when you can. Do not create a second one by hand; fall back to manual creation only on an older Switchboard. See [skills/connect/SKILL.md](skills/connect/SKILL.md) § Tension detection. Open tensions are what `/health` grades under `THREE_SPACE_BOUNDARIES`.
 
 ### `bai/observation`
 
@@ -386,13 +388,15 @@ switchboard query 'mutation { removeRelationship(sourceIdentifier:"<source-uuid>
 |------|-----------|---------|
 | `RELATES_TO` | note → note | General thematic connection |
 | `BUILDS_ON` | note → note | Extends or strengthens the target |
-| `CONTRADICTS` | note → note | Challenges the target — also create a `bai/tension` |
+| `CONTRADICTS` | note → note | Challenges the target — the indexer opens a `bai/tension` for the pair |
 | `SUPERSEDES` | note → note | Replaces the target |
 | `DERIVED_FROM` | note → source | Extracted from this source |
 | `CORE_IDEA` | MoC → note | This note is a core idea of the MoC (membership) |
 | `CHILD_MOC` | MoC → MoC | Parent → child in the hierarchy |
+| `INVOLVES` | tension → note | **Derived** by the indexer from a tension's `involvedRefs`; not created with `addRelationship` |
+| `PROMOTED_TO` | observation → note | **Derived** from an observation's `promotedTo` |
 
-Idempotent on `(source, target, type)`. The edge carries no context phrase — the *reason* a link exists belongs in the source note's body (the articulation test). An **orphan** is a node with zero **incoming** edges; outgoing links from it do not change that.
+The two derived types appear in `knowledgeGraphEdges`, backlinks and forward links so a reader sees what involves a note, but they are **not** knowledge edges: `stats.edgeCount`, density, orphans, triangles and bridges count the seven types above only. Idempotent on `(source, target, type)`. The edge carries no context phrase — the *reason* a link exists belongs in the source note's body (the articulation test). An **orphan** is a node with zero **incoming** edges; outgoing links from it do not change that.
 
 ## MoC hierarchy
 
@@ -416,7 +420,7 @@ Read the hierarchy with `knowledgeGraphEdges(driveId)` filtered to `CHILD_MOC` (
 
 ## Graph indexer queries (quick reference)
 
-All queries take `driveId: "<UUID>"` (a slug is also accepted). Only `bai/knowledge-note` and `bai/moc` are indexed; edges come from `addRelationship`.
+All queries take `driveId: "<UUID>"` (a slug is also accepted). Five kinds are indexed — `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation` — and every node carries `documentType` so you can tell them apart (see [skills/search/SKILL.md](skills/search/SKILL.md) for the table). Tensions and observations are indexed to be *found*, not counted as knowledge: they never appear in `orphans`, and `stats` reports `noteCount`, `mocCount`, `claimCount`, `tensionCount`, `openTensionCount`, `observationCount` beside the total `nodeCount`. Knowledge edges come from `addRelationship`; `INVOLVES` / `PROMOTED_TO` are derived from state.
 
 | Query | Use when |
 |-------|----------|
@@ -425,16 +429,17 @@ All queries take `driveId: "<UUID>"` (a slug is also accepted). Only `bai/knowle
 | `knowledgeGraphSearch(query, limit)` | Title+description only |
 | `knowledgeGraphNodeByDocumentId(documentId)` | One full node (content, topics) |
 | `knowledgeGraphNodesByStatus(status)` | All notes in a lifecycle state, or all MoCs (`"MOC"`) |
+| `knowledgeGraphNodesByType(documentType)` | All nodes of one kind — e.g. every `bai/tension` |
 | `knowledgeGraphByTopic(topic)` / `knowledgeGraphTopics` | Topic membership / the topic vocabulary with counts |
 | `knowledgeGraphSimilar(documentId, limit)` | Semantic neighbours of a note |
 | `knowledgeGraphRelatedByTopic(documentId, limit)` | Notes sharing topics |
 | `knowledgeGraphForwardLinks(documentId)` / `knowledgeGraphBacklinks(documentId)` | Edges out of / into a note (the real link data). `targetTitle` is denormalised at link time and can be `null` for a target indexed later — resolve via `knowledgeGraphNodeByDocumentId` when you need the title |
 | `knowledgeGraphConnections(documentId, depth)` | BFS over outgoing edges |
 | `knowledgeGraphEdges` / `knowledgeGraphNodes` | The whole graph in one call each — cheaper than N queries when scanning |
-| `knowledgeGraphStats` / `knowledgeGraphDensity` / `knowledgeGraphOrphans` | Counts (MoCs included), density, zero-incoming nodes |
+| `knowledgeGraphStats` / `knowledgeGraphDensity` / `knowledgeGraphOrphans` | Per-kind counts (`noteCount`, `mocCount`, `openTensionCount`, …; `nodeCount` is the total), density over knowledge nodes, zero-incoming notes/MoCs/claims |
 | `knowledgeGraphTriangles(limit)` / `knowledgeGraphBridges` | Synthesis opportunities / articulation points (bridges is O(V·E) — avoid on large vaults) |
 | `knowledgeGraphByAuthor(author)` / `knowledgeGraphByOrigin(origin)` / `knowledgeGraphRecent(limit, since)` | Provenance and recency |
-| `knowledgeGraphStale(since, limit)` / `knowledgeGraphHistory(documentId)` / `knowledgeGraphActivity(since)` / `knowledgeGraphActivityByType(operationType)` | Change tracking |
+| `knowledgeGraphStale(since, limit)` / `knowledgeGraphHistory(documentId)` / `knowledgeGraphActivity(since)` / `knowledgeGraphActivityByType(operationType)` | Change tracking. Each `OperationRecord` carries `inputJson` (what changed), `signerAddress`, `signerApp`, `signerKey` (did:key) and `signature` — the stored tuple, verifiable by any reader (ECDSA P-256 over `"\x19Signed Operation:\n"+len+timestamp+did+hash+prevStateHash`) |
 | `knowledgeGraphMissingEmbeddings` | Should be `[]`; otherwise semantic search is degraded |
 | `knowledgeGraphReindex(driveId)` (mutation) | Rebuild the index after a deployment or bulk import |
 

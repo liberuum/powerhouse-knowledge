@@ -61,7 +61,7 @@ Run these queries **in parallel** (they are independent):
 
 ```bash
 # Graph stats
-switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount } }'
+switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount noteCount mocCount claimCount tensionCount openTensionCount observationCount } }'
 
 # Density
 switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
@@ -76,20 +76,22 @@ Do **not** read notes one by one with `docs get` — on a 500-note vault that is
 
 ```bash
 switchboard query "{
-  stats:   knowledgeGraphStats(driveId:\"$D\"){ nodeCount edgeCount orphanCount }
+  stats:   knowledgeGraphStats(driveId:\"$D\"){ nodeCount edgeCount orphanCount noteCount mocCount claimCount tensionCount openTensionCount observationCount }
   density: knowledgeGraphDensity(driveId:\"$D\")
   orphans: knowledgeGraphOrphans(driveId:\"$D\"){ documentId title noteType status }
   mocs:    knowledgeGraphNodesByStatus(driveId:\"$D\", status:\"MOC\"){ documentId title noteType }
   drafts:  knowledgeGraphNodesByStatus(driveId:\"$D\", status:\"DRAFT\"){ documentId }
   stale:   knowledgeGraphStale(driveId:\"$D\", since:\"<ISO 30 days ago>\", limit:500){ documentId status }
-  nodes:   knowledgeGraphNodes(driveId:\"$D\"){ documentId title description status noteType topics content }
+  nodes:   knowledgeGraphNodes(driveId:\"$D\"){ documentId title description status noteType documentType topics content }
+  tensions: knowledgeGraphNodesByType(driveId:\"$D\", documentType:\"bai/tension\"){ documentId title status }
   edges:   knowledgeGraphEdges(driveId:\"$D\"){ sourceDocumentId targetDocumentId linkType }
 }" --format json > /tmp/health.json
 ```
 
 Then compute in Python from that one file. The rules that keep the numbers honest:
 
-- **Exclude MoCs from every note metric.** `nodeCount` and `orphans` include MoC nodes (`status = "MOC"`, `noteType = "MOC (<tier>)"`); `noteCount` = nodes minus MoCs, and an orphan MoC is a hierarchy problem, not an orphan note.
+- **Count by kind, not by `nodeCount`.** The index holds five kinds — `documentType` is `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension` or `bai/observation` — and `stats` reports each: use `stats.noteCount` for every note metric, never `nodeCount` (the total). `orphans` already excludes tensions and observations (they have nothing pointing at them by design) but still includes MoCs; an orphan MoC is a hierarchy problem, not an orphan note. MoCs are still recognisable by `status = "MOC"` / `noteType = "MOC (<tier>)"` on older indexes that lack `documentType`.
+- **Open tensions** = `stats.openTensionCount` (or `tensions` filtered to `status = "OPEN"`). This is what THREE_SPACE_BOUNDARIES grades. A tension whose `observedBy` is `graph-indexer` was opened automatically from a CONTRADICTS edge — it still needs a human to resolve or dissolve it, so it counts.
 - **Orphan** = a note with zero incoming edges — exactly what `orphans` returns. Outgoing links do not change it.
 - **Links** come from `edges`, never from a note's `links[]` (empty since the relationship migration). `averageLinksPerNote` = outgoing edges per note; `connectionCount` = `stats.edgeCount`.
 - **MoC coverage** = share of notes that are the target of a `CORE_IDEA` edge.
@@ -128,7 +130,7 @@ From the Step 2 data: a note is covered when it is the target of a `CORE_IDEA` e
 
 **CRITICAL: Verify, don't assume.** After auto-fixing any health recommendation, **re-read the drive tree and re-query the subgraph** to confirm. Don't report PASS based on what you dispatched — report PASS based on what you verified. Silent failures are common with remote reactors (race conditions, CLI bugs, network latency).
 
-**Two counting traps.** `knowledgeGraphStats.nodeCount` counts MoC nodes too (they carry `status = "MOC"` and `noteType = "MOC (<tier>)"`), so `noteCount` must exclude them or it over-counts by the MoC total. And MOC_COHERENCE above is defined the way the shipped dashboard defines it — **notes without topics** — not "topics without a MoC"; grading it differently makes `/health` and the in-app check contradict each other on the same vault. For STALE_NOTES prefer `knowledgeGraphStale(driveId, since, limit)` and `knowledgeGraphNodesByStatus(driveId, status: "DRAFT")` over reading every note.
+**Two counting traps.** `knowledgeGraphStats.nodeCount` counts every indexed kind — MoCs, tensions, observations, research claims — so read `stats.noteCount` for notes (or filter `nodes` by `documentType`); dividing by `nodeCount` under-reports every per-note ratio. And MOC_COHERENCE above is defined the way the shipped dashboard defines it — **notes without topics** — not "topics without a MoC"; grading it differently makes `/health` and the in-app check contradict each other on the same vault. For STALE_NOTES prefer `knowledgeGraphStale(driveId, since, limit)` and `knowledgeGraphNodesByStatus(driveId, status: "DRAFT")` over reading every note.
 
 ## Step 6: Save to bai/health-report document
 

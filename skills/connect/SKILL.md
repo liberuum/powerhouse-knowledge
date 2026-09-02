@@ -97,41 +97,58 @@ switchboard docs mutate <note-id> --op setContent --input '{
 
 ## Tension detection
 
-When you find a CONTRADICTS link, check whether this is a genuine unresolved tension:
+**The indexer opens tensions for you.** Since the graph-indexer automation
+(vault package ≥ 1.0.55), every `addRelationship(…, "CONTRADICTS")` on the
+Switchboard makes the server create a `bai/tension` in `/ops` — a short
+title (`Contradiction on <shared topics or words>`), both claims in full in
+the description, `involvedRefs [a, b]`, `observedBy: graph-indexer` — and add an
+`ADD_TENSION` entry (id = the tension's document id) to every MoC that holds
+either note as a `CORE_IDEA`. One tension per unordered pair, ever: a pair
+that already has a tension (any status) is left alone.
 
-- Do two notes make opposing claims about the same topic?
-- Is the contradiction substantive (not just different wording)?
-- Is it unresolved (no existing note reconciles the two positions)?
+So after creating a CONTRADICTS link, **do not create a tension by hand**.
+Instead, within a couple of seconds:
 
-If yes, create a `bai/tension` document:
+```bash
+# The tension the indexer opened for this pair (INVOLVES edges point at both notes)
+switchboard query '{ knowledgeGraphBacklinks(driveId:"<UUID>", documentId:"<note-a>") { sourceDocumentId linkType } }'
+# → the INVOLVES source is the tension id. Read it:
+switchboard docs get <tension-id> --state --format json
+```
+
+Then **articulate it** — this is the part only you can do. The automation
+knows the two titles; you know why they conflict. The tension model has no
+content-update operation after `CREATE_TENSION`, so the articulation goes
+where readers meet it: append a short **"Contradicts"** paragraph to each
+note's content naming the other note and the specific point of conflict
+(`SET_CONTENT` on each note, whole body, real newlines). If more notes are
+party to the same disagreement, add them to the tension:
+
+```bash
+switchboard docs mutate <tension-id> --op addInvolvedRef --input '{"ref":"<note-id-3>"}'
+```
+
+If the contradiction turns out NOT to be substantive (different wording, or
+both true in different scopes), **dissolve** the tension with the reason:
+
+```bash
+switchboard docs mutate <tension-id> --op dissolveTension --input '{"resolution":"<why both hold>","resolvedAt":"<ISO>"}'
+```
+
+If one side is right, **resolve** it and consider `SUPERSEDES` on the winner:
+
+```bash
+switchboard docs mutate <tension-id> --op resolveTension --input '{"resolution":"<which side and why>","resolvedAt":"<ISO>"}'
+```
+
+Only when the Switchboard predates the automation (no tension appears after
+a few seconds and `knowledgeGraphNodesByType(driveId, documentType:"bai/tension")`
+is unsupported) fall back to creating it yourself:
+
 ```bash
 switchboard docs create --type bai/tension --name "<what contradicts what>" --drive <drive-slug> --parent-folder <ops-folder-uuid> --format json
-```
-
-Then populate it:
-```bash
-switchboard docs apply <tension-id> --actions '[{
-  "type": "CREATE_TENSION",
-  "input": {
-    "title": "<tension title>",
-    "description": "<brief summary>",
-    "content": "<Side A says... Side B says... This matters because...>",
-    "involvedRefs": ["<note-id-1>", "<note-id-2>"],
-    "observedAt": "<ISO>",
-    "observedBy": "knowledge-agent"
-  },
-  "scope": "global"
-}]'
-```
-
-Also add the tension to the relevant MOC if one exists:
-```bash
-switchboard docs mutate <moc-id> --op addTension --input '{
-  "id": "<unique-id>",
-  "description": "<tension summary>",
-  "involvedRefs": ["<note-id-1>", "<note-id-2>"],
-  "addedAt": "<ISO>"
-}'
+switchboard docs apply <tension-id> --actions '[{"type":"CREATE_TENSION","input":{"title":"<title>","description":"<summary>","content":"<Side A says… Side B says… This matters because…>","involvedRefs":["<note-id-1>","<note-id-2>"],"observedAt":"<ISO>","observedBy":"knowledge-agent"},"scope":"global"}]'
+switchboard docs mutate <moc-id> --op addTension --input '{"id":"<tension-id>","description":"<summary>","involvedRefs":["<note-id-1>","<note-id-2>"],"addedAt":"<ISO>"}'
 ```
 
 ## Quality rules
@@ -141,6 +158,6 @@ switchboard docs mutate <moc-id> --op addTension --input '{
 - Create bidirectional links when appropriate (if A builds on B, B may also relate to A)
 - Minimum 2 connections per note. Separately, an **orphan** is a note with zero *incoming* edges (what `knowledgeGraphOrphans` returns) — adding outgoing links from it does not fix that; a link *to* it does
 - Update the target note's content if the connection reveals new context
-- When creating CONTRADICTS links, always check if a `bai/tension` document should be created
+- After a CONTRADICTS link, read back the tension the indexer opened and enrich or dissolve it — never open a duplicate by hand
 
 If "$ARGUMENTS" is provided, find connections for that specific note.
