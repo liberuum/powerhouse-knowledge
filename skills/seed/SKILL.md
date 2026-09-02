@@ -85,7 +85,7 @@ The lifecycle is `INBOX → EXTRACTING → EXTRACTED → ARCHIVED`; the extract 
 
 6. **Suggest next steps**:
    - Run `/powerhouse-knowledge:extract` to extract atomic claims from this source
-   - Or run `/powerhouse-knowledge:pipeline` for the full extract → connect → reweave → verify flow
+   - Or run `/powerhouse-knowledge:pipeline` for the full extract → connect → reweave → verify flow — which also places the new notes in the MoC hierarchy (TOPIC → DOMAIN → HUB) so they are explorable by cluster
 
 ## Source types
 

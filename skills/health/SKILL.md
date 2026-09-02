@@ -70,44 +70,41 @@ switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
 switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title } }'
 ```
 
-## Step 2: Read individual note state
+## Step 2: Gather everything from the graph in one request
 
-For each `bai/knowledge-note` in the drive tree, read its full state:
+Do **not** read notes one by one with `docs get` — on a 500-note vault that is 500 CLI processes. The graph index carries every field the checks need, MoCs included, and one aliased request returns all of it (measured: ~0.3 s for 487 notes + 38 MoCs):
 
 ```bash
-switchboard docs get <note-id> --state --format json
+switchboard query "{
+  stats:   knowledgeGraphStats(driveId:\"$D\"){ nodeCount edgeCount orphanCount }
+  density: knowledgeGraphDensity(driveId:\"$D\")
+  orphans: knowledgeGraphOrphans(driveId:\"$D\"){ documentId title noteType status }
+  mocs:    knowledgeGraphNodesByStatus(driveId:\"$D\", status:\"MOC\"){ documentId title noteType }
+  drafts:  knowledgeGraphNodesByStatus(driveId:\"$D\", status:\"DRAFT\"){ documentId }
+  stale:   knowledgeGraphStale(driveId:\"$D\", since:\"<ISO 30 days ago>\", limit:500){ documentId status }
+  nodes:   knowledgeGraphNodes(driveId:\"$D\"){ documentId title description status noteType topics content }
+  edges:   knowledgeGraphEdges(driveId:\"$D\"){ sourceDocumentId targetDocumentId linkType }
+}" --format json > /tmp/health.json
 ```
 
-Extract per note:
-- `title` — present or missing
-- `description` — present, length, quality (does it add info beyond title?)
-- `noteType` — present or missing
-- `status` — DRAFT, IN_REVIEW, CANONICAL, ARCHIVED
-- `topics[]` — count
-- links — **not** from the note's `links[]` (empty for anything linked since the relationship migration; the app's own dashboard ignores it). Read edges from the graph: `knowledgeGraphForwardLinks(driveId, documentId)` per note, or `knowledgeGraphEdges(driveId)` once for the whole vault; `knowledgeGraphStats.edgeCount` for the total
-- `provenance.sourceOrigin` — present or missing
-- `content` — present and length
+Then compute in Python from that one file. The rules that keep the numbers honest:
+
+- **Exclude MoCs from every note metric.** `nodeCount` and `orphans` include MoC nodes (`status = "MOC"`, `noteType = "MOC (<tier>)"`); `noteCount` = nodes minus MoCs, and an orphan MoC is a hierarchy problem, not an orphan note.
+- **Orphan** = a note with zero incoming edges — exactly what `orphans` returns. Outgoing links do not change it.
+- **Links** come from `edges`, never from a note's `links[]` (empty since the relationship migration). `averageLinksPerNote` = outgoing edges per note; `connectionCount` = `stats.edgeCount`.
+- **MoC coverage** = share of notes that are the target of a `CORE_IDEA` edge.
+- **MOC_COHERENCE** = notes whose `topics` is empty (the dashboard's definition): `PASS` at 0, `WARN` ≤ 3, `FAIL` above. Selecting `topics` on `knowledgeGraphNodes` costs one server-side query per node, which is fine once per run (~0.3 s / 500 notes) — just never do it inside a per-hit loop.
+- **Descriptions**: missing or > 200 chars fails; < 80 is a quality warning.
+- **STALE_NOTES**: `stale` entries with `status = "DRAFT"`.
+- **Lifecycle**: report the DRAFT share in `recommendations` — a vault where nearly every note is DRAFT has never been verified.
 
 ## Step 3: Check methodology grounding via note content
 
-For each note, check if its content includes a "Methodology grounding" section referencing at least one claim from the plugin's local `data/methodology/` files. Read each note's state:
+`nodes[].content` from Step 2 is the full body — no extra reads. A note is **grounded** if its content contains a "Methodology grounding" section referencing at least one claim from the plugin's local `data/methodology/` files. Notes without it are "floating" — their design rationale isn't traceable to the research foundation. Report the count in `recommendations` (there is no `HealthCategory` for it).
 
-```bash
-switchboard docs get <note-id> --state --format json
-# Check if state.global.content contains "## Methodology grounding"
-```
+## Step 4: Check MOC coverage and the hierarchy
 
-A note is **grounded** if its content references at least one methodology claim. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation.
-
-## Step 4: Check MOC coverage
-
-From the drive tree, find all `bai/moc` documents. For each topic that appears on 3+ notes but has no MOC, flag it as a coverage gap.
-
-```bash
-# Count topic frequency across all notes
-# python3 -c "... aggregate topics from note states ..."
-# Flag topics with 3+ notes and no corresponding MOC
-```
+From the Step 2 data: a note is covered when it is the target of a `CORE_IDEA` edge; a MoC is placed when it is the target of a `CHILD_MOC` edge. Report uncovered notes, and any MoC other than the single HUB with no parent — an unreachable MoC is a hierarchy defect (see `synthesize`).
 
 ## Step 5: Compute diagnostic checks
 

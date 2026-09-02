@@ -7,7 +7,7 @@ Claude Code plugin for the Powerhouse Knowledge Vault. Enables AI agents and hum
 This plugin gives you (human or AI agent) the ability to manage a structured knowledge graph inside a Powerhouse reactor. It provides:
 
 - **16 skills** for knowledge management (seed, extract, connect, search, verify, health, graph, projects/WBS, skills discovery, etc.)
-- **A knowledge-agent** definition optimized for knowledge work via the Switchboard CLI
+- **One canonical instruction set** — [AGENT.md](AGENT.md). The `knowledge-agent` Claude Code agent is generated from it (`node scripts/build-agent.mjs`), so there is exactly one document to keep true
 - **Connection to a Powerhouse reactor** via MCP or Switchboard CLI
 - **Access to the Graph Indexer** — a relational index with keyword search, topic queries, provenance filtering, and AI-powered semantic search
 
@@ -300,8 +300,9 @@ Human (Connect App)                    AI Agent (Claude Code)
 
 ```
 powerhouse-knowledge/
+├── AGENT.md                    # THE agent instructions — canonical, edit this
 ├── agents/
-│   └── knowledge-agent.md      # Agent definition with full vault API reference
+│   └── knowledge-agent.md      # GENERATED from AGENT.md by scripts/build-agent.mjs — do not edit
 ├── skills/
 │   ├── search/SKILL.md         # Multi-tier search (semantic, keyword, topic)
 │   ├── graph/SKILL.md          # Structural + semantic graph analysis

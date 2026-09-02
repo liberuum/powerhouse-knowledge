@@ -26,19 +26,22 @@ Analyze the knowledge graph for topic clusters and create `bai/moc` documents th
 
 ### Step 1: Identify topic clusters
 
-Read all knowledge notes and group by topics:
+Two graph calls give you every cluster — do not read notes one by one:
 
 ```bash
-switchboard docs list --drive <drive-slug> --format json
-# For each bai/knowledge-note, read state.global.topics[]
-switchboard docs get <note-id> --state --format json
-# Group: topic-name -> [{ docId, title, noteType }]
-# Filter: only topics with 3+ notes are MOC candidates
+# 1. The topic vocabulary with counts; only topics with 3+ notes are MoC candidates
+switchboard query '{ knowledgeGraphTopics(driveId: "<UUID>") { name noteCount } }'
+# 2. The members of each candidate topic (no `content` — you only need ids and titles here)
+switchboard query '{ knowledgeGraphByTopic(driveId: "<UUID>", topic: "<topic>") { documentId title noteType status } }'
 ```
 
-Or use the subgraph:
+Then read the existing hierarchy in one call, so you know which topics already have a MoC and where the HUB is:
+
 ```bash
-switchboard query '{ knowledgeGraphNodes(driveId: "<UUID>") { documentId title noteType } }'
+switchboard query '{ mocs: knowledgeGraphNodesByStatus(driveId: "<UUID>", status: "MOC") { documentId title noteType } edges: knowledgeGraphEdges(driveId: "<UUID>") { sourceDocumentId targetDocumentId linkType } }'
+# noteType is "MOC (HUB)" / "MOC (DOMAIN)" / "MOC (TOPIC)"
+# CHILD_MOC edges are the tree; CORE_IDEA edges are membership
+# the HUB is the MoC with no incoming CHILD_MOC edge — there should be exactly one
 ```
 
 ### Step 2: Check for existing MOCs
@@ -83,10 +86,22 @@ switchboard docs apply <moc-id> --actions '[{
 }]'
 ```
 
-**MOC Tiers:**
-- `HUB` — top-level entry point (e.g., "Knowledge Management")
-- `DOMAIN` — broad area with 10+ notes (e.g., "Cognitive Science")
-- `TOPIC` — focused cluster with 3-9 notes (e.g., "extended-mind")
+**MOC tiers and the hierarchy.** MoCs form a tree with one root; agents and humans explore the vault by walking it, so every MoC must be reachable from the top.
+
+| Tier | Holds | Size | Parent |
+|------|-------|------|--------|
+| `TOPIC` | a focused cluster of notes (`CORE_IDEA`) | 3–9 notes | a `DOMAIN`, or the HUB if no domain fits |
+| `DOMAIN` | a broad area: its own notes plus `CHILD_MOC` TOPIC MoCs | 10+ notes, or 2+ topic MoCs | the HUB |
+| `HUB` | the vault's single entry point: `CHILD_MOC` to every DOMAIN and to any TOPIC without a domain | one per vault | — |
+
+Apply, in this order, every time you run:
+
+1. **Topic with 3+ notes and no MoC → create a TOPIC MoC**, `CORE_IDEA` every member.
+2. **2+ TOPIC MoCs that share a broader theme, or a topic past ~10 notes → a DOMAIN MoC** (create it, or promote the TOPIC by `SET_METADATA_FIELD`/recreate with tier `DOMAIN`), then `CHILD_MOC` the topics under it. Name the domain for the theme the children share, not for one of them.
+3. **3+ DOMAIN/TOPIC MoCs and no HUB → create the HUB** (tier `HUB`, a title naming the whole vault's subject, an orientation that says how the domains divide the territory). Then `CHILD_MOC` every MoC that has no parent under it. A vault has exactly one HUB.
+4. **Attach every MoC you created to a parent in the same run.** Leaving a MoC unreachable from the HUB is the failure mode this step exists to prevent.
+
+Example — a vault of 37 MoCs: one HUB "Powerhouse Ecosystem" → 17 DOMAIN MoCs ("Reactor and Drives", "Editors and UX", …) and the TOPIC MoCs that fit no domain; "Editors and UX" → `CHILD_MOC` → TOPIC "Document Toolbar Styling" (5 notes).
 
 ### Step 5: Attach core ideas
 
@@ -117,6 +132,16 @@ switchboard query 'mutation {
 ```
 
 **Articulation lives in the note body, not on the edge.** The pre-migration `addCoreIdea` op accepted a `contextPhrase` that explained WHY each note was a core idea. The new `DocumentRelationship` row is just `(source, target, type)` — no metadata. To preserve the articulation, edit the source note's content (`--op setContent`) and add a section explaining how it fits the topic. The reader sees this when they navigate from the MoC into the note.
+
+### Step 5b: Place every new MoC in the tree
+
+For each MoC created in Step 4, add one `CHILD_MOC` edge from its parent (the DOMAIN it belongs to, else the HUB). If the vault now has 3+ MoCs and no HUB, create the HUB first (Step 4, tier `HUB`) and attach every parentless MoC to it. Verify afterwards:
+
+```bash
+# Every MoC except the HUB must have exactly one incoming CHILD_MOC edge
+switchboard query '{ knowledgeGraphEdges(driveId: "<UUID>") { sourceDocumentId targetDocumentId linkType } }' --format json \
+  | python3 -c "import json,sys; e=[x for x in json.load(sys.stdin)['data']['knowledgeGraphEdges'] if x['linkType']=='CHILD_MOC']; print(len(e),'CHILD_MOC edges;', len({x['sourceDocumentId'] for x in e}),'parents')"
+```
 
 ### Step 6: Add tensions and open questions (optional)
 
@@ -154,17 +179,20 @@ MOCs created: N
 MOCs updated: N (existing)
 Total core ideas added: N
 
-New MOCs:
-  extended-mind (TOPIC) — 4 notes
-  powerhouse-architecture (TOPIC) — 5 notes
-  editor-styling (TOPIC) — 3 notes
+Hierarchy:
+  HUB  Powerhouse Ecosystem — 18 child MoCs (1 new)
+    DOMAIN  Editors and UX — 19 notes, 2 child MoCs
+      TOPIC  Document Toolbar Styling — 5 notes
+      TOPIC  editor-styling — 3 notes (new, attached)
+Unreachable MoCs: 0
 ```
 
 ## Integration with pipeline
 
 MOC creation should happen during the **reflect** or **reweave** phase:
 - After connecting notes, check if any topic has 3+ notes without a MOC
-- Create MOCs for uncovered topics
+- Create MOCs for uncovered topics and attach each to its DOMAIN or the HUB in the same run
+- Promote to a DOMAIN, or create the HUB, when the thresholds above are crossed
 - Update existing MOCs with new core ideas from the latest extraction
 
 Note that the `/health` check MOC_COHERENCE grades **notes without topics**, not topic clusters without a MoC — creating MoCs does not move it; tagging notes does.

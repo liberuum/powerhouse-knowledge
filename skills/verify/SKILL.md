@@ -39,6 +39,7 @@ Check the note has all expected fields populated:
 
 - [ ] **Link density**: Note has >= 2 links (read from `knowledgeGraphForwardLinks` / `knowledgeGraphBacklinks`, not the note's `links[]`)
 - [ ] **Not an orphan**: at least one **incoming** edge. An orphan is a node with zero incoming knowledge edges — this is what `knowledgeGraphOrphans` returns; outgoing links do not make a note non-orphan
+- [ ] **Real line breaks**: `content` contains no literal `\n` sequence (see repair below)
 - [ ] **Link resolution**: every `targetDocumentId` in the note's forward edges points to an existing document
 - [ ] **Topic coverage**: Note belongs to at least one topic
 - [ ] **Description length**: Between 80-200 characters
@@ -48,6 +49,20 @@ Check the note has all expected fields populated:
 ## Auto-repair (fix before reporting)
 
 When verification finds fixable issues, **repair them immediately** instead of just reporting:
+
+### Literal `\n` in content (double-encoded line breaks)
+
+Symptom: `content` contains the two characters `\n` (and no real newlines) — the note renders as one run-on line. Detect across the vault in one call, then repair with a real serializer:
+
+```bash
+switchboard query '{ knowledgeGraphNodes(driveId: "<UUID>") { documentId status content } }' --format json \
+  | python3 -c "
+import json,sys; d=json.load(sys.stdin); d=d.get('data',d)['knowledgeGraphNodes']
+bad=[n['documentId'] for n in d if n['status']!='MOC' and (n['content'] or '').count(chr(92)+'n')>0]
+print(len(bad),'notes with literal backslash-n'); print(chr(10).join(bad))"
+```
+
+Repair each: read the content, replace the two-character sequence with a newline **in Python** (`s.replace(chr(92)+'n', chr(10))`), `json.dump` a single `SET_CONTENT` action to a file, `docs apply --file`, and read back. Never do the replacement in bash — that is how the bug is made.
 
 ### Missing description
 Generate a description from the title and content, then dispatch:

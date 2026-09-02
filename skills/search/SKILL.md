@@ -15,6 +15,42 @@ description: Search knowledge notes by title, type, topic, content, or meaning. 
 
 Search the Knowledge Vault using the graph indexer subgraph. Supports keyword search, topic filtering, provenance queries, and AI-powered semantic search.
 
+## Rich context in two calls (answering a question)
+
+When the user wants an **answer**, not a list, do not fetch hits one at a time. The node type carries `content`, and GraphQL aliases let one request fan out. Measured on a 521-note vault: ~1.4 s and ~4.3k tokens for everything below, versus 12+ round trips for less.
+
+**Call 1 — the best notes, with their full text** (~1 s):
+
+```bash
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<the question, verbatim>", mode: HYBRID, limit: 6) { similarity matchedBy node { documentId title description content noteType status } } }' --format json > /tmp/hits.json
+```
+
+**Call 2 — the neighbourhood of the top 3, and the MoC map, in ONE request** (~0.4 s). Substitute the three ids from call 1:
+
+```bash
+switchboard query '{
+  out0: knowledgeGraphForwardLinks(driveId:"<UUID>", documentId:"<id0>") { targetDocumentId targetTitle linkType }
+  in0:  knowledgeGraphBacklinks(driveId:"<UUID>", documentId:"<id0>") { sourceDocumentId linkType }
+  sim0: knowledgeGraphSimilar(driveId:"<UUID>", documentId:"<id0>", limit:3) { similarity node { documentId title } }
+  out1: knowledgeGraphForwardLinks(driveId:"<UUID>", documentId:"<id1>") { targetDocumentId targetTitle linkType }
+  in1:  knowledgeGraphBacklinks(driveId:"<UUID>", documentId:"<id1>") { sourceDocumentId linkType }
+  sim1: knowledgeGraphSimilar(driveId:"<UUID>", documentId:"<id1>", limit:3) { similarity node { documentId title } }
+  out2: knowledgeGraphForwardLinks(driveId:"<UUID>", documentId:"<id2>") { targetDocumentId targetTitle linkType }
+  in2:  knowledgeGraphBacklinks(driveId:"<UUID>", documentId:"<id2>") { sourceDocumentId linkType }
+  sim2: knowledgeGraphSimilar(driveId:"<UUID>", documentId:"<id2>", limit:3) { similarity node { documentId title } }
+  mocs: knowledgeGraphNodesByStatus(driveId:"<UUID>", status:"MOC") { documentId title noteType }
+}' --format json > /tmp/ctx.json
+```
+
+What that gives you, and how to use it:
+
+- **`content` of the 6 hits** — quote the notes' own words; cite each by `documentId`.
+- **`out*` / `in*` edges** — `CONTRADICTS` edges are findings (say so and cite both sides); `BUILDS_ON` / `SUPERSEDES` tell you which claim is current. A `CORE_IDEA` **backlink** is the MoC that owns the note — resolve its title from `mocs` and tell the user which cluster the answer lives in, so they can explore around it.
+- **`sim*`** — notes that say similar things without a link: candidates for a follow-up, or for `/connect`.
+- If a hit is a MoC (`status = "MOC"`), its `content` is the orientation — a ready-made summary of the whole cluster; mention it and its `CHILD_MOC` children rather than re-deriving.
+
+Only go deeper (`knowledgeGraphNodeByDocumentId` on a neighbour, `knowledgeGraphConnections(depth: 2)`) when the first two calls leave a specific gap. `topics` is a per-node resolver (one server-side query per row): one whole-vault fetch per run is cheap (~0.3 s / 500 notes), but do not select it inside a per-hit loop.
+
 ## Search tiers (try in order)
 
 ### 1. Semantic search (best for natural language)
@@ -120,7 +156,7 @@ If the subgraph returns empty (index needs rebuilding), scan directly:
 
 Present results as a concise list:
 - **Title** (status badge) -- description
-- Note type | Topics: #topic1, #topic2 | Links: N
+- Note type | Cluster: <owning MoC title> | Links: N out / N in (from call 2)
 - Similarity: 0.85 (if semantic search)
 
 If the user asks "$ARGUMENTS", search for that term using the most appropriate tier.

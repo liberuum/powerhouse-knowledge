@@ -142,7 +142,8 @@ Then **cross-reference with local methodology files** in the plugin's `data/meth
 - Group notes by shared topics (aggregate `topics[]` from all note states)
 - Create `bai/moc` documents in `/knowledge/` for any topic with 3+ notes that doesn't already have a MOC
 - Add core ideas with `addRelationship(<moc>, <note>, "CORE_IDEA")`; the edge carries no context phrase any more — put WHY the note matters to the topic in the note's own body
-- Set tier: TOPIC for a focused cluster (3–9 notes), DOMAIN for a broad area (10+), HUB for a top-level entry point that organises other MoCs
+- Set tier: TOPIC for a focused cluster (3–9 notes), DOMAIN for a broad area (10+ notes or 2+ topic MoCs), HUB for the vault's single entry point
+- **Place every new MoC in the tree:** `addRelationship(<parent-moc>, <new-moc>, "CHILD_MOC")` from its DOMAIN, or from the HUB. If the vault has 3+ MoCs and no HUB yet, create the HUB and attach every parentless MoC to it. A MoC unreachable from the HUB is a defect — the synthesize skill has the full rules and thresholds
 - **Verify each MOC appears in the drive tree after creation** — don't skip this
 - This is NOT optional — the health check will flag missing MOCs as WARN
 

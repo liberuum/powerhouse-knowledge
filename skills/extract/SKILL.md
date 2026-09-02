@@ -79,6 +79,8 @@ switchboard docs mutate <new-note-id> --op setProvenance --input '{"author": "<a
 
 **CRITICAL: Why two batches?** If ANY action in a batch fails validation, ALL actions in that batch are rejected. Provenance has a strict enum (`DERIVED`, `IMPORT`, `MANUAL`, `SESSION_MINE`) — a typo kills the entire batch including title, description, and content. By separating them, content is always saved even if provenance fails.
 
+**CRITICAL: the body must hold real line breaks before it is JSON-encoded — encode once, read back.** The bug is *double encoding*: a bash `"\n"` is two characters; a script that JSON-encodes that argument escapes the backslash again; the note is stored with the text `\n` between paragraphs and the write reports success. Write the body in a file or heredoc (or compose it inside Python), serialize once, `docs apply --file`, then `docs get --state` and confirm `content` has real newlines and no `\n`. Switchboard CLI ≥ 1.0.32 refuses such payloads and names the field; do not reach for `--allow-literal-escapes` to get past it.
+
 **CRITICAL: Every note MUST have a description.** Descriptions enable progressive disclosure (title -> description -> content). A note without a description fails health checks and is invisible to scanning workflows. The description should be ~150 chars and add information beyond the title. **Max 200 characters** — longer descriptions silently fail and the entire batch is rejected.
 
 ### Step 5: Verify drive nodes
@@ -153,6 +155,10 @@ switchboard docs mutate <pipeline-queue-id> --op advancePhase --input '{
 }'
 ```
 
+### After extraction: the notes are not done
+
+Extraction produces DRAFT notes with provenance and a `DERIVED_FROM` edge. They still need the reflect and reweave phases — typed links, and a place in the MoC hierarchy (`CORE_IDEA` from a TOPIC or DOMAIN MoC, itself a `CHILD_MOC` of the HUB) — before they are explorable and pass health. Run `/powerhouse-knowledge:pipeline` to carry them through, or `/connect` then `/synthesize` by hand. Once several topic MoCs exist, `synthesize` groups them under DOMAIN MoCs and a single HUB so clusters can be walked from the top.
+
 ## Note types
 
 Choose the most specific type for each claim:
@@ -177,6 +183,7 @@ These ten lowercase values are the canonical set (the note editor's type select)
 - [ ] Content includes arguments/evidence, not just assertions
 - [ ] All notes have at least one topic tag
 - [ ] `noteType` is one of the ten lowercase values (never `CONCEPT`)
+- [ ] Content read back contains real line breaks (no literal `\n`) — the classic shell-interpolation bug
 - [ ] Description ≤ 200 characters (longer fails silently and rejects the whole batch)
 - [ ] One `DERIVED_FROM` edge per note (`addRelationship(<note>, <source>, "DERIVED_FROM")`) — this is how `/health` finds a note's source; the source's `extractedClaims` alone is not traversable from the note
 - [ ] Provenance traces back to the source (sourceOrigin: DERIVED)
