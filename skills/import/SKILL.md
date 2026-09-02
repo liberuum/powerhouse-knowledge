@@ -119,9 +119,53 @@ Then attach the notes with `switchboard docs link <moc-uuid> <note-uuid> -t CORE
 - Verify all documents in drive tree (no ghost nodes)
 - Report orphan notes that need manual connection
 
+## Importing a git repository's docs (bundled script)
+
+For a repository whose markdown files should become sources pinned to a release,
+use `scripts/sync-repo-docs.mjs` rather than hand-driving the CLI. One source
+per file, with provenance that says exactly which commit the text came from:
+
+```bash
+node scripts/sync-repo-docs.mjs \
+  --endpoint <switchboard /graphql URL> --drive <uuid-or-slug> --profile <cli profile> \
+  --repo <path to the checkout> --repo-url https://github.com/<org>/<repo> \
+  --tag <release tag> --base-tag <previous tag> \
+  --manifest manifest.json [--attribution attribution.json] \
+  [--bump-version <string>] [--only <path substring>] [--workers 4] [--dry-run]
+```
+
+What it does per manifest entry: finds the existing source (by manifest id, by a
+provenance URL ending in the same repo path, or by exact title) or creates one;
+ingests the file at `--tag`; **and, when the file differs between the two tags,
+ingests the base text first**, so the source's own operation log carries the
+upstream diff as two revisions. A source whose stored `sha256` already matches
+the tag is skipped, so re-runs are no-ops. Provenance: `url` = the blob at the
+tag, `publishedAt` = the file's last upstream commit, `method` =
+`sha256:<hash> git:<tag>`, `tool` = `sync-repo-docs`.
+
+With `--attribution` it also wires existing notes to their backing file
+(`DERIVED_FROM` with the reason naming the section, `ADD_EXTRACTED_CLAIM`,
+`filePath` metadata), and with `--bump-version` it stamps the version **only on
+notes whose file is unchanged between the two tags** — a note on a changed file
+needs a reading, not a stamp.
+
+Two rules the script encodes, both learned the hard way:
+
+- **Only current docs.** Exclude archived trees (`docs/archive/`,
+  `*-LEGACY.md`), generated benchmark fixtures and agent scratch files. An
+  archived doc describes a version the code no longer has, and a source that
+  claims to be current is worse than no source.
+- **`DateTime` inputs must be UTC `Z` strings.** An offset form (`+02:00`) is
+  accepted by the job and silently dropped by the reducer, leaving
+  `publishedAt: null`. The script normalises every date through
+  `new Date(x).toISOString()`.
+
+A source with no notes yet is left **INBOX** on purpose: that is the visible
+extraction backlog, and `/health` counts it.
+
 ## Automated Import Scripts
 
-No bundled import script exists — for large imports (50+ notes), loop the CLI steps above (Steps 1-4) yourself in a shell/Python driver with pacing and verification.
+No bundled generic import script exists — for large imports (50+ notes), loop the CLI steps above (Steps 1-4) yourself in a shell/Python driver with pacing and verification.
 
 ## Wiki Link Resolution
 

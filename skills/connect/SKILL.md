@@ -70,6 +70,11 @@ own identity; the hook steers you away from it. Idempotent on
 
 To remove an edge: `switchboard docs unlink <source-uuid> <target-uuid> -t RELATES_TO`.
 
+**Quote a reason that starts with a dash.** `--reason "--base is baked into the
+bundle"` is parsed as an unknown flag and the command fails. Use the attached
+form — `--reason=--base is baked into the bundle` — or reword the sentence so it
+does not open with a dash.
+
 ## Link types
 
 - **RELATES_TO** — general thematic connection
