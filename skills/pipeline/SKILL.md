@@ -29,7 +29,7 @@ Each phase is tracked in the `bai/pipeline-queue` singleton document.
 
 **Every pipeline run MUST update the `bai/pipeline-queue` document.** After completing each phase (create, reflect, reweave, verify), immediately record the handoff via ASSIGN_TASK + ADVANCE_PHASE. The task must reach DONE status by the end of the pipeline. Never skip pipeline tracking — the app's Pipeline view reads from this document.
 
-Pipeline operations (ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE, COMPLETE_TASK, FAIL_TASK) are **dependent** — each requires the previous one to have created state. **Use sequential `switchboard docs mutate` calls, not one `docs apply` batch.** Not for ordering — `docs apply` preserves order (verified on CLI 1.0.32) — but because a validation failure anywhere in a batch rejects the whole batch, and each of these ops validates against the state the previous one created. One call per op gives one clear failure point and lets you read the queue back between steps.
+Pipeline operations (ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE, COMPLETE_TASK, FAIL_TASK) are **dependent** — each requires the previous one to have created state. **Batch them.** `docs apply` applies actions in order and isolates failures per action (verified on CLI 1.0.32): `[ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE]` in one call works, and so does a batch of chained advances. The cost moves to the read-back: after each batch, `docs get` the queue and confirm the task's `status`, `currentPhase` and `handoffs.length` — a rejected action (wrong `taskId`, unknown `taskType`) is skipped while the job reports success.
 
 The CLI auto-injects `timestampUtcMs` and `action.id` on all actions — no need to generate them manually.
 

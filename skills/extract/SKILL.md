@@ -74,10 +74,11 @@ switchboard docs apply <new-note-id> --file /tmp/note-content.json
 
 **Batch 2 — Provenance (separate so failures don't lose content):**
 ```bash
+# Provenance may be a fifth action in the same batch; shown separately only for clarity
 switchboard docs mutate <new-note-id> --op setProvenance --input '{"author": "<agent-name>", "sourceOrigin": "DERIVED", "createdAt": "<ISO>"}'
 ```
 
-**CRITICAL: Why two batches?** If ANY action in a batch fails validation, ALL actions in that batch are rejected. Provenance has a strict enum (`DERIVED`, `IMPORT`, `MANUAL`, `SESSION_MINE`) — a typo kills the entire batch including title, description, and content. By separating them, content is always saved even if provenance fails.
+**One batch is fine — but read it back.** Verified on the current stack: `docs apply` applies actions in order and isolates failures per action — an invalid `sourceOrigin` is recorded with its error and skipped while title, description, content and topics still land. So `SET_PROVENANCE` can ride in the same batch as the content (one round trip per note). The catch is that the job still reports success: after the apply, `docs get --state` and confirm `title`, `description` (≤ 200), lowercase `noteType`, `topics`, and `provenance.sourceOrigin` are all present. A missing field means that one action was rejected — fix and re-dispatch just that action.
 
 **CRITICAL: the body must hold real line breaks before it is JSON-encoded — encode once, read back.** The bug is *double encoding*: a bash `"\n"` is two characters; a script that JSON-encodes that argument escapes the backslash again; the note is stored with the text `\n` between paragraphs and the write reports success. Write the body in a file or heredoc (or compose it inside Python), serialize once, `docs apply --file`, then `docs get --state` and confirm `content` has real newlines and no `\n`. Switchboard CLI ≥ 1.0.32 refuses such payloads and names the field; do not reach for `--allow-literal-escapes` to get past it.
 
@@ -139,7 +140,7 @@ is that the source was low-yield.
 
 ### Step 7: Record pipeline handoff
 
-If this extraction is part of a pipeline task, advance the phase. **Use `docs mutate` for dependent pipeline operations — never batch with `docs apply`:**
+If this extraction is part of a pipeline task, advance the phase. **This can share a batch with other queue ops (`docs apply` preserves order and isolates failures) — read the task back to confirm the phase advanced:**
 ```bash
 switchboard docs mutate <pipeline-queue-id> --op advancePhase --input '{
   "taskId": "<task-id>",
@@ -189,7 +190,7 @@ These ten lowercase values are the canonical set (the note editor's type select)
 - [ ] Provenance traces back to the source (sourceOrigin: DERIVED)
 - [ ] Skip rate < 10% for domain-relevant content
 - [ ] **All created notes verified in drive tree** — read the drive after creation and confirm each note exists as a file node
-- [ ] **Content and provenance in separate batches** — never batch SET_PROVENANCE with content actions
+- [ ] **Every field read back after the batch** — title, description, noteType, topics, provenance; a rejected action leaves its field untouched while the job reports success
 - [ ] Source closed out: `ADD_EXTRACTED_CLAIM` per note, `RECORD_EXTRACTION_STATS`, status `EXTRACTED`
 - [ ] Handoff recorded with `ADVANCE_PHASE` (phase `create`); connecting, MoC attachment and the walk to `CANONICAL` happen in the reflect/reweave/verify phases — see AGENT.md § Definition of done for the full per-note list
 

@@ -103,10 +103,11 @@ switchboard docs mutate $WBS --op createGoal --input '{"id":"<goal-1>","descript
 switchboard docs mutate $WBS --op createGoal --input '{"id":"<goal-1a>","description":"<...>","parentId":"<goal-1>"}'
 ```
 
-**Dispatch goal creation one at a time via `docs mutate` rather than one `docs apply`
-batch.** `docs apply` preserves order (verified on CLI 1.0.32), but a child's `CREATE_GOAL`
-validates against its parent existing, and a validation failure anywhere in a batch
-rejects the whole batch — one call per goal gives one clear failure point.
+**Goal creation can be one `docs apply` batch, parents before children.** `docs apply`
+applies actions in order and isolates failures per action (verified on CLI 1.0.32), so a
+whole tree can land in one round trip. A child whose parent id is wrong is rejected
+(`INVALID_PARENT`) and skipped while the rest land and the job reports success — read the
+WBS back and check `goals.length` against what you sent.
 
 ## Step 3: Read a project and its linked WBS
 
@@ -155,8 +156,9 @@ Every agent picking up WBS work should follow this loop:
    `BLOCKED` without a non-blank `blockReason` fails — see Key semantics.
 7. **If the goal has a linked deliverable**, close that out too — Step 5.
 
-Steps 2–3 and 5–6 are dependent, sequential writes to the same document — dispatch
-one at a time with `docs mutate`, never batched through `docs apply`.
+Steps 2–3 and 5–6 are dependent writes to the same document — they may share one
+`docs apply` batch (order is preserved); read the document back afterwards, because a
+rejected action is skipped silently.
 
 ## Step 5: Deliverable close-out
 

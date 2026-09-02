@@ -142,7 +142,7 @@ switchboard docs mutate <note-id> --op setMetadataField --input '{"field": "conf
 
 ## Pipeline integration
 
-When verify runs as part of the pipeline (phase 4), record a handoff. **Use `docs mutate` for pipeline operations — never batch with `docs apply`:**
+When verify runs as part of the pipeline (phase 4), record a handoff. **Batch it with any other queue ops if you like — `docs apply` preserves order and isolates failures — then read the task back to confirm the phase advanced:**
 ```bash
 switchboard docs mutate <pipeline-queue-id> --op advancePhase --input '{
   "taskId": "<task-id>",

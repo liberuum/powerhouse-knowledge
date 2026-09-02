@@ -223,13 +223,18 @@ the referenced document's UUID and is optional):
 switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":"claim","target":"Source Title","documentRef":"<source-uuid>","createdAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
-## Batching with `docs apply`: order is preserved — but a batch fails as a unit
+## Batching with `docs apply`: ordered, per-action isolated, silently partial
 
-**Verified 2026-09-02 (CLI 1.0.32, current reactor): `docs apply` preserves operation order.** Two `SET_TITLE`s in one batch landed at increasing indices in the order given and the last one won. Earlier versions of this file claimed the order was reversed; if you are on an old deployment and see "Task not found" from a batch, that is the symptom — otherwise ignore it.
+**Verified 2026-09-02 (CLI 1.0.32, reactor 6.2.2-dev.71):**
 
-**Safe to batch:** independent actions (SET_TITLE + SET_DESCRIPTION + SET_CONTENT + ADD_TOPIC).
+- **Order is preserved.** Two `SET_TITLE`s in one batch landed at increasing indices in the order given; the last won.
+- **Failures are isolated per action.** A batch of `[SET_TITLE, SET_DESCRIPTION(300 chars), SET_METADATA_FIELD]` applied the title and the metadata; the over-long description was recorded with `DescriptionTooLongError` and skipped. Same for an invalid `sourceOrigin` enum on `SET_PROVENANCE`.
+- **Dependent chains work.** `[ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE]` in one batch created, assigned and advanced the task; `[ADVANCE_PHASE ×3]` walked a task from `reflect` to `DONE` and bumped `completedCount` exactly once.
+- **The job does not tell you.** `--wait` returned `error: null` / `READ_READY` in every failing case, and the operation-log summary reads as if the action applied.
 
-**Still dispatch pipeline ops one at a time** (ADD_TASK, then ASSIGN_TASK, then ADVANCE_PHASE) — not because of ordering, but because a validation failure anywhere in a batch rejects the *whole* batch, and these ops each validate against state the previous one created. Separate `docs mutate` calls give you one clear failure point and let you read the queue back between steps:
+So: **batch to save round trips, then read state back to confirm every intended effect.** Earlier versions of this file claimed order was reversed and that any failure rejected the whole batch — both are false on the current stack.
+
+**Pipeline in one call:**
 ```bash
 switchboard docs mutate <id> --op addTask --input '{...}'
 switchboard docs mutate <id> --op assignTask --input '{...}'
@@ -296,9 +301,9 @@ switchboard docs mutate $MOC_ID --op createMoc --input '{"title":"Topic","descri
 switchboard query 'mutation { addRelationship(sourceIdentifier:"<moc-id>", targetIdentifier:"<note-uuid>", relationshipType:"CORE_IDEA", branch:"main"){ documentType } }'
 ```
 
-### 5. Pipeline Tracking (MUST be sequential — never batch!)
+### 5. Pipeline Tracking (batchable — read the task back afterwards)
 
-**Dispatch these one at a time with `docs mutate`** — a failure in a batch rejects the whole batch, and each op validates against the previous one's result:
+**These can go in one `docs apply` batch** (order preserved, failures isolated) — but read the task back afterwards and confirm its `status`, `currentPhase` and handoff count, since a rejected action is skipped silently. Shown as separate `mutate` calls here only so each op's shape is visible:
 
 ```bash
 PQ=<pipeline-queue-id>
