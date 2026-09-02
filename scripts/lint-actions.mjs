@@ -21,6 +21,7 @@
  * Exit 0 = clean. Exit 1 = findings, one per line with the JSON path.
  *
  *   node scripts/lint-actions.mjs /tmp/actions.json && switchboard docs apply <id> --file /tmp/actions.json
+ *   node scripts/lint-actions.mjs -              # read the actions JSON from stdin
  *   node scripts/lint-actions.mjs --self-test
  */
 import { readFileSync } from "node:fs";
@@ -101,7 +102,7 @@ if (isMain) {
     const file = process.argv[2];
     if (!file) { console.error("usage: node scripts/lint-actions.mjs <actions.json> | --self-test"); process.exit(2); }
     let actions;
-    try { actions = JSON.parse(readFileSync(file, "utf8")); } catch (e) { console.error(`${file}: not valid JSON — ${e.message}`); process.exit(2); }
+    try { actions = JSON.parse(readFileSync(file === "-" ? 0 : file, "utf8")); } catch (e) { console.error(`${file}: not valid JSON — ${e.message}`); process.exit(2); }
     const findings = lintActions(actions);
     if (findings.length) { console.error(`${findings.length} finding(s) in ${file}:`); for (const f of findings) console.error("  " + f); process.exit(1); }
     console.log(`${file}: ${actions.length} action(s) clean`);

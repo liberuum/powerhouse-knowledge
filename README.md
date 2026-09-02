@@ -324,6 +324,7 @@ powerhouse-knowledge/
 ├── hooks/                      # Pre-flight hooks for vault detection
 ├── scripts/
 │   ├── lint-actions.mjs        # Pre-flight for a docs apply file: 200-char description (UTF-16), enums, escapes
+│                               #   (run automatically on every docs apply/mutate by hooks/pre-apply-lint.py)
 │   ├── sync-skills.mjs         # Sync SKILL.md files into a vault as PROCEDURE notes + sources (content-hashed)
 │   ├── build-agent.mjs         # Regenerate agents/knowledge-agent.md from AGENT.md
 │   └── seed-source.mjs         # Seed a local file as a bai/source
