@@ -273,6 +273,7 @@ These ten lowercase values are the canonical set (the note editor's type select)
 - [ ] **All created notes verified in drive tree** — read the drive after creation and confirm each note exists as a file node
 - [ ] **Every field read back after the batch** — title, description, noteType, topics, provenance; a rejected action leaves its field untouched while the job reports success
 - [ ] Source closed out: `ADD_EXTRACTED_CLAIM` per note, `RECORD_EXTRACTION_STATS`, status `EXTRACTED`
+- [ ] **Re-running a close-out must not grow `extractedClaims`.** The operation is idempotent on `claimRef` in the Source model from `@powerhousedao/knowledge-note` 1.0.54-dev.6 onward, but an older deployment appends blindly, so a re-sync silently records the same note two, three or four times and the source then overstates its own yield. Guard with a read-back before adding, and repair an existing list with `REMOVE_EXTRACTED_CLAIM` (which strips *every* occurrence) followed by one `ADD_EXTRACTED_CLAIM`. Probe the fix on the smallest source first and read it back: on a deployment whose reducer removes only the first occurrence, one remove-then-add leaves the duplicates behind.
 - [ ] Handoff recorded with `ADVANCE_PHASE` (phase `create`); connecting, MoC attachment and the walk to `CANONICAL` happen in the reflect/reweave/verify phases — see AGENT.md § Definition of done for the full per-note list
 
 If "$ARGUMENTS" is provided, treat it as the source document ID to extract from.

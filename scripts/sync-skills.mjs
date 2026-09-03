@@ -419,8 +419,10 @@ for (const sk of skills) {
     `Discovery note distilled by sync-skills from the skill's SKILL.md frontmatter description and its section headings (source hash sha256:${sk.hash.slice(0, 12)}); the full procedure is the source text`,
   );
   if (mocId) await addRel(mocId, noteId, "CORE_IDEA");
-  // ADD_EXTRACTED_CLAIM appends without deduplicating; a re-sync must not
-  // grow the source's claim list with the same note again.
+  // ADD_EXTRACTED_CLAIM is idempotent on claimRef in the Source model since
+  // 1.0.54-dev.6, but this script also runs against older deployments where it
+  // appended blindly — eight skill sources grew 2-4 copies of their one note
+  // that way. The read-back guard costs one query and is correct on both.
   const before = await readState(srcId);
   if (!(before.extractedClaims ?? []).includes(noteId))
     await mutate(srcId, [{ type: "ADD_EXTRACTED_CLAIM", input: { claimRef: noteId } }]);
