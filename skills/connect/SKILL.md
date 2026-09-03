@@ -157,6 +157,29 @@ both true in different scopes), **dissolve** the tension with the reason:
 switchboard docs mutate <tension-id> --op dissolveTension --input '{"resolution":"<why both hold>","resolvedAt":"<ISO>"}'
 ```
 
+**A tension is for an unresolved knowledge conflict, not for a known bug.**
+The commonest reason a vault sits at FAIL on THREE_SPACE_BOUNDARIES is that
+defects were filed as tensions. When a design document describes the intended
+path and a defect note describes the failure path, *both claims are true* — the
+missing thing is the boundary, so **dissolve** it, write the boundary into both
+notes, and keep the defect as a note plus a `/health` recommendation naming
+where to file it. The tension list should answer "what does the vault not know
+yet", and a documented bug with an owner is something the vault knows very
+well.
+
+Two more patterns worth naming, because each looks unresolvable and is not:
+
+- **A claim that is true in a narrower scope.** A premise refuted by later
+  primary sources is usually not wrong, it is *unbounded*. Scope it in place
+  (the OSS edition, this version, this jurisdiction), link the evidence notes
+  with reasons, and resolve in favour of the sources. Deleting the claim throws
+  away the part that still holds.
+- **A decision that is not yours.** Where closing needs a commercial or product
+  call, do the knowledge half — correct the notes — and move the call to an
+  `ADD_OPEN_QUESTION` on the MoC that holds the cluster, where whoever browses
+  it will meet it. An open question is the right home for a pending decision; a
+  tension is not.
+
 If one side is right, **resolve** it and consider `SUPERSEDES` on the winner:
 
 ```bash
