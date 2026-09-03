@@ -131,6 +131,20 @@ From the Step 2 data: a note is covered when it is the target of a `CORE_IDEA` e
 
 **Methodology-grounding check (report in `recommendations`, NOT as a check):** For each knowledge note, check if its content includes a "Methodology grounding" section referencing at least one claim from the plugin's local `data/methodology/` files. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation. The verify skill auto-repairs this by searching local methodology files and appending grounding references to the note's content.
 
+**Compute every status; never hardcode one.** A report script with
+`status: "PASS"` written inline reports what its author expected, and it will
+keep reporting it through a real regression. Derive each grade from the
+measured number against the table above, and derive `overallStatus` as the
+worst check rather than typing it. The tell that this went wrong: metrics and
+grades disagree in the same document — `orphanCount: 1` sitting beside a green
+ORPHAN_DETECTION.
+
+**An archived note with no incoming edges is not an orphan.** Retiring a note
+*is* removing the citations that pointed at it, so `knowledgeGraphOrphans`
+reports it forever after. Grade live notes only, and say in the message how
+many archived ones were excluded and why — otherwise every properly retired
+note permanently costs the vault a WARN.
+
 **CRITICAL: Verify, don't assume.** After auto-fixing any health recommendation, **re-read the drive tree and re-query the subgraph** to confirm. Don't report PASS based on what you dispatched — report PASS based on what you verified. Silent failures are common with remote reactors (race conditions, CLI bugs, network latency).
 
 **Two counting traps.** `knowledgeGraphStats.nodeCount` counts every indexed kind — MoCs, tensions, observations, research claims — so read `stats.noteCount` for notes (or filter `nodes` by `documentType`); dividing by `nodeCount` under-reports every per-note ratio. And MOC_COHERENCE above is defined the way the shipped dashboard defines it — **notes without topics** — not "topics without a MoC"; grading it differently makes `/health` and the in-app check contradict each other on the same vault. For STALE_NOTES prefer `knowledgeGraphStale(driveId, since, limit)` and `knowledgeGraphNodesByStatus(driveId, status: "DRAFT")` over reading every note.
