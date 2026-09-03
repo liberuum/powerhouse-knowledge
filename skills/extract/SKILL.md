@@ -15,6 +15,22 @@ description: Extract atomic knowledge claims from source material. Creates bai/k
 
 Extract individual knowledge claims from a source document and create `bai/knowledge-note` documents for each.
 
+## Writing many notes at once
+
+Extracting a batch by hand-editing JS template literals fails on backtick and
+`${` escaping, repeatedly. Generate the batch instead: a small script that
+builds a list of note objects and emits `export const notes = <json>` plus a
+`perFile` record of `{ path, claims, skipped, note }`. Two properties earn
+their keep — content is JSON-escaped so no character needs thought, and a
+`assert len(description) <= 200` in the note constructor fails at generation
+time instead of leaving a note with no description in the vault.
+
+Then publish with one driver that, per note, creates or updates by key, writes
+content and provenance in separate dispatches, walks the lifecycle to
+CANONICAL, links every edge with its reason, and finally records the real
+per-file claim and skip counts on each source. Keep a key → document-id map on
+disk so a re-run updates in place rather than duplicating.
+
 ## Extraction process
 
 ### Step 1: Read the source document
@@ -248,10 +264,12 @@ These ten lowercase values are the canonical set (the note editor's type select)
 - [ ] Metadata populated for what the source supports — at least `confidence`, plus the type-specific fields (a code-derived `bug-pattern` with `Metadata (0)` is under-extracted)
 - [ ] `noteType` is one of the ten lowercase values (never `CONCEPT`)
 - [ ] Content read back contains real line breaks (no literal `\n`) — the classic shell-interpolation bug
-- [ ] Description ≤ 200 UTF-16 units — checked by `lint-actions.mjs`, not by eye (an over-long one is rejected and the note is left with no description while the batch reports success)
+- [ ] Description ≤ 200 UTF-16 units — assert it **where the note is written**, not after dispatch; em dashes and arrows push a description over the line invisibly. Also checked by `lint-actions.mjs`, not by eye (an over-long one is rejected and the note is left with no description while the batch reports success)
 - [ ] One `DERIVED_FROM` edge per note (`switchboard docs link <note> <source> -t DERIVED_FROM --reason "<where in the source>" --confidence grounded`) — this is how `/health` finds a note's source; the source's `extractedClaims` alone is not traversable from the note, and the reason is how anyone checks the claim against it
 - [ ] Provenance traces back to the source (sourceOrigin: DERIVED)
-- [ ] Skip rate < 10% for domain-relevant content
+- [ ] Skip rate < 10% for domain-relevant content — and a **high** rate is the finding on a source that is mostly not claims. Report it with the reasoning per file (`claims`, `skipped`, and one line of why), because a fabricated zero hides what the source actually was. A 57% rate across a corpus of tutorials, cloud-vendor walkthroughs and a chronological changelog is honest; the same number on a reference page means the reading was shallow
+- [ ] **Zero yield is a real outcome, and it is not INBOX.** A source read end to end that honestly yields nothing (a glossary, a click-by-click tutorial, an index stub) gets `RECORD_EXTRACTION_STATS` with `claimCount: 0` and the reasoning, then status `EXTRACTED`. Leaving it INBOX claims it was never processed
+- [ ] **Check the code before asserting what a document says.** Where a doc and the tree disagree, the disagreement is the most valuable note on that source — name which is authoritative and how you checked (`git grep` at the tag). Five such divergences came out of one repository pass; each is worth an upstream fix
 - [ ] **All created notes verified in drive tree** — read the drive after creation and confirm each note exists as a file node
 - [ ] **Every field read back after the batch** — title, description, noteType, topics, provenance; a rejected action leaves its field untouched while the job reports success
 - [ ] Source closed out: `ADD_EXTRACTED_CLAIM` per note, `RECORD_EXTRACTION_STATS`, status `EXTRACTED`
