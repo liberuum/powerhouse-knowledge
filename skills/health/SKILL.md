@@ -201,6 +201,29 @@ to `bai/health-report` is the proper fix when the model is next edited.
 mutation reports success and the check never lands. Always re-read the
 report afterwards and confirm every check you dispatched is present.
 
+⚠️ **An `undefined` field is dropped from the JSON, and the reducer then
+rejects the whole action** — same silent success. This bites hardest on
+`GENERATE_REPORT`, whose `graphMetrics` needs all eight `Int!`/`Float!`
+fields: one mistyped source name (`m.kedges` where the object holds
+`knowledgeEdges`) leaves `connectionCount` absent, the report never
+updates, and the dashboard keeps serving the previous snapshot while
+every `ADD_CHECK` around it lands — so the document ends up with the old
+metrics and two runs' worth of checks. Assert the payload before
+dispatching:
+
+```js
+function required(obj, name) {
+  for (const [k, v] of Object.entries(obj))
+    if (v === undefined || v === null || Number.isNaN(v))
+      throw new Error(`${name}.${k} is ${v} — JSON drops it and the reducer rejects the action`);
+  return obj;
+}
+```
+
+and verify the reset by re-reading: `generatedAt` must be your run's
+timestamp and the check count must equal what you dispatched, not the sum
+of two runs.
+
 **Valid statuses:** PASS, WARN, FAIL
 
 ## Step 7: Auto-repair (if `--fix` or user requests)

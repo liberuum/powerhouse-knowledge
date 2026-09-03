@@ -364,6 +364,14 @@ for (const sk of skills) {
   const isNew = !noteId;
   if (isNew) noteId = await createDoc("KnowledgeNote", `skill-${sk.name}`, notesFolder);
   const firstSentence = sk.description.split(/(?<=\.)\s/)[0] ?? sk.description;
+  // The title already carries the first sentence, so a description that repeats
+  // it adds nothing and /health grades it as a restatement. Prefer the rest of
+  // the frontmatter description; fall back to what the skill covers.
+  const rest = sk.description.slice(firstSentence.length).trim();
+  const covers = sk.headings.length
+    ? `Covers ${sk.headings.slice(0, 6).map((h) => h.toLowerCase()).join(", ")}.`
+    : "Single-section skill.";
+  const description = (rest.length >= 60 ? rest : covers).slice(0, 200);
   const content = [
     `## When to use`,
     sk.description,
@@ -386,7 +394,7 @@ for (const sk of skills) {
   ].join("\n");
   await mutate(noteId, [
     { type: "SET_TITLE", input: { title: `Agent skill: /${sk.name} — ${firstSentence.slice(0, 140)}`, updatedAt: now() } },
-    { type: "SET_DESCRIPTION", input: { description: sk.description.slice(0, 200), updatedAt: now() } },
+    { type: "SET_DESCRIPTION", input: { description, updatedAt: now() } },
     { type: "SET_NOTE_TYPE", input: { noteType: "PROCEDURE", updatedAt: now() } },
     { type: "SET_CONTENT", input: { content, updatedAt: now() } },
     ...(isNew ? [
