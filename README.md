@@ -195,7 +195,7 @@ The vault includes a **Graph Indexer processor** that maintains a relational ind
 
 ### What's indexed
 
-Every `bai/knowledge-note` and `bai/moc` operation — plus every `ADD_RELATIONSHIP` on the drive — triggers the indexer to update (sources, tensions, observations, scopes of work and WBS are **not** indexed; read those by id):
+Every operation on an indexed type — `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation`, `powerhouse/scopeofwork`, `bai/wbs` — plus every `ADD_RELATIONSHIP` on the drive triggers the indexer to update (sources, the health report, the pipeline queue and the vault config are **not** indexed; read those by id):
 - **graph_nodes** — title, description, content, noteType, status, author, sourceOrigin, createdAt
 - **graph_edges** — source, target, linkType, targetTitle
 - **graph_topics** — document_id, topic name
