@@ -14,7 +14,8 @@
  *     an agent "checks" 200 and still fails.
  *   - noteType not one of the ten lowercase values   (accepted, never matches the UI)
  *   - sourceOrigin / SourceStatus / HealthCategory / HealthStatus / taskType /
- *     sourceType / MocTier / ObservationCategory outside the enum  (rejected or unreachable)
+ *     sourceType / MocTier / ObservationCategory / DeliverableStatus / GoalStatus /
+ *     ScopeOfWorkStatus / DeliverableSetStatus / Unit / BudgetType / PMCurrency outside the enum  (rejected or unreachable)
  *   - literal backslash-escapes in any string        (double-encoded line breaks)
  *   - missing `scope` or `type`
  *
@@ -33,6 +34,17 @@ export const ENUMS = {
   "SET_NOTE_TYPE.noteType": ["concept", "decision", "pattern", "observation", "procedure", "architecture", "bug-pattern", "integration", "workflow", "reference"],
   "SET_PROVENANCE.sourceOrigin": ["DERIVED", "IMPORT", "MANUAL", "SESSION_MINE"],
   "SET_SOURCE_STATUS.status": ["INBOX", "EXTRACTING", "EXTRACTED", "ARCHIVED"],
+  // scope of work (powerhouse/scopeofwork) and WBS (bai/wbs)
+  "EDIT_SCOPE_OF_WORK.status": ["DRAFT", "SUBMITTED", "IN_PROGRESS", "REJECTED", "APPROVED", "DELIVERED", "CANCELED"],
+  "ADD_DELIVERABLE.status": ["WONT_DO", "DRAFT", "TODO", "BLOCKED", "IN_PROGRESS", "DELIVERED", "CANCELED"],
+  "EDIT_DELIVERABLE.status": ["WONT_DO", "DRAFT", "TODO", "BLOCKED", "IN_PROGRESS", "DELIVERED", "CANCELED"],
+  "EDIT_DELIVERABLES_SET.status": ["DRAFT", "TODO", "IN_PROGRESS", "FINISHED", "CANCELED"],
+  "SET_DELIVERABLE_BUDGET_ANCHOR_PROJECT.unit": ["StoryPoints", "Hours"],
+  "ADD_PROJECT.budgetType": ["CONTINGENCY", "OPEX", "CAPEX", "OVERHEAD"],
+  "UPDATE_PROJECT.budgetType": ["CONTINGENCY", "OPEX", "CAPEX", "OVERHEAD"],
+  "ADD_PROJECT.currency": ["DAI", "USDS", "EUR", "USD"],
+  "UPDATE_PROJECT.currency": ["DAI", "USDS", "EUR", "USD"],
+  "SET_GOAL_STATUS.status": ["TODO", "IN_PROGRESS", "BLOCKED", "IN_REVIEW", "COMPLETED", "WONT_DO"],
   "INGEST_SOURCE.sourceType": ["ARTICLE", "PAPER", "BOOK_CHAPTER", "TRANSCRIPT", "DOCUMENTATION", "CONVERSATION", "WEB_PAGE", "MANUAL_ENTRY"],
   "ADD_CHECK.category": ["SCHEMA_COMPLIANCE", "ORPHAN_DETECTION", "LINK_HEALTH", "DESCRIPTION_QUALITY", "THREE_SPACE_BOUNDARIES", "PROCESSING_THROUGHPUT", "STALE_NOTES", "MOC_COHERENCE"],
   "ADD_CHECK.status": ["PASS", "WARN", "FAIL"],
@@ -91,6 +103,9 @@ function selfTest() {
   ok("uppercase noteType fails", lintActions([{ type: "SET_NOTE_TYPE", input: { noteType: "CONCEPT", updatedAt: "t" }, scope: "global" }]).length === 1);
   ok("lowercase noteType passes", lintActions([{ type: "SET_NOTE_TYPE", input: { noteType: "bug-pattern", updatedAt: "t" }, scope: "global" }]).length === 0);
   ok("bad sourceOrigin fails", lintActions([{ type: "SET_PROVENANCE", input: { author: "a", sourceOrigin: "BOGUS", createdAt: "t" }, scope: "global" }]).length === 1);
+  ok("CANCELLED (two Ls) on a deliverable fails", lintActions([{ type: "EDIT_DELIVERABLE", input: { id: "d", status: "CANCELLED" }, scope: "global" }]).length === 1);
+  ok("CANCELED on a deliverable passes", lintActions([{ type: "EDIT_DELIVERABLE", input: { id: "d", status: "CANCELED" }, scope: "global" }]).length === 0);
+  ok("bad GoalStatus fails", lintActions([{ type: "SET_GOAL_STATUS", input: { id: "g", status: "DONE" }, scope: "global" }]).length === 1);
   ok("taskType SEED fails", lintActions([{ type: "ADD_TASK", input: { id: "1", taskType: "SEED", target: "t", createdAt: "t" }, scope: "global" }]).length === 1);
   ok("literal backslash-n fails", lintActions([{ type: "SET_CONTENT", input: { content: "a\\nb", updatedAt: "t" }, scope: "global" }]).length === 1);
   ok("real newline passes", lintActions([{ type: "SET_CONTENT", input: { content: "a\nb", updatedAt: "t" }, scope: "global" }]).length === 0);

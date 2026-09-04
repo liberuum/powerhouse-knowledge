@@ -39,7 +39,7 @@ This file is the single canonical instruction set. `agents/knowledge-agent.md` i
 | Bulk import from markdown/Obsidian/JSON | [skills/import/SKILL.md](skills/import/SKILL.md) |
 | Export vault as markdown/JSON/backup | [skills/export/SKILL.md](skills/export/SKILL.md) |
 | Real-time vault monitoring | [skills/watch/SKILL.md](skills/watch/SKILL.md) |
-| Projects and Work Breakdown Structure goal trees | [skills/projects/SKILL.md](skills/projects/SKILL.md) |
+| Scopes of work, project envelopes and WBS goal trees | [skills/projects/SKILL.md](skills/projects/SKILL.md) |
 | Skill discovery in the vault + incremental sync | [skills/skills/SKILL.md](skills/skills/SKILL.md) |
 
 ## First: Establish which vault to use — ASK, never assume
@@ -187,7 +187,7 @@ Embeddings are computed server-side by the graph-indexer processor; `knowledgeGr
 switchboard docs get <document-id> --state --format json
 ```
 
-Sources, tensions, observations, projects and WBS are **not** in the graph index — read them this way, by id.
+Sources, tensions, observations, scopes of work and WBS are **not** in the graph index — read them this way, by id.
 
 ## Create a note
 
@@ -270,7 +270,7 @@ next action in `recommendations`, and tell the user what it would take.
 
 1. **Batch freely — `docs apply` is ordered and per-action isolated** (verified 2026-09-02, CLI 1.0.32, reactor 6.2.2-dev.71). Actions run in the order given; an action whose reducer rejects it (over-long description, invalid enum, unknown task id) is recorded with its error and **skipped**, and the actions before and after it still land. So one batch can carry content + topics + provenance, or ADD_TASK → ASSIGN_TASK → ADVANCE_PHASE, or three chained advances — one round trip instead of three to six. Older guidance about a "two-batch pattern" and "never batch dependent ops" described a reactor that no longer behaves that way.
 2. **The job reports success even when an action failed.** `--wait` returns `error: null` / `READ_READY` with a rejected action inside, and the operation log's summary still reads as if it applied. **Read back — and read the operation log, which names the rejection.** Every operation carries an `error` field: `document(identifier){ document{ operations(filter:{scopes:["global"], sinceRevision: <rev before your batch>}){ items{ index error action{ type } } } } }` lists each rejected action with the reactor's own reason ("Description exceeds 200 characters", the zod issue with the allowed enum values). **This runs automatically:** the plugin's `PostToolUse` hook reads the recent operations after every `docs apply` / `docs mutate` you issue and prints any rejection with its reason. Batching moves the cost from round trips to read-backs; the hooks do the read-back for you, but a state check of the fields you care about is still yours.
-3. **Limits: compute, never estimate — and lint before you dispatch.** Across all twelve models the reducers enforce exactly **one** hard length limit: a knowledge note's `description` must be **≤ 200 characters**, counted the way JavaScript counts (`.length`, UTF-16 units — an emoji is 2; Python's `len()` says 1, which is how an agent "checks" 200 and still fails). Titles have no limit; nothing on MoC, source, tension, observation, project or WBS is length-limited (keep descriptions readable, ~150–200). An over-long description is rejected with `DescriptionTooLongError` while the rest of the batch applies, so the note ends up with *no* description and the job still reports success. Do not count by eye and do not try-fail-adjust: run `node scripts/lint-actions.mjs <actions.json>` before every `docs apply` — it checks the 200 limit the reactor's way, every enum the reactor drops silently (`noteType`, `sourceOrigin`, `SourceStatus`, `taskType`, `HealthCategory`, `MocTier`, …), and double-encoded line breaks, and exits non-zero with the JSON path of each problem. **This runs automatically:** the plugin's `PreToolUse` hook lints every `switchboard docs apply` / `docs mutate` you issue and blocks the command if the payload would be rejected — you will see the finding instead of a silent partial write.
+3. **Limits: compute, never estimate — and lint before you dispatch.** Across all twelve models the reducers enforce exactly **one** hard length limit: a knowledge note's `description` must be **≤ 200 characters**, counted the way JavaScript counts (`.length`, UTF-16 units — an emoji is 2; Python's `len()` says 1, which is how an agent "checks" 200 and still fails). Titles have no limit; nothing on MoC, source, tension, observation, scope of work or WBS is length-limited (keep descriptions readable, ~150–200). An over-long description is rejected with `DescriptionTooLongError` while the rest of the batch applies, so the note ends up with *no* description and the job still reports success. Do not count by eye and do not try-fail-adjust: run `node scripts/lint-actions.mjs <actions.json>` before every `docs apply` — it checks the 200 limit the reactor's way, every enum the reactor drops silently (`noteType`, `sourceOrigin`, `SourceStatus`, `taskType`, `HealthCategory`, `MocTier`, …), and double-encoded line breaks, and exits non-zero with the JSON path of each problem. **This runs automatically:** the plugin's `PreToolUse` hook lints every `switchboard docs apply` / `docs mutate` you issue and blocks the command if the payload would be rejected — you will see the finding instead of a silent partial write.
 4. **Always verify after creating**: `switchboard docs tree <drive> --format json` to confirm the node exists. CLI bugs and network blips cause silent failures.
 5. **Never reuse a pipeline task id — a collision is unrecoverable.** `ADD_TASK` appends with no duplicate-id guard, while every other queue op resolves via `tasks.find(t => t.id === taskId)` and so always hits the first match. A second task sharing an id can never be assigned, advanced, completed or failed, and it inflates `activeCount` forever; there is no `REMOVE_TASK`. Generate a fresh UUID per `ADD_TASK`, and if a dispatch times out read the queue back before re-sending.
 6. **Enum values are validated silently.** A `HealthCategory`, `sourceOrigin`, `SourceStatus`, `taskType` or `relationshipType` outside the model's set reports success and writes nothing (or writes an unreachable record). Read the document back and confirm your writes landed.
@@ -294,7 +294,7 @@ next action in `recommendations`, and tell the user what it would take.
 | `/powerhouse-knowledge:health` | Vault health diagnostics, saved to the health report |
 | `/powerhouse-knowledge:search <query>` | Multi-tier search; rich-context recipe for answering questions |
 | `/powerhouse-knowledge:graph` | Graph structure analysis |
-| `/powerhouse-knowledge:projects` | Projects (`bai/project`) and WBS goal trees (`bai/wbs`) |
+| `/powerhouse-knowledge:projects` | Scopes of work (`powerhouse/scopeofwork`) — the envelopes are the projects — and WBS goal trees (`bai/wbs`) |
 | `/powerhouse-knowledge:import <path>` / `:export` | Bulk import / export |
 | `/powerhouse-knowledge:watch` | Real-time monitoring |
 | `/powerhouse-knowledge:skills <need>` | Find agent skills stored in the vault |
@@ -311,8 +311,8 @@ next action in `recommendations`, and tell the user what it would take.
 | `bai/vault-config` | Config (singleton; the drive is detected by this document) | `/self/` |
 | `bai/tension` | Unresolved contradictions | `/ops/` |
 | `bai/observation` | Operational signals | `/ops/` |
-| `bai/project` | Project tracking: status, owner, team, deliverables | `/projects/` |
-| `bai/wbs` | Work-breakdown goal tree for a project | `/projects/` |
+| `powerhouse/scopeofwork` | Scope of work: envelopes (the projects), priced deliverables, roadmaps, milestones, contributors | `/projects/` |
+| `bai/wbs` | Work-breakdown goal tree that delivers one envelope | `/projects/` |
 | _(methodology)_ | _249 Ars Contexta claims_ | _local: `data/methodology/`, not in the vault_ |
 
 The drive app scaffolds 12 folders on first open: `knowledge/{notes,inbox,insights}`, `sources`, `projects`, `ops/{sessions,health,queue}`, `self/methodology`. There is **no** graph singleton — the graph lives in the indexer's tables and is read through `knowledgeGraph*` queries. The three singletons are PipelineQueue, HealthReport and VaultConfig. Read the tree first to find folder UUIDs: `switchboard docs tree <drive-slug> --format json`.
@@ -373,9 +373,9 @@ Singleton in `/ops/queue/`. `ADD_TASK { id, taskType, target, documentRef?, crea
 
 Singleton in `/ops/health/`. Checks use `HealthCategory` ∈ `SCHEMA_COMPLIANCE`, `ORPHAN_DETECTION`, `LINK_HEALTH`, `DESCRIPTION_QUALITY`, `THREE_SPACE_BOUNDARIES` (open tensions), `PROCESSING_THROUGHPUT`, `STALE_NOTES`, `MOC_COHERENCE` (notes without topics) — there is **no** `METHODOLOGY_GROUNDING`; report grounding in `recommendations`. Status ∈ `PASS`, `WARN`, `FAIL`. See [skills/health/SKILL.md](skills/health/SKILL.md).
 
-### `bai/project` and `bai/wbs`
+### `powerhouse/scopeofwork` and `bai/wbs`
 
-See [skills/projects/SKILL.md](skills/projects/SKILL.md) for the 30 operations and the enums (`ProjectStatus`, `DeliverableStatus`, `MemberKind`, `GoalStatus` incl. `IN_REVIEW` and `WONT_DO`). Neither is graph-indexed.
+A **project is an envelope inside a scope-of-work document**, not a document of its own; each envelope links the `bai/wbs` that delivers it (`wbsRef` ↔ `sowRef`+`sowProjectId`) and each deliverable names the goal that delivers it (`goalRef`). `bai/project` is retired — never create one. See [skills/projects/SKILL.md](skills/projects/SKILL.md) for the 39 + 15 operations and the enums (`ScopeOfWorkStatus`, `DeliverableStatus`, `DeliverableSetStatus`, `Unit`, `BudgetType`, `PMCurrency`, `GoalStatus`). Neither is graph-indexed.
 
 ## Relationships
 

@@ -6,7 +6,7 @@ Claude Code plugin for the Powerhouse Knowledge Vault. Enables AI agents and hum
 
 This plugin gives you (human or AI agent) the ability to manage a structured knowledge graph inside a Powerhouse reactor. It provides:
 
-- **16 skills** for knowledge management (seed, extract, connect, search, verify, health, graph, projects/WBS, skills discovery, etc.)
+- **16 skills** for knowledge management (seed, extract, connect, search, verify, health, graph, scopes of work/WBS, skills discovery, etc.)
 - **One canonical instruction set** — [AGENT.md](AGENT.md). The `knowledge-agent` Claude Code agent is generated from it (`node scripts/build-agent.mjs`), so there is exactly one document to keep true
 - **Connection to a Powerhouse reactor** via MCP or Switchboard CLI
 - **Access to the Graph Indexer** — a relational index with keyword search, topic queries, provenance filtering, and AI-powered semantic search
@@ -187,7 +187,7 @@ The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| Projects | `/powerhouse-knowledge:projects` | Manage `bai/project` + `bai/wbs` — goal tracking, deliverables, agent goal-working loop |
+| Projects | `/powerhouse-knowledge:projects` | Manage `powerhouse/scopeofwork` (envelopes are the projects) + `bai/wbs` — deliverables, goal tracking, agent goal-working loop |
 
 ## Graph Indexer & Subgraph
 
@@ -195,7 +195,7 @@ The vault includes a **Graph Indexer processor** that maintains a relational ind
 
 ### What's indexed
 
-Every `bai/knowledge-note` and `bai/moc` operation — plus every `ADD_RELATIONSHIP` on the drive — triggers the indexer to update (sources, tensions, observations, projects and WBS are **not** indexed; read those by id):
+Every `bai/knowledge-note` and `bai/moc` operation — plus every `ADD_RELATIONSHIP` on the drive — triggers the indexer to update (sources, tensions, observations, scopes of work and WBS are **not** indexed; read those by id):
 - **graph_nodes** — title, description, content, noteType, status, author, sourceOrigin, createdAt
 - **graph_edges** — source, target, linkType, targetTitle
 - **graph_topics** — document_id, topic name
@@ -259,8 +259,8 @@ Every `bai/knowledge-note` and `bai/moc` operation — plus every `ADD_RELATIONS
 | Observation | `bai/observation` | Operational learning signals |
 | Tension | `bai/tension` | Unresolved contradictions |
 | Derivation | `bai/derivation` | Configuration audit trail |
-| Project | `bai/project` | Project tracking: status, owner, team, deliverables |
-| Work Breakdown Structure | `bai/wbs` | Goal tree for a project: statuses, assignees, dependencies, notes |
+| Scope of Work | `powerhouse/scopeofwork` | Envelopes (the projects), priced deliverables, roadmaps, milestones, contributors |
+| Work Breakdown Structure | `bai/wbs` | Goal tree that delivers one envelope: statuses, assignees, dependencies, notes |
 
 ## Processing Pipeline
 
@@ -327,7 +327,7 @@ powerhouse-knowledge/
 │   ├── export/SKILL.md         # Vault export
 │   ├── watch/SKILL.md          # Real-time monitoring
 │   ├── cli-reference/SKILL.md  # Switchboard CLI commands
-│   └── projects/SKILL.md       # Project (bai/project) + WBS (bai/wbs) goal tracking
+│   └── projects/SKILL.md       # Scopes of work (powerhouse/scopeofwork) + WBS (bai/wbs) goal tracking
 ├── data/
 │   └── methodology/            # 249 Ars Contexta research claims (local reference)
 ├── hooks/                      # Pre-flight hooks for vault detection
