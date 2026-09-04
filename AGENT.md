@@ -162,6 +162,7 @@ switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how
 - `score` carries the RAW number instead — cosine in SEMANTIC, the Reciprocal Rank Fusion weight in HYBRID (ordinal, tops out near 0.033) — **never render `score` as a percentage**.
 - `topics` is a per-node field resolver (one server-side query per row). One whole-vault fetch per run is cheap (~0.3 s for 500 notes); selecting it inside a per-hit loop is not.
 - **MoCs are nodes too** and come back from every query with `status = "MOC"` and `noteType = "MOC (<tier>)"` — filter them when the question is about notes.
+- **Scopes of work and work breakdowns are nodes too** (package ≥ 1.0.54-dev.7): `status = "SCOPE"` / `"WBS"` (sentinels, like MoCs — a scope's own DRAFT would otherwise pollute note-lifecycle queries) with the real state in `noteType` (`Scope (IN_PROGRESS)`, `WBS (BLOCKED)`); their `content` is a rendered outline (envelopes, deliverables, quotes, milestones, contributors / the goal tree), so a search for a deliverable finds its project. They are not knowledge nodes: excluded from orphans, density and `edgeCount`. A scope carries derived edges `CITES` (→ each note/MoC in an envelope's `knowledgeRefs`) and `DELIVERED_BY` (→ its WBS), so a note's backlinks show which project cites it.
 - If the field doesn't exist (schema validation error), the deployment runs an older package — fall back to `knowledgeGraphFullSearch`.
 
 Keyword search still matters for exact terms — but **`knowledgeGraphFullSearch` ANDs its terms**, so give it 1–2 distinctive keywords, never a sentence:
@@ -187,7 +188,7 @@ Embeddings are computed server-side by the graph-indexer processor; `knowledgeGr
 switchboard docs get <document-id> --state --format json
 ```
 
-Sources, tensions, observations, scopes of work and WBS are **not** in the graph index — read them this way, by id.
+Sources, health reports, the pipeline queue and the vault config are **not** in the graph index — read them this way, by id. Scopes of work and WBS *are* indexed (as `SCOPE` / `WBS` nodes with an outline as `content`), but their full structured state — quotes, budgets, `goalRef`s, goal notes — is still read this way.
 
 ## Create a note
 
@@ -375,7 +376,7 @@ Singleton in `/ops/health/`. Checks use `HealthCategory` ∈ `SCHEMA_COMPLIANCE`
 
 ### `powerhouse/scopeofwork` and `bai/wbs`
 
-A **project is an envelope inside a scope-of-work document**, not a document of its own; each envelope links the `bai/wbs` that delivers it (`wbsRef` ↔ `sowRef`+`sowProjectId`) and each deliverable names the goal that delivers it (`goalRef`). `bai/project` is retired — never create one. See [skills/projects/SKILL.md](skills/projects/SKILL.md) for the 39 + 15 operations and the enums (`ScopeOfWorkStatus`, `DeliverableStatus`, `DeliverableSetStatus`, `Unit`, `BudgetType`, `PMCurrency`, `GoalStatus`). Neither is graph-indexed.
+A **project is an envelope inside a scope-of-work document**, not a document of its own; each envelope links the `bai/wbs` that delivers it (`wbsRef` ↔ `sowRef`+`sowProjectId`) and each deliverable names the goal that delivers it (`goalRef`). `bai/project` is retired — never create one. See [skills/projects/SKILL.md](skills/projects/SKILL.md) for the 39 + 15 operations and the enums (`ScopeOfWorkStatus`, `DeliverableStatus`, `DeliverableSetStatus`, `Unit`, `BudgetType`, `PMCurrency`, `GoalStatus`). Both are graph-indexed as `SCOPE` / `WBS` nodes (searchable outline, `CITES` / `DELIVERED_BY` derived edges); mutate them by id.
 
 ## Relationships
 
@@ -462,7 +463,7 @@ All queries take `driveId: "<UUID>"` (a slug is also accepted). Five kinds are i
 | `knowledgeGraphFullSearch(query, limit)` | Exact terms in title+description+content; ANDs terms — 1–2 keywords |
 | `knowledgeGraphSearch(query, limit)` | Title+description only |
 | `knowledgeGraphNodeByDocumentId(documentId)` | One full node (content, topics) |
-| `knowledgeGraphNodesByStatus(status)` | All notes in a lifecycle state, or all MoCs (`"MOC"`) |
+| `knowledgeGraphNodesByStatus(status)` | All notes in a lifecycle state, or all MoCs (`"MOC"`), scopes of work (`"SCOPE"`), work breakdowns (`"WBS"`) |
 | `knowledgeGraphNodesByType(documentType)` | All nodes of one kind — e.g. every `bai/tension` |
 | `knowledgeGraphByTopic(topic)` / `knowledgeGraphTopics` | Topic membership / the topic vocabulary with counts |
 | `knowledgeGraphSimilar(documentId, limit)` | Semantic neighbours of a note |

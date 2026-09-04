@@ -1,6 +1,6 @@
 ---
 name: projects
-description: Manage work in the vault — scopes of work (powerhouse/scopeofwork) whose envelopes are the projects, and the bai/wbs goal trees that deliver them. Find or create a scope, add an envelope, create and link its WBS both ways, turn top-level goals into deliverables, run the agent goal-working loop (assign, start, note, complete or block), and close deliverables out. All operations run through the Switchboard CLI against the live reactor; neither type is graph-indexed. bai/project is retired — never create one.
+description: Manage work in the vault — scopes of work (powerhouse/scopeofwork) whose envelopes are the projects, and the bai/wbs goal trees that deliver them. Find or create a scope, add an envelope, create and link its WBS both ways, turn top-level goals into deliverables, run the agent goal-working loop (assign, start, note, complete or block), and close deliverables out. All operations run through the Switchboard CLI against the live reactor; both types are graph-indexed as SCOPE / WBS sentinel nodes (searchable outline, CITES / DELIVERED_BY edges) but are mutated by id. bai/project is retired — never create one.
 ---
 
 # Scopes of work, projects (envelopes) and Work Breakdown Structures
@@ -33,10 +33,20 @@ scope of work ──▶ envelope (project) ──wbsRef──▶ WBS document
 document; if you meet one in an older vault, it is legacy data to migrate into an
 envelope, not a type to write to.
 
-**Neither type is graph-indexed.** The Graph Indexer, embedder and health checks
-ignore them by design — do not reach for `knowledgeGraph*` queries to find or search
-them. Use `docs tree` / `docs get` directly, as below. In the vault chat, the
-`list_projects` and `read_document` tools already understand scopes.
+**Both types are graph-indexed — as execution documents, not knowledge.** Since
+1.0.54-dev.7 the Graph Indexer projects a scope as a node with `status = "SCOPE"`
+(`noteType = "Scope (<ScopeOfWorkStatus>)"`) and a WBS as `status = "WBS"`
+(`noteType = "WBS (TODO|IN_PROGRESS|BLOCKED|COMPLETED)"`); the node's `content` is a
+rendered outline (envelopes, deliverables with quotes and owners, milestones,
+contributors / the goal tree), so `knowledgeGraphSemanticSearch` finds the project that
+delivers "payments demo" and `knowledgeGraphNodesByStatus(status:"SCOPE")` lists every
+scope. A scope also carries derived edges — `CITES` to each note/MoC in an envelope's
+`knowledgeRefs`, `DELIVERED_BY` to its WBS — so a note's backlinks show which project
+cites it. None of that counts as knowledge: scopes and WBS are excluded from orphans,
+density and `edgeCount`, and health checks ignore them. The index is for *finding*;
+quotes, budgets, `goalRef`s and goal notes are read from the document itself with
+`docs get`, as below, and every write goes by id. In the vault chat, `list_projects`,
+`read_document` and `search_vault` all understand scopes.
 
 ## When to use
 
@@ -191,6 +201,15 @@ switchboard docs get <wbs-id>   --state --format json    # state.global.goals[] 
 
 Links are independent, not mirrored: read both directions rather than assuming one
 implies the other. Step 3 sets both when creating a fresh pair.
+
+To *find* a scope or WBS without walking the tree, use the index — it returns the
+outline as `content`, ready to quote:
+
+```bash
+switchboard query '{ knowledgeGraphNodesByStatus(driveId:"<UUID>", status:"SCOPE") { documentId title noteType } }'
+switchboard query '{ knowledgeGraphSemanticSearch(driveId:"<UUID>", query:"payments demo deliverable", mode: HYBRID, limit: 5) { similarity node { documentId title noteType status } } }'
+switchboard query '{ knowledgeGraphForwardLinks(driveId:"<UUID>", documentId:"<scope-id>") { targetDocumentId linkType targetTitle } }'   # CITES → notes/MoCs, DELIVERED_BY → WBS
+```
 
 ## Step 7: The goal-working loop (unchanged from before)
 

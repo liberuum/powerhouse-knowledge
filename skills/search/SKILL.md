@@ -148,6 +148,8 @@ switchboard query '{ knowledgeGraphStale(driveId: "<UUID>", since: "<ISO>", limi
 | `bai/knowledge-note` | an atomic claim | DRAFT / IN_REVIEW / CANONICAL / ARCHIVED | cite as knowledge |
 | `bai/research-claim` | a methodology claim | `CANONICAL` | cite as knowledge (imported research) |
 | `bai/moc` | a map of a cluster | `"MOC"` (sentinel; `noteType = "MOC (<tier>)"`) | its `content` is the orientation — a ready summary; don't render through a note-status badge |
+| `powerhouse/scopeofwork` | a scope of work — envelopes (projects), deliverables, milestones, contributors | `"SCOPE"` (sentinel; `noteType = "Scope (<ScopeOfWorkStatus>)"`) | `content` is a rendered outline; for quotes, budgets and `goalRef`s read the document by id. Forward links `CITES` → notes/MoCs it cites, `DELIVERED_BY` → its WBS |
+| `bai/wbs` | the goal tree that delivers one envelope | `"WBS"` (sentinel; `noteType = "WBS (TODO\|IN_PROGRESS\|BLOCKED\|COMPLETED)"`) | title is derived (`Work breakdown — <owner> (n/m goals done)`); the envelope names it. Backlink `DELIVERED_BY` from its scope |
 | `bai/tension` | a recorded contradiction between notes | OPEN / RESOLVED / DISSOLVED | report as a disagreement, never as a fact; its `INVOLVES` edges point at the notes |
 | `bai/observation` | a note about the vault's own process | PENDING / PROMOTED / IMPLEMENTED / ARCHIVED | process signal, not subject knowledge |
 
