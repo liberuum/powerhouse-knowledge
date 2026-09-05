@@ -21,14 +21,16 @@
  * process with crash recovery in state.json.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLogger, State, nowIso } from "./lib/state.mjs";
-import { assertIdentity, cliVersion, isCliVersionAtLeast, detectDrive } from "./lib/vault.mjs";
+import { assertIdentity, cliVersion, isCliVersionAtLeast, detectDrive, tree, getDocState } from "./lib/vault.mjs";
 import { loadRepos, selectNextTask, selectNextPipelineTask } from "./lib/select.mjs";
-import { processWbsGoal } from "./lib/wbs.mjs";
+import { processWbsGoal, blockGoal } from "./lib/wbs.mjs";
 import { processPipelineTask } from "./lib/pipeline.mjs";
+import { expandHome } from "./lib/state.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -122,6 +124,140 @@ function startupChecks(cfg, state, log) {
   log(`startup: drive ${state.data.drive.slug} (${state.data.drive.uuid})`);
 }
 
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Crash recovery: reconcile state.active against the vault before the first
+ * select. Returns { kind, task, resume } for the WBS processor or
+ * { kind, pt } for the pipeline processor, or null (state cleared/kept).
+ */
+function crashRecovery(cfg, state, log) {
+  const a = state.data.active;
+  if (!a) return null;
+  try {
+    if (a.type === "wbs") {
+      let goal = null;
+      try {
+        goal = getDocState(a.wbsId).goals.find((x) => x.id === a.goalId);
+      } catch (e) {
+        log(`recovery: cannot read WBS ${String(a.wbsId).slice(0, 8)}: ${e.message}`);
+      }
+      const ours = goal && goal.assignee === cfg.assignee && (goal.status === "IN_PROGRESS" || goal.status === "IN_REVIEW");
+      if (!ours) {
+        log(`recovery: wbs ${String(a.goalId).slice(0, 8)} no longer ours (status=${goal?.status}, assignee=${goal?.assignee}) — clearing state`);
+        state.data.active = null;
+        state.save();
+        return null;
+      }
+      const repos = loadRepos();
+      const repo = a.repoCode ? repos[a.repoCode] : null;
+      const blockAndClear = (reason) => {
+        log(`recovery: ${reason} — BLOCKED`);
+        try {
+          blockGoal(a.wbsId, a.goalId, reason, log);
+        } catch (e) {
+          log(`recovery: BLOCKED write failed: ${e.message} (state kept for manual inspection)`);
+          return;
+        }
+        state.data.active = null;
+        state.data.counts.blocked++;
+        state.save();
+      };
+      if (!repo) return blockAndClear(`harness restart: repos.json no longer maps ${a.repoCode}`) || null;
+      if (!a.worktree || !existsSync(a.worktree)) return blockAndClear("harness restart lost the worktree") || null;
+      const ref = a.taskRef;
+      if (!ref?.goal || !ref?.envelope) {
+        log("recovery: active record has no taskRef (pre-recovery state shape) — clearing state");
+        state.data.active = null;
+        state.save();
+        return null;
+      }
+      log(`recovery: resuming wbs ${a.goalId.slice(0, 8)} (phase=${a.phase}, worktree=${a.worktree})`);
+      return {
+        kind: "wbs",
+        task: { kind: "wbs", wbsId: a.wbsId, goal: ref.goal, scope: ref.scope, envelope: ref.envelope, ancestors: ref.ancestors || [], repo },
+        resume: a,
+      };
+    }
+    if (a.type === "pipeline") {
+      if (!a.pqId) {
+        log("recovery: pipeline active record has no pqId — clearing state");
+        state.data.active = null;
+        state.save();
+        return null;
+      }
+      const t = getDocState(a.pqId).tasks.find((x) => x.id === a.taskId);
+      if (!t || t.status !== "IN_PROGRESS" || t.assignedTo !== cfg.assignee) {
+        log(`recovery: pipeline ${String(a.taskId).slice(0, 8)} no longer ours (status=${t?.status}, assignedTo=${t?.assignedTo}) — clearing state`);
+        state.data.active = null;
+        state.save();
+        return null;
+      }
+      log(`recovery: resuming pipeline ${a.taskId.slice(0, 8)} (phase=${a.phase}${a.heldVerifyHandoff ? ", QA pending" : ""})`);
+      return { kind: "pipeline", pt: { pqId: a.pqId, task: t } };
+    }
+    log(`recovery: unknown active type ${a.type} — clearing state`);
+    state.data.active = null;
+    state.save();
+    return null;
+  } catch (e) {
+    log(`recovery FAILED (state kept for manual inspection): ${e.message}`);
+    return null;
+  }
+}
+
+/** --gc: remove worktrees whose goal is no longer active under our assignee. */
+function runGc(cfg, state, log) {
+  const repos = loadRepos();
+  for (const repo of Object.values(repos)) {
+    try {
+      execFileSync("git", ["-C", repo.path, "worktree", "prune"], { encoding: "utf8", timeout: 60_000 });
+    } catch {
+      /* prune is best-effort */
+    }
+  }
+  const wtRoot = join(expandHome(cfg.stateDir), "worktrees");
+  if (!existsSync(wtRoot)) {
+    log("gc: no worktrees — done");
+    return;
+  }
+  // index every WBS goal by its id prefix (worktree dirs are vault-<g8>)
+  const nodes = tree(state.data.drive.slug);
+  const goalByG8 = {};
+  for (const n of nodes.filter((x) => x.kind === "file" && x.documentType === "bai/wbs")) {
+    let st;
+    try {
+      st = getDocState(n.id);
+    } catch {
+      continue;
+    }
+    for (const g of st.goals || []) goalByG8[g.id.slice(0, 8)] = g;
+  }
+  let removed = 0;
+  let kept = 0;
+  for (const name of readdirSync(wtRoot)) {
+    if (!name.startsWith("vault-")) continue;
+    const g8 = name.slice("vault-".length);
+    const wtPath = join(wtRoot, name);
+    const g = goalByG8[g8];
+    const active = g && (g.status === "IN_PROGRESS" || g.status === "IN_REVIEW") && g.assignee === cfg.assignee;
+    if (active) {
+      kept++;
+      log(`gc: keeping ${name} (${g.id} is ${g.status} under ${g.assignee})`);
+      continue;
+    }
+    try {
+      execFileSync("git", ["-C", wtPath, "worktree", "remove", "--force", wtPath], { encoding: "utf8", timeout: 120_000 });
+    } catch (e) {
+      log(`gc: worktree remove failed for ${name}: ${String(e.message).split("\n")[0]} — leaving for manual removal`);
+      continue;
+    }
+    removed++;
+    log(`gc: removed ${name} (${g ? `${g.id} ${g.status}` : "goal not found in any WBS"})`);
+  }
+  log(`gc: done (removed=${removed}, kept=${kept})`);
+}
 async function runTasks(cfg, state, log, { maxTasks }) {
   const repos = loadRepos();
   const cap = Math.min(maxTasks ?? Infinity, cfg.maxTasksPerRun ?? Infinity);
@@ -140,6 +276,9 @@ async function runTasks(cfg, state, log, { maxTasks }) {
     if (!res) break;
     processed++;
     log(`task ${res.outcome}: ${res.detail}`);
+    if (state.data.active) {
+      log(`isolation WARNING: state.active still set after task (${JSON.stringify(state.data.active)}) — will be reconciled at next startup`);
+    }
   }
   return { processed };
 }
@@ -178,7 +317,13 @@ async function main() {
   log(`harness starting (mode=${opts.mode}, profile=${cfg.profile}, assignee=${cfg.assignee})`);
 
   if (opts.gc) {
-    log("--gc not wired yet — nothing to do");
+    try {
+      startupChecks(cfg, state, log);
+    } catch (e) {
+      log(`startup FAILED: ${e.message}`);
+      process.exit(1);
+    }
+    runGc(cfg, state, log);
     return;
   }
 
@@ -188,15 +333,31 @@ async function main() {
     log(`startup FAILED: ${e.message}`);
     process.exit(1);
   }
-  if (state.data.active) {
-    log(`startup: WARNING — state.active is set (${JSON.stringify(state.data.active)}); crash recovery not wired yet, not resuming`);
-  }
-  if (opts.mode === "loop") {
-    log("mode=loop: polling not wired yet — running one pass");
+  const recovery = crashRecovery(cfg, state, log);
+  if (recovery) {
+    const res =
+      recovery.kind === "wbs"
+        ? await processWbsGoal(recovery.task, { cfg, state, log, resume: recovery.resume })
+        : await processPipelineTask(recovery.pt, { cfg, state, log });
+    log(`task ${res.outcome}: ${res.detail}`);
   }
 
-  const { processed } = await runTasks(cfg, state, log, { maxTasks: opts.maxTasks });
-  log(`harness finished (processed=${processed})`);
+  if (opts.mode === "loop") {
+    let budget = opts.maxTasks;
+    for (;;) {
+      const { processed } = await runTasks(cfg, state, log, { maxTasks: budget });
+      if (budget !== null) budget -= processed;
+      if (budget === 0) break;
+      if (processed === 0) {
+        log(`loop: nothing actionable — sleeping ${cfg.pollSeconds}s`);
+        await sleep(cfg.pollSeconds * 1000);
+      }
+    }
+    log("harness finished (loop)");
+  } else {
+    const { processed } = await runTasks(cfg, state, log, { maxTasks: opts.maxTasks });
+    log(`harness finished (processed=${processed})`);
+  }
 }
 
 main().catch((e) => {

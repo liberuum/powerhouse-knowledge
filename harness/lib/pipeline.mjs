@@ -118,17 +118,23 @@ export async function processPipelineTask({ pqId, task: t0, cfg, state, log }) {
 
     const phases = PHASES_BY_TYPE[t.taskType];
     if (!phases) return await failTask(`unsupported taskType ${t.taskType} (expected claim or enrichment)`);
+    // Crash recovery: a run that crashed during QA left the held verify
+    // handoff in state — resume straight at QA, do not re-run the verify agent.
+    const prior = state.data.active;
+    const resumeQa = prior?.type === "pipeline" && prior.taskId === t.id && prior.phase === "qa" && prior.heldVerifyHandoff;
     const startIdx = t.currentPhase ? phases.indexOf(t.currentPhase) : 0;
-    if (startIdx < 0) return await failTask(`resumable currentPhase "${t.currentPhase}" not in ${phases.join(" → ")}`);
+    if (!resumeQa && startIdx < 0) return await failTask(`resumable currentPhase "${t.currentPhase}" not in ${phases.join(" → ")}`);
 
     // 2. — Phase machine (resume-safe: the task's handoffs mark done phases).
-    let heldVerifyHandoff = null;
+    let heldVerifyHandoff = resumeQa ? prior.heldVerifyHandoff : null;
     const filesModified = new Set((t.handoffs || []).flatMap((h) => h.filesModified || []));
-    for (let pi = startIdx; pi < phases.length; pi++) {
+    if (heldVerifyHandoff?.filesModified) for (const f of heldVerifyHandoff.filesModified) filesModified.add(f);
+    if (resumeQa) log(`pipeline ${t8}: resuming at QA — verify handoff held from crashed run`);
+    for (let pi = startIdx; !resumeQa && pi < phases.length; pi++) {
       const phase = phases[pi];
       let handoff = null;
       for (let attempt = 1; attempt <= 2; attempt++) {
-        state.data.active = { type: "pipeline", taskId: t.id, phase, round: attempt, since: nowIso() };
+        state.data.active = { type: "pipeline", taskId: t.id, pqId, phase, round: attempt, since: nowIso() };
         state.save();
         const run = await runAgent({
           cwd: repoRoot,
@@ -185,7 +191,7 @@ export async function processPipelineTask({ pqId, task: t0, cfg, state, log }) {
     // 3. — QA pass (the separate reviewer, before the task may become DONE).
     let verdict = null;
     for (let reviewRound = 1; reviewRound <= cfg.maxReviewRounds; reviewRound++) {
-      state.data.active = { type: "pipeline", taskId: t.id, phase: "qa", round: reviewRound, since: nowIso() };
+      state.data.active = { type: "pipeline", taskId: t.id, pqId, phase: "qa", round: reviewRound, heldVerifyHandoff, since: nowIso() };
       state.save();
       verdict = await reviewPipeline({
         cwd: repoRoot,
@@ -238,7 +244,7 @@ export async function processPipelineTask({ pqId, task: t0, cfg, state, log }) {
 
     // 5. — Optional health pass (informational; never fails the task).
     if (cfg.runHealth) {
-      state.data.active = { type: "pipeline", taskId: t.id, phase: "health", round: 0, since: nowIso() };
+      state.data.active = { type: "pipeline", taskId: t.id, pqId, phase: "health", round: 0, since: nowIso() };
       state.save();
       const h = await runAgent({
         cwd: repoRoot,

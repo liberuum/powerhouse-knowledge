@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { getDoc, getDocState, applyWithVerify, actions, repoRoot } from "./vault.mjs";
 import { runAgent } from "./runner.mjs";
 import { review, worktreeDiff } from "./review.mjs";
@@ -190,7 +190,7 @@ function githubRemote(wt) {
  *
  * @returns {Promise<{outcome: "completed"|"blocked"|"skipped", detail: string}>}
  */
-export async function processWbsGoal(task, { cfg, state, log }) {
+export async function processWbsGoal(task, { cfg, state, log, resume = null }) {
   const g = task.goal;
   const g8 = g.id.slice(0, 8);
   const branch = `feat/vault-${g8}`;
@@ -216,45 +216,68 @@ export async function processWbsGoal(task, { cfg, state, log }) {
     return { outcome: "blocked", detail: reason };
   };
 
-  // 1. — Claim: assign + start in one order-preserving batch, then read back.
-  log(`wbs ${g8}: claiming goal "${g.description}" (wbs ${task.wbsId.slice(0, 8)})`);
-  try {
-    applyWithVerify(
-      task.wbsId,
-      actions(
-        { type: "ASSIGN_GOAL", input: { id: g.id, assignee: cfg.assignee } },
-        { type: "SET_GOAL_STATUS", input: { id: g.id, status: "IN_PROGRESS" } },
-      ),
-      { log },
-    );
-  } catch (e) {
-    log(`wbs ${g8}: claim failed — skipping: ${e.message}`);
-    return { outcome: "skipped", detail: `claim failed: ${e.message}` };
+  // Crash-recovery resume: `resume` is the persisted active record from a
+  // crashed run (phase/round/base/worktree). The worker round re-runs from
+  // the worktree's current HEAD — committed progress is kept.
+  const res = resume && resume.goalId === g.id && resume.wbsId === task.wbsId ? resume : null;
+  if (res) {
+    if (res.phase === "worker") workerRound = Math.max(0, (res.round || 1) - 1);
+    if (res.phase === "review") reviewRound = Math.max(0, (res.reviewRound || 1) - 1);
+    log(`wbs ${g8}: resuming (phase=${res.phase}, workerRound=${res.round ?? 0}, reviewRound=${res.reviewRound ?? 0})`);
+  }
+
+  // 1. — Claim (fresh only): assign + start in one order-preserving batch,
+  // then read back.
+  if (!res) {
+    log(`wbs ${g8}: claiming goal "${g.description}" (wbs ${task.wbsId.slice(0, 8)})`);
+    try {
+      applyWithVerify(
+        task.wbsId,
+        actions(
+          { type: "ASSIGN_GOAL", input: { id: g.id, assignee: cfg.assignee } },
+          { type: "SET_GOAL_STATUS", input: { id: g.id, status: "IN_PROGRESS" } },
+        ),
+        { log },
+      );
+    } catch (e) {
+      log(`wbs ${g8}: claim failed — skipping: ${e.message}`);
+      return { outcome: "skipped", detail: `claim failed: ${e.message}` };
+    }
   }
   const claimed = getDocState(task.wbsId).goals.find((x) => x.id === g.id);
-  if (!claimed || claimed.assignee !== cfg.assignee || claimed.status !== "IN_PROGRESS") {
-    log(`wbs ${g8}: claim did not stick (race or rejection) — skipping`);
-    return { outcome: "skipped", detail: "claim did not stick" };
+  const claimOk = claimed?.assignee === cfg.assignee && (claimed?.status === "IN_PROGRESS" || claimed?.status === "IN_REVIEW");
+  if (!claimOk) {
+    log(`wbs ${g8}: claim not in effect (status=${claimed?.status}, assignee=${claimed?.assignee}) — skipping`);
+    return { outcome: "skipped", detail: "claim not in effect" };
   }
 
   const WT = join(expandHome(cfg.stateDir), "worktrees", `vault-${g8}`);
-  try {
-    spawnSync("git", ["-C", repoPath, "fetch", "--quiet", "origin"], { timeout: 120_000 }); // best-effort
-  } catch {
-    log(`wbs ${g8}: fetch failed (continuing with local refs)`);
-  }
-  try {
-    try {
-      git(repoPath, "worktree", "add", WT, "-b", branch, task.repo.defaultBranch);
-    } catch {
-      // re-adopted task: branch already exists
-      git(repoPath, "worktree", "add", WT, branch);
+  let base;
+  if (res) {
+    if (!existsSync(WT)) {
+      await fail("harness restart lost the worktree");
+      return;
     }
-  } catch (e) {
-    await fail(`could not create worktree: ${String(e.message).slice(0, 300)}`);
-    return;
+    base = res.base;
+  } else {
+    try {
+      spawnSync("git", ["-C", repoPath, "fetch", "--quiet", "origin"], { timeout: 120_000 }); // best-effort
+    } catch {
+      log(`wbs ${g8}: fetch failed (continuing with local refs)`);
+    }
+    try {
+      try {
+        git(repoPath, "worktree", "add", WT, "-b", branch, task.repo.defaultBranch);
+      } catch {
+        // re-adopted task: branch already exists
+        git(repoPath, "worktree", "add", WT, branch);
+      }
+    } catch (e) {
+      await fail(`could not create worktree: ${String(e.message).slice(0, 300)}`);
+      return;
+    }
+    base = git(repoPath, "rev-parse", task.repo.defaultBranch).trim();
   }
-  const base = git(repoPath, "rev-parse", task.repo.defaultBranch).trim();
   for (const cmd of task.repo.setup || []) {
     log(`wbs ${g8}: worktree setup: ${cmd}`);
     const r = spawnSync(cmd, { cwd: WT, shell: true, encoding: "utf8", timeout: 30 * 60_000 });
@@ -266,16 +289,23 @@ export async function processWbsGoal(task, { cfg, state, log }) {
     goalId: g.id,
     wbsId: task.wbsId,
     scopeId: task.scope.id,
-    phase: "worker",
-    round: 0,
-    reviewRound: 0,
+    repoCode: task.repo.code,
+    taskRef: {
+      goal: g,
+      scope: { id: task.scope.id, title: task.scope.title, status: task.scope.status },
+      envelope: task.envelope,
+      ancestors: task.ancestors || [],
+    },
+    phase: res && res.phase !== "deliver" && res.phase !== "record" ? "worker" : res.phase,
+    round: workerRound,
+    reviewRound,
     worktree: WT,
     base,
     branch,
-    since: nowIso(),
+    since: res?.since || nowIso(),
   };
   state.save();
-  log(`wbs ${g8}: worktree ${WT} (branch ${branch}, base ${base.slice(0, 8)})`);
+  log(`wbs ${g8}: worktree ${WT} (branch ${branch}, base ${base.slice(0, 8)})${res ? " (resumed)" : ""}`);
 
   const brief = buildBrief(task, log);
   audit.write("brief.md", brief);
@@ -324,46 +354,55 @@ export async function processWbsGoal(task, { cfg, state, log }) {
   };
 
   try {
-    // 4–6. — Worker + gate loop.
-    const first = await workerGateLoop(brief);
-    if (first.failed) return await fail(first.failed.reason);
+    // 4–6. — Worker + gate loop (skipped when resuming at review/deliver).
+    if (!res || res.phase === "worker") {
+      const first = await workerGateLoop(brief);
+      if (first.failed) return await fail(first.failed.reason);
 
-    // 7. — Review & QA loop.
-    applyWithVerify(task.wbsId, actions({ type: "SET_GOAL_STATUS", input: { id: g.id, status: "IN_REVIEW" } }), { log });
-    const inReview = getDocState(task.wbsId).goals.find((x) => x.id === g.id);
-    if (inReview?.status !== "IN_REVIEW") throw { reason: `could not move goal to IN_REVIEW (read-back: ${inReview?.status})` };
-    log(`wbs ${g8}: IN_REVIEW — starting review`);
+      // 7a. — Move to IN_REVIEW.
+      applyWithVerify(task.wbsId, actions({ type: "SET_GOAL_STATUS", input: { id: g.id, status: "IN_REVIEW" } }), { log });
+      const inReview = getDocState(task.wbsId).goals.find((x) => x.id === g.id);
+      if (inReview?.status !== "IN_REVIEW") throw { reason: `could not move goal to IN_REVIEW (read-back: ${inReview?.status})` };
+      log(`wbs ${g8}: IN_REVIEW — starting review`);
+    } else if (res.phase === "review") {
+      log(`wbs ${g8}: resuming at IN_REVIEW — starting review`);
+    } else {
+      log(`wbs ${g8}: resuming at ${res.phase} — skipping to delivery`);
+    }
 
-    for (;;) {
-      reviewRound++;
-      state.data.active.phase = "review";
-      state.data.active.reviewRound = reviewRound;
-      state.save();
-      const v = await review({
-        cwd: WT,
-        brief,
-        guidelines: [
-          `- ${join(repoPath, "AGENTS.md")} and/or ${join(repoPath, "CLAUDE.md")} — repo guidelines (read them)`,
-          `- ${GLOBAL_NOTES} — global agent notes (branch/commit hygiene)`,
-        ],
-        diffResult: worktreeDiff({ worktree: WT, base }),
-        model: cfg.reviewModel,
-        timeoutMin: cfg.reviewTimeoutMin,
-        log,
-      });
-      reviewModel = v.model || reviewModel;
-      audit.write(`review-round-${reviewRound}.json`, JSON.stringify({ ...v, run: undefined }, null, 2));
-      if (v.verdict === "APPROVE") {
-        log(`wbs ${g8}: review APPROVED (round ${reviewRound})`);
-        break;
+    // 7b. — Review & QA loop (skipped when resuming at deliver/record).
+    if (res?.phase !== "deliver" && res?.phase !== "record") {
+      for (;;) {
+        reviewRound++;
+        state.data.active.phase = "review";
+        state.data.active.reviewRound = reviewRound;
+        state.save();
+        const v = await review({
+          cwd: WT,
+          brief,
+          guidelines: [
+            `- ${join(repoPath, "AGENTS.md")} and/or ${join(repoPath, "CLAUDE.md")} — repo guidelines (read them)`,
+            `- ${GLOBAL_NOTES} — global agent notes (branch/commit hygiene)`,
+          ],
+          diffResult: worktreeDiff({ worktree: WT, base }),
+          model: cfg.reviewModel,
+          timeoutMin: cfg.reviewTimeoutMin,
+          log,
+        });
+        reviewModel = v.model || reviewModel;
+        audit.write(`review-round-${reviewRound}.json`, JSON.stringify({ ...v, run: undefined }, null, 2));
+        if (v.verdict === "APPROVE") {
+          log(`wbs ${g8}: review APPROVED (round ${reviewRound})`);
+          break;
+        }
+        log(`wbs ${g8}: review REJECTED (round ${reviewRound}): ${v.summary}`);
+        if (reviewRound >= cfg.maxReviewRounds) {
+          const top = v.findings.filter((f) => f.severity !== "minor").slice(0, 3).map((f) => f.issue).join(" | ");
+          return await fail(`review rejected after ${reviewRound} rounds: ${top || v.summary}`);
+        }
+        const fixed = await workerGateLoop(reviewFixInstruction(v, brief));
+        if (fixed.failed) return await fail(fixed.failed.reason);
       }
-      log(`wbs ${g8}: review REJECTED (round ${reviewRound}): ${v.summary}`);
-      if (reviewRound >= cfg.maxReviewRounds) {
-        const top = v.findings.filter((f) => f.severity !== "minor").slice(0, 3).map((f) => f.issue).join(" | ");
-        return await fail(`review rejected after ${reviewRound} rounds: ${top || v.summary}`);
-      }
-      const fixed = await workerGateLoop(reviewFixInstruction(v, brief));
-      if (fixed.failed) return await fail(fixed.failed.reason);
     }
 
     // 8. — Deliver (PR).
