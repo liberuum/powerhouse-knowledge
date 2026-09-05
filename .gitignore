@@ -3,3 +3,7 @@ node_modules/
 .env.*
 *.log
 .DS_Store
+# vault-harness runtime artifacts (never committed)
+harness/config.json
+harness/repos.json
+.ph/
