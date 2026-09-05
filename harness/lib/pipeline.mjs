@@ -127,6 +127,7 @@ export async function processPipelineTask({ pqId, task: t0, cfg, state, log }) {
 
     // 2. — Phase machine (resume-safe: the task's handoffs mark done phases).
     let heldVerifyHandoff = resumeQa ? prior.heldVerifyHandoff : null;
+    let agentCompleted = false;
     const filesModified = new Set((t.handoffs || []).flatMap((h) => h.filesModified || []));
     if (heldVerifyHandoff?.filesModified) for (const f of heldVerifyHandoff.filesModified) filesModified.add(f);
     if (resumeQa) log(`pipeline ${t8}: resuming at QA — verify handoff held from crashed run`);
@@ -171,8 +172,24 @@ export async function processPipelineTask({ pqId, task: t0, cfg, state, log }) {
       log(`pipeline ${t8}: phase ${phase} done — ${handoff.workDone.slice(0, 160)}`);
 
       if (phase === "verify") {
+        // The skill tells the agent the final advance auto-completes the task:
+        // if it already dispatched it, QA still runs, but completion is adopted.
+        const probe = getDocState(pqId).tasks.find((x) => x.id === t.id);
+        if (probe?.status === "DONE") {
+          agentCompleted = true;
+          log(`pipeline ${t8}: WARNING — phase agent dispatched the final advance; task is DONE before QA (QA still runs)`);
+        }
         heldVerifyHandoff = handoff; // held until QA approves
         break;
+      }
+      // The skill tells the agent queue updates are mandatory: if the phase
+      // agent already dispatched this advance, adopt it — double-advancing
+      // would be rejected and fail the task.
+      const probe = getDocState(pqId).tasks.find((x) => x.id === t.id);
+      if (probe?.status === "IN_PROGRESS" && probe?.currentPhase === phases[pi + 1]) {
+        log(`pipeline ${t8}: phase ${phase} already advanced by the phase agent — adopting its handoff`);
+        t = probe;
+        continue;
       }
       applyWithVerify(
         pqId,
@@ -232,11 +249,14 @@ export async function processPipelineTask({ pqId, task: t0, cfg, state, log }) {
     log(`pipeline ${t8}: QA APPROVED model=${verdict.model || "?"}`);
 
     // 4. — Complete: dispatch the held verify handoff (auto-completes the task).
-    applyWithVerify(
-      pqId,
-      actions({ type: "ADVANCE_PHASE", input: { taskId: t.id, handoff: heldVerifyHandoff, updatedAt: nowIso() } }),
-      { log },
-    );
+    // (Skipped when the phase agent already completed it — QA has still run.)
+    if (!agentCompleted) {
+      applyWithVerify(
+        pqId,
+        actions({ type: "ADVANCE_PHASE", input: { taskId: t.id, handoff: heldVerifyHandoff, updatedAt: nowIso() } }),
+        { log },
+      );
+    }
     const done = getDocState(pqId).tasks.find((x) => x.id === t.id);
     if (!done || done.status !== "DONE") {
       return await failTask(`final ADVANCE_PHASE did not complete the task (status=${done?.status})`);

@@ -165,7 +165,7 @@ function crashRecovery(cfg, state, log) {
         state.save();
       };
       if (!repo) return blockAndClear(`harness restart: repos.json no longer maps ${a.repoCode}`) || null;
-      if (!a.worktree || !existsSync(a.worktree)) return blockAndClear("harness restart lost the worktree") || null;
+      if (a.phase !== "claim" && (!a.worktree || !existsSync(a.worktree))) return blockAndClear("harness restart lost the worktree") || null;
       const ref = a.taskRef;
       if (!ref?.goal || !ref?.envelope) {
         log("recovery: active record has no taskRef (pre-recovery state shape) — clearing state");

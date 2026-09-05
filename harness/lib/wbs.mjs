@@ -226,6 +226,32 @@ export async function processWbsGoal(task, { cfg, state, log, resume = null }) {
     log(`wbs ${g8}: resuming (phase=${res.phase}, workerRound=${res.round ?? 0}, reviewRound=${res.reviewRound ?? 0})`);
   }
 
+  // Persist the active record before the claim write: a crash between the
+  // claim and the worktree record must still be recoverable.
+  if (!res) {
+    state.data.active = {
+      type: "wbs",
+      goalId: g.id,
+      wbsId: task.wbsId,
+      scopeId: task.scope.id,
+      repoCode: task.repo.code,
+      taskRef: {
+        goal: g,
+        scope: { id: task.scope.id, title: task.scope.title, status: task.scope.status },
+        envelope: task.envelope,
+        ancestors: task.ancestors || [],
+      },
+      phase: "claim",
+      round: 0,
+      reviewRound: 0,
+      worktree: null,
+      base: null,
+      branch,
+      since: nowIso(),
+    };
+    state.save();
+  }
+
   // 1. — Claim (fresh only): assign + start in one order-preserving batch,
   // then read back.
   if (!res) {
@@ -253,30 +279,37 @@ export async function processWbsGoal(task, { cfg, state, log, resume = null }) {
 
   const WT = join(expandHome(cfg.stateDir), "worktrees", `vault-${g8}`);
   let base;
-  if (res) {
+  // A "claim" resume crashed after (or before) the claim write but before
+  // the worktree record: the worktree may or may not exist yet.
+  const claimResume = res && res.phase === "claim";
+  if (res && !claimResume) {
     if (!existsSync(WT)) {
       await fail("harness restart lost the worktree");
       return;
     }
     base = res.base;
   } else {
-    try {
-      spawnSync("git", ["-C", repoPath, "fetch", "--quiet", "origin"], { timeout: 120_000 }); // best-effort
-    } catch {
-      log(`wbs ${g8}: fetch failed (continuing with local refs)`);
-    }
-    try {
+    if (existsSync(WT)) {
+      log(`wbs ${g8}: worktree already present — re-adopting`);
+    } else {
       try {
-        git(repoPath, "worktree", "add", WT, "-b", branch, task.repo.defaultBranch);
+        spawnSync("git", ["-C", repoPath, "fetch", "--quiet", "origin"], { timeout: 120_000 }); // best-effort
       } catch {
-        // re-adopted task: branch already exists
-        git(repoPath, "worktree", "add", WT, branch);
+        log(`wbs ${g8}: fetch failed (continuing with local refs)`);
       }
-    } catch (e) {
-      await fail(`could not create worktree: ${String(e.message).slice(0, 300)}`);
-      return;
+      try {
+        try {
+          git(repoPath, "worktree", "add", WT, "-b", branch, task.repo.defaultBranch);
+        } catch {
+          // re-adopted task: branch already exists
+          git(repoPath, "worktree", "add", WT, branch);
+        }
+      } catch (e) {
+        await fail(`could not create worktree: ${String(e.message).slice(0, 300)}`);
+        return;
+      }
     }
-    base = git(repoPath, "rev-parse", task.repo.defaultBranch).trim();
+    base = res?.base || git(repoPath, "rev-parse", task.repo.defaultBranch).trim();
   }
   for (const cmd of task.repo.setup || []) {
     log(`wbs ${g8}: worktree setup: ${cmd}`);
@@ -296,7 +329,7 @@ export async function processWbsGoal(task, { cfg, state, log, resume = null }) {
       envelope: task.envelope,
       ancestors: task.ancestors || [],
     },
-    phase: res && res.phase !== "deliver" && res.phase !== "record" ? "worker" : res.phase,
+    phase: res ? (res.phase === "deliver" || res.phase === "record" ? res.phase : "worker") : "worker",
     round: workerRound,
     reviewRound,
     worktree: WT,
@@ -355,7 +388,7 @@ export async function processWbsGoal(task, { cfg, state, log, resume = null }) {
 
   try {
     // 4–6. — Worker + gate loop (skipped when resuming at review/deliver).
-    if (!res || res.phase === "worker") {
+    if (!res || res.phase === "worker" || res.phase === "claim") {
       const first = await workerGateLoop(brief);
       if (first.failed) return await fail(first.failed.reason);
 
