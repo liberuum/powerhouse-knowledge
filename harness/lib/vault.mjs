@@ -115,6 +115,15 @@ export function detectDrive() {
 export function getDoc(docId) {
   return sbJson(["docs", "get", docId, "--state"]);
 }
+/** Create a document in the vault (through the CLI pipeline — never
+ *  createEmptyDocument). Returns the doc id. `docs create` owns --format,
+ *  so parse the JSON here rather than via sbJson. */
+export function createDoc(type, name, { driveSlug, parentFolder }) {
+  const args = ["docs", "create", "--type", type, "--name", name, "--drive", driveSlug];
+  if (parentFolder) args.push("--parent-folder", parentFolder);
+  const out = sb([...args, "--format", "json"]);
+  return JSON.parse(out).id;
+}
 
 /** `state.global` of a document. */
 export function getDocState(docId) {

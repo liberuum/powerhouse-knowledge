@@ -41,7 +41,10 @@ export function loadRepos(harnessDir = join(repoRoot, "harness")) {
     if (!Array.isArray(entry.gate) || entry.gate.length === 0 || entry.gate.some((g) => typeof g !== "string")) {
       throw new ReposError(`repos.json[${code}].gate: must be a non-empty array of shell commands`);
     }
-    repos[code] = { code, path: entry.path, defaultBranch: entry.defaultBranch, gate: entry.gate };
+    if (entry.setup !== undefined && (!Array.isArray(entry.setup) || entry.setup.some((s) => typeof s !== "string"))) {
+      throw new ReposError(`repos.json[${code}].setup: must be an array of shell commands (run once per worktree, before gates)`);
+    }
+    repos[code] = { code, path: entry.path, defaultBranch: entry.defaultBranch, gate: entry.gate, setup: entry.setup || [] };
   }
   return repos;
 }

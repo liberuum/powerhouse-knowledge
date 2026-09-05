@@ -25,6 +25,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLogger, State, nowIso } from "./lib/state.mjs";
+import { assertIdentity, cliVersion, isCliVersionAtLeast, detectDrive } from "./lib/vault.mjs";
+import { loadRepos, selectNextTask } from "./lib/select.mjs";
+import { processWbsGoal } from "./lib/wbs.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -100,11 +103,37 @@ function printStatus(cfg) {
   console.log(JSON.stringify({ config: cfg, state: state.data }, null, 2));
 }
 
+/** Pre-flight: exact fix command on failure, no writes before it passes. */
+function startupChecks(cfg, state, log) {
+  const v = cliVersion();
+  if (!isCliVersionAtLeast(v, [1, 0, 36])) {
+    throw new Error(`switchboard CLI v${v.join(".")} < 1.0.36 — upgrade: curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash`);
+  }
+  const id = assertIdentity();
+  log(`startup: signing on (did ${id.did.slice(0, 20)}…, profile ${id.profile})`);
+  if (id.credential_expired) {
+    log(`startup: WARNING — Renown credential expired ${id.credential_expires}; key still signs but the key↔address binding is stale (renew: cd <harness repo> && ph login && switchboard auth login --renown)`);
+  }
+  if (!state.data.drive) {
+    state.data.drive = detectDrive();
+    state.save();
+  }
+  log(`startup: drive ${state.data.drive.slug} (${state.data.drive.uuid})`);
+}
+
 async function runTasks(cfg, state, log, { maxTasks }) {
-  // Task dispatch (WBS goal processor) is wired in in a later commit;
-  // this stub keeps the entrypoint runnable and validates startup.
-  log("task processor not wired yet — nothing to do");
-  return { processed: 0 };
+  const repos = loadRepos();
+  const cap = Math.min(maxTasks ?? Infinity, cfg.maxTasksPerRun ?? Infinity);
+  let processed = 0;
+  for (;;) {
+    if (processed >= cap) break;
+    const task = selectNextTask({ driveSlug: state.data.drive.slug, repos, assignee: cfg.assignee, log });
+    if (!task) break;
+    const res = await processWbsGoal(task, { cfg, state, log });
+    processed++;
+    log(`task ${res.outcome}: ${res.detail}`);
+  }
+  return { processed };
 }
 
 async function main() {
@@ -143,6 +172,19 @@ async function main() {
   if (opts.gc) {
     log("--gc not wired yet — nothing to do");
     return;
+  }
+
+  try {
+    startupChecks(cfg, state, log);
+  } catch (e) {
+    log(`startup FAILED: ${e.message}`);
+    process.exit(1);
+  }
+  if (state.data.active) {
+    log(`startup: WARNING — state.active is set (${JSON.stringify(state.data.active)}); crash recovery not wired yet, not resuming`);
+  }
+  if (opts.mode === "loop") {
+    log("mode=loop: polling not wired yet — running one pass");
   }
 
   const { processed } = await runTasks(cfg, state, log, { maxTasks: opts.maxTasks });
