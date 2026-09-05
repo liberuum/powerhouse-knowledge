@@ -42,8 +42,25 @@ export class Audit {
 const git = (cwd, ...args) =>
   execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", timeout: 120_000 });
 
-const gh = (cwd, ...args) =>
-  execFileSync("gh", ["-C", cwd, ...args], { encoding: "utf8", timeout: 120_000 });
+/** gh has no -C — run it with the worktree as cwd. */
+const gh = (cwd, ...args) => execFileSync("gh", args, { cwd, encoding: "utf8", timeout: 120_000 }).trim();
+
+/** Close the deliverable linked to a goal (SET_DELIVERABLE_PROGRESS done +
+ *  Shipped key result). Returns true if a deliverable was closed. */
+function closeDeliverableForGoal(goalId, { scopeId, link, log }) {
+  let deliverable = null;
+  try {
+    const scope = getDocState(scopeId);
+    deliverable = (scope.deliverables || []).find((d) => d.goalRef === goalId) || null;
+  } catch (e) {
+    log(`wbs: scope read failed for deliverable close-out (${goalId}): ${e.message}`);
+  }
+  if (!deliverable) return false;
+  const batch = [{ type: "SET_DELIVERABLE_PROGRESS", input: { id: deliverable.id, workProgress: { done: true } } }];
+  if (link) batch.push({ type: "ADD_KEY_RESULT", input: { id: randomUUID(), deliverableId: deliverable.id, title: "Shipped", link } });
+  applyWithVerify(scopeId, actions(...batch), { log });
+  return true;
+}
 
 /**
  * Assemble the plain-text task brief the worker receives.
@@ -405,20 +422,35 @@ export async function processWbsGoal(task, { cfg, state, log }) {
       { log },
     );
 
-    // scope close-out, only when a deliverable points at this goal
-    let deliverable = null;
-    try {
-      const scope = getDocState(task.scope.id);
-      deliverable = (scope.deliverables || []).find((d) => d.goalRef === g.id) || null;
-    } catch (e) {
-      log(`wbs ${g8}: scope read failed for deliverable close-out: ${e.message}`);
-    }
-    if (deliverable) {
-      const remote = githubRemote(WT);
-      const link = prUrl || (remote ? `https://github.com/${remote.owner}/${remote.repo}/commit/${commitSha}` : null);
-      const batch = [{ type: "SET_DELIVERABLE_PROGRESS", input: { id: deliverable.id, workProgress: { done: true } } }];
-      if (link) batch.push({ type: "ADD_KEY_RESULT", input: { id: randomUUID(), deliverableId: deliverable.id, title: "Shipped", link } });
-      applyWithVerify(task.scope.id, actions(...batch), { log });
+    // 9b. — Scope close-out. Deliverables are typically linked to the
+    // top-level goals, so after the leaf completes, walk the ancestor
+    // chain: a parent is COMPLETED once every child is, and each closed
+    // level's deliverable is marked DELIVERED.
+    const remote = githubRemote(WT);
+    const link = prUrl || (remote ? `https://github.com/${remote.owner}/${remote.repo}/commit/${commitSha}` : null);
+    const closedDeliverables = [];
+    if (closeDeliverableForGoal(g.id, { scopeId: task.scope.id, link, log })) closedDeliverables.push(g.id);
+    let cur = g;
+    let wbsState = getDocState(task.wbsId);
+    for (let depth = 0; depth < 8; depth++) {
+      const curGoal = wbsState.goals.find((x) => x.id === cur.id);
+      if (!curGoal?.parentId) break;
+      const parent = wbsState.goals.find((x) => x.id === curGoal.parentId);
+      if (!parent || parent.status === "COMPLETED" || parent.status === "CANCELLED") break;
+      const kids = wbsState.goals.filter((x) => x.parentId === parent.id);
+      if (!kids.every((k) => k.status === "COMPLETED" || k.status === "CANCELLED")) break;
+      log(`wbs ${g8}: parent ${parent.id} — all children complete, marking COMPLETED`);
+      applyWithVerify(
+        task.wbsId,
+        actions({
+          type: "SET_GOAL_STATUS",
+          input: { id: parent.id, status: "COMPLETED", outcome: `all children completed: ${kids.map((k) => k.id).join(", ")}` },
+        }),
+        { log },
+      );
+      if (closeDeliverableForGoal(parent.id, { scopeId: task.scope.id, link, log })) closedDeliverables.push(parent.id);
+      cur = parent;
+      wbsState = getDocState(task.wbsId);
     }
 
     // read-back assertions
@@ -426,12 +458,17 @@ export async function processWbsGoal(task, { cfg, state, log }) {
     let mismatch = null;
     if (!done || done.status !== "COMPLETED" || !done.outcome) {
       mismatch = `goal read-back: status=${done?.status} outcome=${JSON.stringify(done?.outcome || null)}`;
-    } else if (deliverable) {
+    } else if (closedDeliverables.length > 0) {
       const scope = getDocState(task.scope.id);
-      const d = (scope.deliverables || []).find((x) => x.id === deliverable.id);
-      if (d?.status !== "DELIVERED") mismatch = `deliverable read-back: status=${d?.status}`;
+      for (const goalId of closedDeliverables) {
+        const d = (scope.deliverables || []).find((x) => x.goalRef === goalId);
+        if (d?.status !== "DELIVERED") {
+          mismatch = `deliverable read-back (${goalId}): status=${d?.status}`;
+          break;
+        }
+      }
     }
-    audit.write("readback.json", JSON.stringify({ goal: done, mismatch }, null, 2));
+    audit.write("readback.json", JSON.stringify({ goal: done, closedDeliverables, mismatch }, null, 2));
     if (mismatch) {
       log(`wbs ${g8}: READ-BACK MISMATCH: ${mismatch} — recording note (no re-assert)`);
       applyWithVerify(task.wbsId, actions(note(g.id, `vault-harness read-back mismatch after COMPLETED: ${mismatch} @ ${nowIso()}`)), { log });

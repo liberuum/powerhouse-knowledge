@@ -6,3 +6,4 @@ node_modules/
 # vault-harness runtime artifacts (never committed)
 harness/config.json
 harness/repos.json
+.ph/
