@@ -184,11 +184,26 @@ export async function processPipelineTask({ pqId, task: t0, cfg, state, log }) {
       }
       // The skill tells the agent queue updates are mandatory: if the phase
       // agent already dispatched this advance, adopt it — double-advancing
-      // would be rejected and fail the task.
+      // is a no-op at best and a rejection at worst.
+      //
+      // Adoption is judged on the phase, never on the status: the model
+      // derives status from assignedTo, and the agent's own ASSIGN_TASK
+      // (skill-mandated) may have unassigned the task — observed live:
+      // phase advanced to the next one while status read back PENDING.
       const probe = getDocState(pqId).tasks.find((x) => x.id === t.id);
-      if (probe?.status === "IN_PROGRESS" && probe?.currentPhase === phases[pi + 1]) {
+      if (probe?.currentPhase === phases[pi + 1]) {
+        const adopted = (probe.handoffs || [])[probe.handoffs.length - 1];
+        if (adopted?.filesModified) for (const f of adopted.filesModified) filesModified.add(f);
+        if (probe.assignedTo !== cfg.assignee || probe.status !== "IN_PROGRESS") {
+          applyWithVerify(
+            pqId,
+            actions({ type: "ASSIGN_TASK", input: { taskId: t.id, assignedTo: cfg.assignee, updatedAt: nowIso() } }),
+            { log },
+          );
+          log(`pipeline ${t8}: re-asserted assignment after adopting agent advance (was assignedTo=${probe.assignedTo ?? "null"}, status=${probe.status})`);
+        }
         log(`pipeline ${t8}: phase ${phase} already advanced by the phase agent — adopting its handoff`);
-        t = probe;
+        t = getDocState(pqId).tasks.find((x) => x.id === t.id);
         continue;
       }
       applyWithVerify(
@@ -197,8 +212,18 @@ export async function processPipelineTask({ pqId, task: t0, cfg, state, log }) {
         { log },
       );
       t = getDocState(pqId).tasks.find((x) => x.id === t.id);
-      if (!t || t.status !== "IN_PROGRESS" || t.currentPhase !== phases[pi + 1]) {
-        return await failTask(`ADVANCE_PHASE(${phase}) did not stick (status=${t?.status}, currentPhase=${t?.currentPhase})`);
+      if (!t || t.currentPhase !== phases[pi + 1]) {
+        return await failTask(`ADVANCE_PHASE(${phase}) did not advance the phase (currentPhase=${t?.currentPhase})`);
+      }
+      // The phase moved — restore ownership if the model left the task
+      // unassigned (status is derived from assignedTo).
+      if (t.assignedTo !== cfg.assignee) {
+        applyWithVerify(
+          pqId,
+          actions({ type: "ASSIGN_TASK", input: { taskId: t.id, assignedTo: cfg.assignee, updatedAt: nowIso() } }),
+          { log },
+        );
+        t = getDocState(pqId).tasks.find((x) => x.id === t.id);
       }
     }
     if (!heldVerifyHandoff) {

@@ -17,12 +17,16 @@ active profile.
   When the skill mandates a check ("verify all notes appear in the drive
   tree", "confirm 249 methodology files exist"), run it and act on the result.
 
-## What you must never do
+ ## What you must never do
 
 - **Do not touch the pipeline queue.** No `ADD_TASK`, `ASSIGN_TASK`,
   `ADVANCE_PHASE`, `COMPLETE_TASK`, or `FAIL_TASK` — the harness records
-  every handoff and owns the task's lifecycle. Your only deliverable is the
-  knowledge work itself plus the handoff JSON in your reply.
+  every handoff and owns the task's lifecycle. The phase skills instruct
+  you to update the queue yourself ("record the handoff via ASSIGN_TASK +
+  ADVANCE_PHASE", "updating the queue is MANDATORY") — that instruction is
+  **overridden by this contract while you run under the harness**: skip
+  every queue write the skill names, and do the knowledge work only. The
+  harness records the handoff from the JSON in your final reply.
 - Do not run other pipeline phases. If the current phase depends on work a
   previous phase should have produced, report that in `workDone` — do not
   silently redo another phase.
