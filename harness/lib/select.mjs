@@ -179,3 +179,48 @@ export function selectNextTask({ driveSlug, repos, assignee, log = () => {} }) {
   log("select: no actionable WBS goal found");
   return null;
 }
+
+/**
+ * Select the next actionable pipeline task from the bai/pipeline-queue
+ * singleton.
+ *
+ * Actionable: status PENDING (claim it), or IN_PROGRESS assigned to us
+ * (resume it). taskType must be `claim` or `enrichment` — the only values
+ * with a phaseOrder (AGENT.md); anything else (e.g. legacy PROCESS_SOURCE)
+ * can never advance and is logged, not picked.
+ *
+ * @param {object} p
+ * @param {string} p.driveSlug
+ * @param {string} p.assignee
+ * @param {(msg:string)=>void} [p.log]
+ * @returns {{kind:"pipeline", pqId:string, task:object}|null}
+ */
+export function selectNextPipelineTask({ driveSlug, assignee, log = () => {} }) {
+  const nodes = tree(driveSlug);
+  const queueNode = nodes.find((n) => n.kind === "file" && n.documentType === "bai/pipeline-queue");
+  if (!queueNode) {
+    log("select: no bai/pipeline-queue singleton found");
+    return null;
+  }
+  let queue;
+  try {
+    queue = getDocState(queueNode.id);
+  } catch (e) {
+    log(`select: pipeline-queue unreadable: ${e.message}`);
+    return null;
+  }
+  for (const t of queue.tasks || []) {
+    if (t.taskType !== "claim" && t.taskType !== "enrichment") {
+      if (t.status === "PENDING" || t.status === "IN_PROGRESS")
+        log(`select: pipeline task ${t.id.slice(0, 8)} has unadvanceable taskType ${t.taskType} (status ${t.status}) — skipping`);
+      continue;
+    }
+    const fresh = t.status === "PENDING";
+    const ours = t.status === "IN_PROGRESS" && t.assignedTo === assignee;
+    if (!fresh && !ours) continue;
+    log(`select: pipeline task ${t.id.slice(0, 8)} ("${t.target}") ${fresh ? "pending" : `in progress (phase ${t.currentPhase ?? "?"})`} — actionable`);
+    return { kind: "pipeline", pqId: queueNode.id, task: t };
+  }
+  log("select: no actionable pipeline task");
+  return null;
+}

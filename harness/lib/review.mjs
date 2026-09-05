@@ -52,6 +52,40 @@ export function buildReviewPrompt({ diffStat, diff, truncated, brief, guidelines
     "Judge the work per your contract. End with the verdict JSON block.",
   ].join("\n");
 }
+/**
+ * Review prompt for pipeline tasks: the "work" is a set of vault documents,
+ * not a git diff. The reviewer reads each document through the CLI.
+ */
+export function buildPipelineReviewPrompt({ brief, guidelines, documents }) {
+  return [
+    "Review the work of a knowledge-pipeline task you did not perform. The work is a set of",
+    "vault documents (knowledge notes, MoCs, tensions, links) written through the switchboard CLI.",
+    "Read every document below with:",
+    "",
+    "    switchboard docs get <id> --state --format json",
+    "",
+    "and check its relationships with the CLI reads the verify skill prescribes.",
+    "",
+    "## Task brief",
+    brief,
+    "",
+    "## Quality criteria to check against",
+    ...guidelines,
+    "",
+    "Per-document checklist (from the verify skill): title; description ≤ 200 characters that adds",
+    "information beyond the title; lowercase noteType; non-empty topics; provenance (sourceOrigin +",
+    "sourceRef where applicable); ≥ 2 typed relationships each with a real reason (no bare edges);",
+    "MoC membership with a CORE_IDEA edge where the note belongs to a topic; lifecycle walked to",
+    "CANONICAL where the content warrants it. Also: the source document (if any) is closed out —",
+    "status EXTRACTED, extracted claims recorded, DERIVED_FROM edges present.",
+    "",
+    "## Documents under review",
+    documents.length ? documents.map((d) => `- ${d}`).join("\n") : "(none reported by the phase agents — that is a finding)",
+    "",
+    "Judge the work per your contract. `file` in findings is the document id (or `queue` for",
+    "pipeline-queue hygiene). End with the verdict JSON block.",
+  ].join("\n");
+}
 
 /**
  * Validate a verdict out of a review run.
@@ -133,6 +167,39 @@ export async function review({ cwd, brief, guidelines, diffResult, model, timeou
     brief,
     guidelines,
   });
+  const run = await runAgent({
+    cwd,
+    model,
+    prompt,
+    systemPrompt: REVIEWER_PROMPT,
+    timeoutMin,
+    log,
+  });
+  const v = parseVerdict(run);
+  log?.(
+    `review: verdict=${v.verdict} (${v.findings.filter((f) => f.severity === "blocker").length} blocker, ` +
+      `${v.findings.filter((f) => f.severity === "major").length} major, ` +
+      `${v.findings.filter((f) => f.severity === "minor").length} minor) model=${v.model || "?"}`,
+  );
+  return { ...v, run };
+}
+
+/**
+ * Run one QA round over a pipeline task's vault documents.
+ * Same verdict contract as review(); `file` in findings is a document id.
+ *
+ * @param {object} p
+ * @param {string} p.cwd          repo root (skills/ + data/ reachable)
+ * @param {string} p.brief        the task brief
+ * @param {string[]} p.guidelines skill locations
+ * @param {string[]} p.documents  doc ids under review
+ * @param {string} p.model        config.reviewModel
+ * @param {number} p.timeoutMin   config.reviewTimeoutMin
+ * @param {(msg:string)=>void} [p.log]
+ * @returns {Promise<{verdict, summary, findings, model, usage, run}>}
+ */
+export async function reviewPipeline({ cwd, brief, guidelines, documents, model, timeoutMin, log = () => {} }) {
+  const prompt = buildPipelineReviewPrompt({ brief, guidelines, documents });
   const run = await runAgent({
     cwd,
     model,

@@ -372,9 +372,11 @@ export async function processWbsGoal(task, { cfg, state, log }) {
     const commitSha = git(WT, "rev-parse", "HEAD").trim();
     let prUrl = null;
     let deliveryNote = null;
+    const prUrlForBranch = () => {
+      const arr = JSON.parse(gh(WT, "pr", "list", "--head", branch, "--state", "all", "--json", "url"));
+      return arr[0]?.url || null;
+    };
     try {
-      const originUrl = git(WT, "remote", "get-url", "origin").trim();
-      void originUrl;
       git(WT, "push", "-u", "origin", branch);
       const title = `Vault ${g8}: ${g.description.split("\n")[0]}`.slice(0, 72);
       const body = [
@@ -385,16 +387,16 @@ export async function processWbsGoal(task, { cfg, state, log }) {
         `Review: APPROVED by reviewer (${reviewModel || "unknown"}), ${reviewRound} round(s)`,
         `Gates: ${task.repo.gate.join(" && ")} — all passing`,
       ].join("\n");
-      gh(WT, "pr", "create", "--base", task.repo.defaultBranch, "--head", branch, "--title", title, "--body", body);
-      prUrl = gh(WT, "pr", "view", "--head", branch, "--json", "url").trim();
+      const out = gh(WT, "pr", "create", "--base", task.repo.defaultBranch, "--head", branch, "--title", title, "--body", body);
+      prUrl = out.split("\n").filter(Boolean).pop() || prUrlForBranch();
     } catch (e) {
       // existing PR from a prior attempt of this goal?
-      try {
-        prUrl = gh(WT, "pr", "view", "--head", branch, "--json", "url").trim();
+      prUrl = prUrlForBranch();
+      if (prUrl) {
         deliveryNote = "PR already existed from a prior attempt";
-      } catch {
-        prUrl = null;
-        deliveryNote = `PR not created: ${String(e.message).split("\n")[0].slice(0, 300)}`;
+      } else {
+        const stderr = String(e.stderr || "").split("\n").find((l) => l.trim());
+        deliveryNote = `PR not created: ${stderr || String(e.message).slice(0, 300)}`;
       }
     }
     if (prUrl === null && cfg.prRequired) {

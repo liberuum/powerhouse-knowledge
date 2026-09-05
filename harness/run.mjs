@@ -26,8 +26,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLogger, State, nowIso } from "./lib/state.mjs";
 import { assertIdentity, cliVersion, isCliVersionAtLeast, detectDrive } from "./lib/vault.mjs";
-import { loadRepos, selectNextTask } from "./lib/select.mjs";
+import { loadRepos, selectNextTask, selectNextPipelineTask } from "./lib/select.mjs";
 import { processWbsGoal } from "./lib/wbs.mjs";
+import { processPipelineTask } from "./lib/pipeline.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -127,9 +128,16 @@ async function runTasks(cfg, state, log, { maxTasks }) {
   let processed = 0;
   for (;;) {
     if (processed >= cap) break;
-    const task = selectNextTask({ driveSlug: state.data.drive.slug, repos, assignee: cfg.assignee, log });
-    if (!task) break;
-    const res = await processWbsGoal(task, { cfg, state, log });
+    // WBS goals first (implementation work), then pipeline tasks.
+    const wbsTask = selectNextTask({ driveSlug: state.data.drive.slug, repos, assignee: cfg.assignee, log });
+    const res = wbsTask
+      ? await processWbsGoal(wbsTask, { cfg, state, log })
+      : await (async () => {
+          const pt = selectNextPipelineTask({ driveSlug: state.data.drive.slug, assignee: cfg.assignee, log });
+          if (!pt) return null;
+          return processPipelineTask(pt, { cfg, state, log });
+        })();
+    if (!res) break;
     processed++;
     log(`task ${res.outcome}: ${res.detail}`);
   }
