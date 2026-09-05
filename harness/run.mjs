@@ -271,7 +271,7 @@ async function runTasks(cfg, state, log, { maxTasks }) {
       : await (async () => {
           const pt = selectNextPipelineTask({ driveSlug: state.data.drive.slug, assignee: cfg.assignee, log });
           if (!pt) return null;
-          return processPipelineTask(pt, { cfg, state, log });
+          return processPipelineTask({ ...pt, cfg, state, log });
         })();
     if (!res) break;
     processed++;
@@ -338,7 +338,7 @@ async function main() {
     const res =
       recovery.kind === "wbs"
         ? await processWbsGoal(recovery.task, { cfg, state, log, resume: recovery.resume })
-        : await processPipelineTask(recovery.pt, { cfg, state, log });
+        : await processPipelineTask({ ...recovery.pt, cfg, state, log });
     log(`task ${res.outcome}: ${res.detail}`);
   }
 

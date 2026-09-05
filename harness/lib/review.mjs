@@ -10,27 +10,34 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runAgent, extractLastJson } from "./runner.mjs";
 import { repoRoot } from "./vault.mjs";
 
 const REVIEWER_PROMPT = join(repoRoot, "harness", "prompts", "reviewer.md");
 export const MAX_DIFF_LINES = 4000;
+// The prompt is a single CLI argument; Linux caps one argument at 128 KiB
+// (E2BIG). Keep the inline diff well under that, and hand the reviewer the
+// full diff as a file for anything beyond.
+export const MAX_DIFF_BYTES = 64 * 1024;
 
 /** base→HEAD diff of a worktree, capped (the reviewer reads beyond directly). */
-export function worktreeDiff({ worktree, base, maxLines = MAX_DIFF_LINES }) {
+export function worktreeDiff({ worktree, base, maxLines = MAX_DIFF_LINES, maxBytes = MAX_DIFF_BYTES }) {
   const git = (args) => execFileSync("git", ["-C", worktree, ...args], { encoding: "utf8", timeout: 60_000 });
   const diffStat = git(["diff", `${base}..HEAD`, "--stat"]);
   const all = git(["diff", `${base}..HEAD`]);
-  const lines = all.split("\n");
-  return {
-    diffStat,
-    diff: lines.slice(0, maxLines).join("\n"),
-    truncated: lines.length > maxLines,
-  };
+  let diff = all.split("\n").slice(0, maxLines).join("\n");
+  let truncated = all.split("\n").length > maxLines;
+  if (Buffer.byteLength(diff, "utf8") > maxBytes) {
+    diff = diff.slice(0, Math.floor(diff.length * (maxBytes / Buffer.byteLength(diff, "utf8"))));
+    truncated = true;
+  }
+  return { diffStat, diff, full: all, truncated };
 }
 
-export function buildReviewPrompt({ diffStat, diff, truncated, brief, guidelines }) {
+export function buildReviewPrompt({ diffStat, diff, truncated, diffPath, brief, guidelines }) {
   return [
     "Review the work under review in the current directory (a git worktree; the diff is base→HEAD).",
     "",
@@ -43,10 +50,12 @@ export function buildReviewPrompt({ diffStat, diff, truncated, brief, guidelines
     "## Diff summary",
     diffStat,
     "",
-    "## Full diff",
+    "## Diff",
     "```diff",
     diff,
-    truncated ? `\n… diff truncated at ${MAX_DIFF_LINES} lines — read the worktree directly for anything beyond` : "",
+    truncated && diffPath
+      ? `\n… diff truncated — the full diff is at ${diffPath}; read it (and the worktree) directly for anything beyond`
+      : "",
     "```",
     "",
     "Judge the work per your contract. End with the verdict JSON block.",
@@ -160,10 +169,15 @@ export function parseVerdict(run) {
  * @returns {Promise<{verdict, summary, findings, model, usage, run}>}
  */
 export async function review({ cwd, brief, guidelines, diffResult, model, timeoutMin, log = () => {} }) {
+  // The full (uncapped) diff goes to a temp file the reviewer can read;
+  // only the capped diff goes inline (argv has a 128 KiB cap per argument).
+  const diffPath = join(mkdtempSync(join(tmpdir(), "vault-harness-review-")), "full.diff");
+  writeFileSync(diffPath, diffResult.full ?? diffResult.diff);
   const prompt = buildReviewPrompt({
     diffStat: diffResult.diffStat,
     diff: diffResult.diff,
     truncated: diffResult.truncated,
+    diffPath,
     brief,
     guidelines,
   });
