@@ -11,5 +11,6 @@
   "workerModel": "@worker",
   "reviewModel": "@review",
   "assignee": "vault-harness",
-  "stateDir": "~/.omp/vault-harness"
+  "stateDir": "~/.omp/vault-harness",
+  "runHealth": false
 }
