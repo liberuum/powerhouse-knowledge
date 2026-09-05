@@ -148,7 +148,12 @@ export function selectNextTask({ driveSlug, repos, assignee, log = () => {} }) {
       // preserves that insertion order and carries the children index
       for (const goal of byId.values()) {
         const check = goalIsActionable(goal, byId, assignee);
-        if (!check.ok) continue;
+        if (!check.ok) {
+          if (check.why?.startsWith("dependency")) {
+            log(`select: goal ${goal.id} waiting — ${check.why}`);
+          }
+          continue;
+        }
         log(
           `select: goal ${goal.id} ("${goal.description}") under ${envelope.code} / scope "${scope.title}" — actionable`,
         );
