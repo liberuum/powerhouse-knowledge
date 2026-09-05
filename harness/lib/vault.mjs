@@ -169,9 +169,30 @@ export function summarizeError(err) {
  *  `id` + `timestampUtcMs`; business timestamps inside `input` (ADD_NOTE.
  *  timestamp, handoff completedAt, …) are the harness's job — callers must
  *  include them where the reducer requires them. */
-export function actions(...batch) {
-  return batch.flat().map((a) => ({ ...a, scope: "global" }));
-}
+ export function actions(...batch) {
+   return batch
+     .flat()
+     .map((a) => ({ ...a, scope: "global", ...(a.input !== undefined ? { input: deescape(a.input) } : {}) }));
+ }
+
+ /**
+  * Agent-sourced text is sometimes double-encoded (a literal "\n" sequence
+  * instead of a newline). The pre-apply lint refuses backslash-escapes in any
+  * action string (CLI ≥ 1.0.32), so normalize them at the single boundary
+  * where every action is constructed.
+  */
+ function deescape(v) {
+   if (typeof v === "string") {
+     return v.replace(/\\(n|t|"|\\)/g, (m, c) => (c === "n" ? "\n" : c === "t" ? "\t" : c === '"' ? '"' : "\\"));
+   }
+   if (Array.isArray(v)) return v.map(deescape);
+   if (v && typeof v === "object") {
+     const out = {};
+     for (const [k, val] of Object.entries(v)) out[k] = deescape(val);
+     return out;
+   }
+   return v;
+ }
 
 /**
  * The only write path.
