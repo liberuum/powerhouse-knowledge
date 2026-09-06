@@ -1,0 +1,10 @@
+{
+  "PAY": {
+    "path": "/home/froid/projects/payments",
+    "defaultBranch": "main",
+    "gate": [
+      "npm run lint",
+      "npm test"
+    ]
+  }
+}

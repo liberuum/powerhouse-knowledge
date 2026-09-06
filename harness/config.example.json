@@ -1,0 +1,16 @@
+{
+  "profile": "vault",
+  "pollSeconds": 60,
+  "maxTasksPerRun": null,
+  "taskTimeoutMin": 60,
+  "reviewTimeoutMin": 30,
+  "maxWorkerRounds": 3,
+  "maxReviewRounds": 2,
+  "delivery": "pr",
+  "prRequired": false,
+  "workerModel": "@worker",
+  "reviewModel": "@review",
+  "assignee": "vault-harness",
+  "stateDir": "~/.omp/vault-harness",
+  "runHealth": false
+}
