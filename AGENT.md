@@ -14,7 +14,7 @@ This file is the single canonical instruction set. `agents/knowledge-agent.md` i
 
 ## Start here — the first five minutes
 
-1. **Establish the target.** There is no default vault. Read the pre-flight hook output (`Profile: … -> …`, `VAULT_DRIVE_ID`, `VAULT_DRIVE_SLUG`) or run `switchboard config show`; if it is ambiguous which vault the user means, **ask** for the Switchboard URL and drive. See *First: Establish which vault to use*.
+1. **Establish the target.** There is no default vault. Read the pre-flight hook output (`Profile: … -> …`, `VAULT_DRIVE_ID`, `VAULT_DRIVE_SLUG`) or run `switchboard config show`; if there is no profile, ping fails, or this is the first session, **REQUIRED:** [skills/setup/SKILL.md](skills/setup/SKILL.md). If it is ambiguous which vault the user means, **ask** for the Switchboard URL and drive. See *First: Establish which vault to use*.
 2. **Find the drive** — the one containing a `bai/vault-config` document. See *Find the vault drive*. Keep its UUID (for `knowledgeGraph*` queries) and slug (for `--drive`).
 3. **Check it is ready** — folders and the three singletons exist: `/powerhouse-knowledge:setup`.
 4. **Know the job** — read *The job: from source to connected notes* below. Most requests are one of: seed a source, run the pipeline on it, search, or check health.
@@ -26,7 +26,8 @@ This file is the single canonical instruction set. `agents/knowledge-agent.md` i
 |---------------|-----------|
 | Connection setup (CLI profiles, GraphQL, MCP, raw-write safety rules) | [CONFIGURATION.md](CONFIGURATION.md) |
 | Switchboard CLI commands (drives, docs, mutations, queries) | [skills/cli-reference/SKILL.md](skills/cli-reference/SKILL.md) |
-| Search (semantic, keyword, topic, provenance; rich-context recipe) | [skills/search/SKILL.md](skills/search/SKILL.md) |
+| Search (semantic, keyword, topic, provenance; rich-context recipe) | [skills/search/SKILL.md](skills/search/SKILL.md) — work/project hits fork to scope-of-work |
+| Nested scope-of-work lookup (envelopes, deliverables, roadmaps, milestones, maps, WBS) | [skills/scope-of-work/SKILL.md](skills/scope-of-work/SKILL.md) |
 | Graph analysis (triangles, bridges, clusters, semantic neighbourhoods) | [skills/graph/SKILL.md](skills/graph/SKILL.md) |
 | Finding and creating links between notes | [skills/connect/SKILL.md](skills/connect/SKILL.md) |
 | Extracting atomic claims from source material | [skills/extract/SKILL.md](skills/extract/SKILL.md) |
@@ -35,11 +36,11 @@ This file is the single canonical instruction set. `agents/knowledge-agent.md` i
 | Quality checks and auto-repair | [skills/verify/SKILL.md](skills/verify/SKILL.md) |
 | Vault health diagnostics | [skills/health/SKILL.md](skills/health/SKILL.md) |
 | End-to-end processing pipeline | [skills/pipeline/SKILL.md](skills/pipeline/SKILL.md) |
-| Vault initialisation and structure verification | [skills/setup/SKILL.md](skills/setup/SKILL.md) |
+| First-time connect + vault folders/singletons | [skills/setup/SKILL.md](skills/setup/SKILL.md) |
 | Bulk import from markdown/Obsidian/JSON | [skills/import/SKILL.md](skills/import/SKILL.md) |
 | Export vault as markdown/JSON/backup | [skills/export/SKILL.md](skills/export/SKILL.md) |
 | Real-time vault monitoring | [skills/watch/SKILL.md](skills/watch/SKILL.md) |
-| Scopes of work, project envelopes and WBS goal trees | [skills/projects/SKILL.md](skills/projects/SKILL.md) |
+| Create/mutate scopes, envelopes and WBS (goal-working loop) | [skills/projects/SKILL.md](skills/projects/SKILL.md) |
 | Skill discovery in the vault + incremental sync | [skills/skills/SKILL.md](skills/skills/SKILL.md) |
 
 ## First: Establish which vault to use — ASK, never assume
@@ -64,9 +65,10 @@ switchboard ping           # is it reachable?
 ```
 
 Never hardcode an endpoint or drive id into scripts or saved config without
-the user having named it. If the CLI isn't configured, check if MCP tools are
-available (`mcp__reactor-mcp__*` or `mcp__claude_ai_*`) — and the same rule
-applies: the MCP server's target must be one the user chose.
+the user having named it. If the CLI isn't configured, **REQUIRED:**
+[skills/setup/SKILL.md](skills/setup/SKILL.md). MCP tools
+(`mcp__reactor-mcp__*` or `mcp__claude_ai_*`) may already be pointed at a
+server — the same rule applies: that target must be one the user chose.
 
 ### Connecting to a shared remote vault
 
@@ -162,7 +164,7 @@ switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how
 - `score` carries the RAW number instead — cosine in SEMANTIC, the Reciprocal Rank Fusion weight in HYBRID (ordinal, tops out near 0.033) — **never render `score` as a percentage**.
 - `topics` is a per-node field resolver (one server-side query per row). One whole-vault fetch per run is cheap (~0.3 s for 500 notes); selecting it inside a per-hit loop is not.
 - **MoCs are nodes too** and come back from every query with `status = "MOC"` and `noteType = "MOC (<tier>)"` — filter them when the question is about notes.
-- **Scopes of work and work breakdowns are nodes too** (package ≥ 1.0.54-dev.7): `status = "SCOPE"` / `"WBS"` (sentinels, like MoCs — a scope's own DRAFT would otherwise pollute note-lifecycle queries) with the real state in `noteType` (`Scope (IN_PROGRESS)`, `WBS (BLOCKED)`); their `content` is a rendered outline (envelopes, deliverables, quotes, milestones, contributors / the goal tree), so a search for a deliverable finds its project. They are not knowledge nodes: excluded from orphans, density and `edgeCount`. A scope carries derived edges `CITES` (→ each note/MoC in an envelope's `knowledgeRefs`) and `DELIVERED_BY` (→ its WBS), so a note's backlinks show which project cites it.
+- **Scopes of work and work breakdowns are nodes too** (package ≥ 1.0.54-dev.7): `status = "SCOPE"` / `"WBS"` (sentinels, like MoCs — a scope's own DRAFT would otherwise pollute note-lifecycle queries) with the real state in `noteType` (`Scope (IN_PROGRESS)`, `WBS (BLOCKED)`); their `content` is a rendered outline. They are not knowledge nodes: excluded from orphans, density and `edgeCount`. A scope carries derived edges `CITES` (→ each note/MoC in an envelope's `knowledgeRefs`) and `DELIVERED_BY` (→ its WBS). Nested fields (envelope UUID, quotes, `goalRef`, goal notes) are **not** documents — **REQUIRED:** use [skills/scope-of-work/SKILL.md](skills/scope-of-work/SKILL.md). Search skill forks here when the query is about a project, deliverable, milestone, roadmap, or WBS.
 - If the field doesn't exist (schema validation error), the deployment runs an older package — fall back to `knowledgeGraphFullSearch`.
 
 Keyword search still matters for exact terms — but **`knowledgeGraphFullSearch` ANDs its terms**, so give it 1–2 distinctive keywords, never a sentence:
@@ -285,7 +287,7 @@ next action in `recommendations`, and tell the user what it would take.
 
 | Command | What it does |
 |---------|-------------|
-| `/powerhouse-knowledge:setup` | Verify the vault is ready: folders, singletons, methodology files |
+| `/powerhouse-knowledge:setup` | Connect the CLI to the vault (first time) and verify folders, singletons, methodology |
 | `/powerhouse-knowledge:seed` | Ingest source material and queue it |
 | `/powerhouse-knowledge:extract` | Extract atomic claims from a source into notes |
 | `/powerhouse-knowledge:connect` | Find and create typed links |
@@ -293,9 +295,10 @@ next action in `recommendations`, and tell the user what it would take.
 | `/powerhouse-knowledge:verify` | Quality gate + auto-repair |
 | `/powerhouse-knowledge:pipeline` | Full end-to-end processing of a queued source |
 | `/powerhouse-knowledge:health` | Vault health diagnostics, saved to the health report |
-| `/powerhouse-knowledge:search <query>` | Multi-tier search; rich-context recipe for answering questions |
+| `/powerhouse-knowledge:search <query>` | Multi-tier search; work/project queries fork to scope-of-work |
 | `/powerhouse-knowledge:graph` | Graph structure analysis |
-| `/powerhouse-knowledge:projects` | Scopes of work (`powerhouse/scopeofwork`) — the envelopes are the projects — and WBS goal trees (`bai/wbs`) |
+| `/powerhouse-knowledge:scope-of-work` | Read nested SOW data (envelopes, deliverables, roadmaps, milestones, maps, WBS) |
+| `/powerhouse-knowledge:projects` | Create/mutate scopes of work — the envelopes are the projects — and WBS goal trees |
 | `/powerhouse-knowledge:import <path>` / `:export` | Bulk import / export |
 | `/powerhouse-knowledge:watch` | Real-time monitoring |
 | `/powerhouse-knowledge:skills <need>` | Find agent skills stored in the vault |
@@ -376,7 +379,7 @@ Singleton in `/ops/health/`. Checks use `HealthCategory` ∈ `SCHEMA_COMPLIANCE`
 
 ### `powerhouse/scopeofwork` and `bai/wbs`
 
-A **project is an envelope inside a scope-of-work document**, not a document of its own; each envelope links the `bai/wbs` that delivers it (`wbsRef` ↔ `sowRef`+`sowProjectId`) and each deliverable names the goal that delivers it (`goalRef`). `bai/project` is retired — never create one. See [skills/projects/SKILL.md](skills/projects/SKILL.md) for the 39 + 15 operations and the enums (`ScopeOfWorkStatus`, `DeliverableStatus`, `DeliverableSetStatus`, `Unit`, `BudgetType`, `PMCurrency`, `GoalStatus`). Both are graph-indexed as `SCOPE` / `WBS` nodes (searchable outline, `CITES` / `DELIVERED_BY` derived edges); mutate them by id.
+A **project is an envelope inside a scope-of-work document**, not a document of its own; each envelope links the `bai/wbs` that delivers it (`wbsRef` ↔ `sowRef`+`sowProjectId`) and each deliverable names the goal that delivers it (`goalRef`). `bai/project` is retired — never create one. **Read** nested state with [skills/scope-of-work/SKILL.md](skills/scope-of-work/SKILL.md). **Write** with [skills/projects/SKILL.md](skills/projects/SKILL.md) (39 + 15 operations; enums `ScopeOfWorkStatus`, `DeliverableStatus`, `DeliverableSetStatus`, `Unit`, `BudgetType`, `PMCurrency`, `GoalStatus`). Both are graph-indexed as `SCOPE` / `WBS` nodes (searchable outline, `CITES` / `DELIVERED_BY` derived edges); mutate them by id.
 
 ## Relationships
 

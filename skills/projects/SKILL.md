@@ -28,6 +28,10 @@ scope of work ──▶ envelope (project) ──wbsRef──▶ WBS document
                        WBS ──sowRef + sowProjectId──▶ back to the envelope
 ```
 
+**Find and read nested SOW data with scope-of-work** (`lookup.py list` /
+`get` / `search` / `outline`). This skill is **create, mutate, and the
+goal-working loop**.
+
 **`bai/project` is retired (2026-09-04).** Its fields moved onto the envelope
 (`wbsRef`, `knowledgeRefs`, `references`, owner). Never create a `bai/project`
 document; if you meet one in an older vault, it is legacy data to migrate into an
@@ -50,11 +54,13 @@ quotes, budgets, `goalRef`s and goal notes are read from the document itself wit
 
 ## When to use
 
-- The user asks about project, deliverable or task status, or "what should I work on next"
-- An agent needs to pick up, progress, or close out a WBS goal
 - Creating a scope of work, an envelope inside one, or the envelope's WBS
 - Turning a goal tree into priced deliverables, or a deliverable into scheduled work
+- An agent needs to pick up, progress, or close out a WBS goal
 - Citing the vault knowledge an envelope builds on
+
+Reading status, searching nested SOW fields, or looking up a named project:
+**scope-of-work**, not this skill.
 
 ## Pre-flight
 
@@ -74,30 +80,22 @@ switchboard introspect   # only if absent
 
 ## Step 1: Find the projects folder, the scopes and their envelopes
 
+**REQUIRED SUB-SKILL:** use scope-of-work to list and read — do not walk the
+drive tree looking for envelope titles.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT:-.}/skills/scope-of-work/lookup.py" list
+python3 "${CLAUDE_PLUGIN_ROOT:-.}/skills/scope-of-work/lookup.py" get "<code or title>"
+```
+
+When **creating** (Step 2), you still need the `/projects/` folder UUID:
+
 ```bash
 switchboard docs tree <drive-slug> --format json | python3 -c "
 import json, sys
 nodes = json.load(sys.stdin).get('nodes', [])
 folder = next((n for n in nodes if n.get('kind')=='folder' and n.get('name')=='projects' and n.get('parentFolder') is None), None)
 print('FOLDER:', folder['id'] if folder else 'MISSING')
-for n in nodes:
-    if n.get('documentType') in ('powerhouse/scopeofwork', 'bai/wbs'):
-        print(n['documentType'], n['id'], n.get('name'))
-"
-```
-
-Then read each scope for its envelopes — the projects are *inside* the document:
-
-```bash
-switchboard docs get <scope-id> --state --format json | python3 -c "
-import json, sys
-g = json.load(sys.stdin)['state']['global']
-print(g['title'], g['status'])
-for p in g['projects']:
-    ids = set((p.get('scope') or {}).get('deliverables') or [])
-    ds = [d for d in g['deliverables'] if d['id'] in ids]
-    done = sum(1 for d in ds if d['status']=='DELIVERED')
-    print(f\"  {p['code']:<6} {p['title']}  set={(p.get('scope') or {}).get('status')}  {done}/{len(ds)} delivered  wbs={p.get('wbsRef')}  notes={len(p.get('knowledgeRefs') or [])}\")
 "
 ```
 
@@ -194,22 +192,12 @@ and MOCs the work actually builds on. `SET_PROJECT_REFERENCES` **replaces** the 
 
 ## Step 6: Read an envelope and its WBS
 
-```bash
-switchboard docs get <scope-id> --state --format json    # state.global.projects[i].wbsRef, .knowledgeRefs, .references; deliverables[].goalRef
-switchboard docs get <wbs-id>   --state --format json    # state.global.goals[] — flat, depth-first order = display order; sowRef/sowProjectId point back
-```
+**REQUIRED SUB-SKILL:** use scope-of-work (`lookup.py get` / `outline`).
+`docs get` is for mutate ids after you already have them — envelope title is
+not a document name.
 
 Links are independent, not mirrored: read both directions rather than assuming one
 implies the other. Step 3 sets both when creating a fresh pair.
-
-To *find* a scope or WBS without walking the tree, use the index — it returns the
-outline as `content`, ready to quote:
-
-```bash
-switchboard query '{ knowledgeGraphNodesByStatus(driveId:"<UUID>", status:"SCOPE") { documentId title noteType } }'
-switchboard query '{ knowledgeGraphSemanticSearch(driveId:"<UUID>", query:"payments demo deliverable", mode: HYBRID, limit: 5) { similarity node { documentId title noteType status } } }'
-switchboard query '{ knowledgeGraphForwardLinks(driveId:"<UUID>", documentId:"<scope-id>") { targetDocumentId linkType targetTitle } }'   # CITES → notes/MoCs, DELIVERED_BY → WBS
-```
 
 ## Step 7: The goal-working loop (unchanged from before)
 

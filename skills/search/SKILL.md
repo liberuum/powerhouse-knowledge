@@ -1,6 +1,6 @@
 ---
 name: search
-description: Search knowledge notes by title, type, topic, content, or meaning. Use when the user wants to find notes, look up knowledge, or explore what exists in the vault.
+description: Use when the user wants to find notes, look up knowledge, explore what exists in the vault, or search for a project, deliverable, milestone, roadmap, map, workflow, or work-breakdown without knowing where it lives.
 ---
 
 # Search Knowledge Notes
@@ -14,6 +14,21 @@ description: Search knowledge notes by title, type, topic, content, or meaning. 
 > the Switchboard URL and the drive** — never assume an endpoint.
 
 Search the Knowledge Vault using the graph indexer subgraph. Supports keyword search, topic filtering, provenance queries, and AI-powered semantic search.
+
+## Work vs knowledge — fork first
+
+Graph search ranks **documents**. A project is an envelope inside
+`powerhouse/scopeofwork`, not a document — `docs get "Paperless Billing"`
+fails, and semantic search often ranks notes above the envelope.
+
+If the query is about a **project, deliverable, milestone, roadmap, cited
+map on a project, workflow/goal status, or WBS**: **REQUIRED SUB-SKILL:**
+use scope-of-work (`lookup.py search` / `get` / `outline`). Then continue
+here for subject knowledge around that work.
+
+A `SCOPE` / `WBS` hit from the queries below is a rendered outline, not
+structured state (quotes, envelope UUID, `goalRef`). Pass its `documentId`
+to `lookup.py get` or `outline`.
 
 ## Rich context in two calls (answering a question)
 
@@ -148,8 +163,8 @@ switchboard query '{ knowledgeGraphStale(driveId: "<UUID>", since: "<ISO>", limi
 | `bai/knowledge-note` | an atomic claim | DRAFT / IN_REVIEW / CANONICAL / ARCHIVED | cite as knowledge |
 | `bai/research-claim` | a methodology claim | `CANONICAL` | cite as knowledge (imported research) |
 | `bai/moc` | a map of a cluster | `"MOC"` (sentinel; `noteType = "MOC (<tier>)"`) | its `content` is the orientation — a ready summary; don't render through a note-status badge |
-| `powerhouse/scopeofwork` | a scope of work — envelopes (projects), deliverables, milestones, contributors | `"SCOPE"` (sentinel; `noteType = "Scope (<ScopeOfWorkStatus>)"`) | `content` is a rendered outline; for quotes, budgets and `goalRef`s read the document by id. Forward links `CITES` → notes/MoCs it cites, `DELIVERED_BY` → its WBS |
-| `bai/wbs` | the goal tree that delivers one envelope | `"WBS"` (sentinel; `noteType = "WBS (TODO\|IN_PROGRESS\|BLOCKED\|COMPLETED)"`) | title is derived (`Work breakdown — <owner> (n/m goals done)`); the envelope names it. Backlink `DELIVERED_BY` from its scope |
+| `powerhouse/scopeofwork` | a scope of work — envelopes (projects), deliverables, milestones, contributors | `"SCOPE"` (sentinel; `noteType = "Scope (<ScopeOfWorkStatus>)"`) | outline only; nested fields → **scope-of-work**. `CITES` → notes/MoCs, `DELIVERED_BY` → WBS |
+| `bai/wbs` | the goal tree that delivers one envelope | `"WBS"` (sentinel; `noteType = "WBS (TODO\|IN_PROGRESS\|BLOCKED\|COMPLETED)"`) | outline / goal tree → **scope-of-work** `get <wbs-id>`. Backlink `DELIVERED_BY` from its scope |
 | `bai/tension` | a recorded contradiction between notes | OPEN / RESOLVED / DISSOLVED | report as a disagreement, never as a fact; its `INVOLVES` edges point at the notes |
 | `bai/observation` | a note about the vault's own process | PENDING / PROMOTED / IMPLEMENTED / ARCHIVED | process signal, not subject knowledge |
 
@@ -169,6 +184,7 @@ If the subgraph returns empty (index needs rebuilding), scan directly:
 |-------------|-----------|
 | Natural language question | `knowledgeGraphSemanticSearch` (mode: HYBRID) — pass the question verbatim |
 | Known keyword/term | `knowledgeGraphSearch` or `knowledgeGraphFullSearch` (1-2 keywords, terms are ANDed) |
+| Project / deliverable / milestone / roadmap / WBS / "what's the status of X" | **scope-of-work** (`lookup.py search` / `get`) — not graph search |
 | "Notes about topic X" | `knowledgeGraphByTopic` |
 | "Notes similar to this one" | `knowledgeGraphSimilar` |
 | "What did author X write?" | `knowledgeGraphByAuthor` |

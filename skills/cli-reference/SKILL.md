@@ -33,6 +33,10 @@ curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/insta
 ## Configuration
 
 ```bash
+# First profile on this machine — URL the user named, no default vault.
+# **REQUIRED SUB-SKILL:** use setup when there is no profile or ping fails.
+switchboard init --url <graphql-url> --name <short-name> --use-profile   # CLI ≥ 1.0.34
+
 # Switch profiles — names are whatever the user created; e.g. a local `ph vetra`
 # profile typically points at http://localhost:4001/graphql
 switchboard config use <profile-name>

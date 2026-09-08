@@ -1,69 +1,93 @@
 ---
 name: setup
-description: Initialize a Knowledge Vault — verify drive structure, folder layout, and singleton documents are in place. The Ars Contexta methodology (249 research claims) is bundled locally with the plugin and does NOT need to be imported into the vault.
+description: Use when pointing the plugin at a vault for the first time, when there is no Switchboard profile, ping fails, the CLI is missing, or when verifying folders and singletons so other skills can run. Use when the user asks to set up, initialize, or connect to a knowledge vault. Do not use for linking notes.
 ---
 
 # Vault Setup
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+Leave the session able to run every other skill: CLI profile pointed at the
+Switchboard the **user names**, a vault drive, folders, singletons, signing,
+local methodology.
 
-Verify that a Knowledge Vault drive is ready for use — correct folder structure, singleton documents exist, and the plugin's local methodology files are accessible.
+There is **no default vault**. Installing the plugin does not connect anything.
+Linking notes is **connect**. MCP / raw GraphQL: [CONFIGURATION.md](../../CONFIGURATION.md)
+— writes still go through the CLI.
 
 ## When to use
 
-- First time connecting the plugin to a vault drive
+- First session, no profile, ping fail, or "connect me to the vault"
 - After creating a new vault drive
-- When the user asks to set up or initialize the vault
-- When `/setup` is invoked explicitly
+- When `/setup` is invoked
+- Before other skills, if the drive is not yet confirmed ready
 
-## Prerequisites
+## Process
 
-- Reactor running (`ph vetra --watch` or remote reactor)
-- A vault drive exists (created via Connect UI or CLI)
-- `switchboard` CLI ≥ 1.0.36 installed and configured (`switchboard config use local` or appropriate profile, `switchboard introspect` run once)
-- A signing identity on that profile: `ph login` (once per machine), then `switchboard auth login --renown`. The plugin's pre-write hook blocks every vault write until `switchboard auth status` reports `Signing: on` — see AGENT.md § Signed writes.
-
-## Setup Process
-
-### Step 0: Establish which reactor — ask, never assume
-
-There is no default vault. If the session hasn't already established a target
-(active `switchboard config show` profile the user set up, project
-`.mcp.json`, or the user naming one), **ask the user for the Switchboard URL**
-(local `ph vetra` at `http://localhost:4001/graphql`, or their deployment's
-`/graphql` endpoint) before touching anything.
-
-### Step 0b: Confirm the profile signs
+### 1. CLI and profile
 
 ```bash
-switchboard auth status --format json   # expect "signing": true
+which switchboard || curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash
+switchboard --version    # ≥ 1.0.36
+switchboard config show
+switchboard ping
 ```
 
-If it is `false`, stop and give the user the two commands (`ph login`, then
-`switchboard auth login --renown [--ph-dir <dir>]`). Nothing below writes
-until this is true; the hook enforces it.
+If ping already succeeds and the user confirms that profile, skip to step 2.
+If several profiles exist, `switchboard config use <name>` — do not guess.
 
-### Step 1: Find the vault drive
+Otherwise **ask** for the Switchboard `/graphql` URL **and** which drive.
+Examples they may give (not defaults): local `ph vetra` →
+`http://localhost:4001/graphql`; a host → `https://<host>/graphql`.
+
+```bash
+switchboard init --url <THE URL THEY NAMED> --name <short-name> --use-profile   # CLI ≥ 1.0.34; older: interactive init
+switchboard ping
+```
+
+Pin later commands with `-p <name>` if another session might switch the default.
+
+### 2. Sign writes
+
+The pre-write hook blocks unsigned `docs apply` / `mutate` / `link`:
+
+```bash
+ph login                              # once per machine
+switchboard auth login --renown
+switchboard auth status --format json # expect "signing": true
+```
+
+If signing is `false`, stop and give the user those two commands. Nothing below
+that writes will land until this is true.
+
+### 3. Vault drive
 
 ```bash
 switchboard drives list --format json
 ```
 
-If multiple drives exist, ask the user which one to set up. If only one non-vetra drive exists, confirm it with the user and use that.
+The vault is the drive that contains `bai/vault-config`. Multiple non-vetra
+drives → ask. None → they create it in Connect, or:
 
-### Step 2: Verify folder structure
+```bash
+switchboard drives create --name "Knowledge Vault" --preferred-editor knowledge-vault
+```
+
+Keep the UUID (`knowledgeGraph*` queries) and the slug (`--drive`).
+
+### 4. Models
+
+```bash
+switchboard models list --format json | grep -E 'bai/'
+```
+
+If `bai/` is missing: `switchboard introspect`. Still missing → that Switchboard
+does not have the knowledge package deployed; stop and say so.
+
+### 5. Folders
 
 ```bash
 switchboard docs tree <drive-slug> --format json
 ```
 
-The vault needs these folders:
 | Folder | Purpose |
 |--------|---------|
 | `/knowledge/` | MOCs |
@@ -79,69 +103,62 @@ The vault needs these folders:
 | `/ops/sessions/` | Session records |
 | `/self/methodology/` | Reserved (methodology is read from the plugin, not the vault) |
 
-If folders are missing, the vault hasn't been initialized — suggest opening it in Connect first (the Knowledge Vault app auto-creates the folder structure).
+If folders are missing, the vault hasn't been initialized — open it in Connect
+first (the Knowledge Vault app auto-creates them).
 
-### Step 3: Verify singleton documents
+### 6. Singletons
 
 ```bash
 switchboard docs list --drive <drive-slug> --format json
 ```
 
-Check that these exist:
-- `bai/vault-config` in `/self/`
-- `bai/health-report` in `/ops/health/`
-- `bai/pipeline-queue` in `/ops/queue/`
+Need `bai/vault-config` in `/self/`, `bai/health-report` in `/ops/health/`,
+`bai/pipeline-queue` in `/ops/queue/`. There is **no** `bai/knowledge-graph`
+document — the graph is the indexer's tables.
 
-There is **no** `bai/knowledge-graph` document — the graph lives in the indexer's tables and is read through `knowledgeGraph*` queries. If a checklist ever asks for a graph singleton, it is stale.
+If missing:
 
-If missing, create them:
 ```bash
 switchboard docs create --type bai/pipeline-queue --name "Pipeline Queue" --drive <drive-slug> --parent-folder <ops-queue-folder-uuid> --format json
 ```
 
-### Step 4: Verify local methodology files
+### 7. Local methodology
 
-The 249 Ars Contexta research claims are bundled with the plugin in `data/methodology/*.md`. They are **not** imported into the vault — the agent reads them directly from disk during connect, verify, and pipeline phases.
+The 249 Ars Contexta claims are in the plugin at `data/methodology/*.md` — **not**
+imported into the vault.
 
 ```bash
-ls data/methodology/*.md | wc -l
-# Should be 249
+ls data/methodology/*.md | wc -l   # 249
 ```
 
-If the `data/methodology/` directory is missing (marketplace install), clone from GitHub:
+If missing (marketplace install):
+
 ```bash
 git clone --depth 1 --filter=blob:none --sparse https://github.com/liberuum/powerhouse-knowledge.git /tmp/pk-methodology
 cd /tmp/pk-methodology && git sparse-checkout set data/methodology
 cp -r /tmp/pk-methodology/data/methodology/ <plugin-dir>/data/methodology/
 ```
 
-### Step 5: Report results
+### 8. Report — other skills may run
 
 ```
 === Vault Setup Complete ===
-Drive: <drive-name> (<drive-uuid>)
-Folders: ✓ all present
-Singletons: ✓ pipeline-queue, health-report, vault-config
-Methodology: ✓ 249 claims available locally (not imported to vault)
-Status: Ready for use
+Profile: <name> -> <url>
+Drive: <drive-name> (<drive-uuid> / <slug>)
+Signing: on
+Folders: ✓  Singletons: ✓  Methodology: ✓ 249 local
+Status: Ready — search, seed, pipeline, scope-of-work, …
 ```
 
-## What the methodology provides (locally)
+## Common mistakes
 
-The 249 claims are the theoretical foundation for how the Knowledge Vault works:
-- **Processing pipeline design** — why 6Rs, why each phase matters
-- **Note architecture** — why atomic claims, why typed links, why progressive disclosure
-- **Quality principles** — what makes a good note, link, MOC
-- **Cognitive science backing** — attention management, cognitive offloading, memory systems
-- **Agent design patterns** — how AI agents should operate knowledge systems
-
-The agent reads these files directly from `data/methodology/` during:
-- **Connect phase** — searching for methodology backing when creating note connections
-- **Verify phase** — checking if notes are grounded in methodology
-- **Health check** — reporting methodology-grounding status (in `recommendations`; there is no matching HealthCategory value)
-
-No remote import, no `bai/research-claim` documents, no `/research/` folder needed.
+| Wrong | Right |
+|---|---|
+| Assume `localhost:4001` | Ask; only use a URL the user named |
+| `connect` skill | That links notes. This points the CLI and readies the drive |
+| Skip `init` and call `docs list` | Profile, ping, then drive |
+| Bake the URL into a script | Profile on the machine; user chose it |
 
 ## Idempotency
 
-This skill is safe to run multiple times — it only checks and creates missing structure, never duplicates.
+Safe to re-run: skip steps that already pass; never duplicate folders or singletons.

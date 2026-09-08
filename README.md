@@ -6,7 +6,7 @@ Claude Code plugin for the Powerhouse Knowledge Vault. Enables AI agents and hum
 
 This plugin gives you (human or AI agent) the ability to manage a structured knowledge graph inside a Powerhouse reactor. It provides:
 
-- **16 skills** for knowledge management (seed, extract, connect, search, verify, health, graph, scopes of work/WBS, skills discovery, etc.)
+- **17 skills** for knowledge management (setup, seed, extract, connect, search, verify, health, graph, scopes of work/WBS, skills discovery, etc.)
 - **One canonical instruction set** — [AGENT.md](AGENT.md). The `knowledge-agent` Claude Code agent is generated from it (`node scripts/build-agent.mjs`), so there is exactly one document to keep true
 - **Connection to a Powerhouse reactor** via MCP or Switchboard CLI
 - **Access to the Graph Indexer** — a relational index with keyword search, topic queries, provenance filtering, and AI-powered semantic search
@@ -85,6 +85,8 @@ The agent always works against the active profile. If you have several vaults,
 say which one you mean — it will ask rather than guess.
 
 See [CONFIGURATION.md](CONFIGURATION.md) for detailed connection options (MCP, CLI, GraphQL).
+The agent procedure for a first session (no profile, ping fail, then folders)
+is `/powerhouse-knowledge:setup`.
 
 ### Step 2: Verify the vault
 
@@ -158,7 +160,7 @@ The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| Setup | `/powerhouse-knowledge:setup` | Verify vault structure, folders, and singletons |
+| Setup | `/powerhouse-knowledge:setup` | Connect the CLI to the vault (first time) and verify folders, singletons, methodology |
 | Import | `/powerhouse-knowledge:import <path>` | Bulk import from markdown, Obsidian, or JSON |
 | Export | `/powerhouse-knowledge:export [path]` | Export vault as markdown, JSON, or .phd backup |
 
@@ -170,7 +172,7 @@ The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.
 | Extract | `/powerhouse-knowledge:extract` | Extract atomic claims from a source |
 | Connect | `/powerhouse-knowledge:connect` | Find and create typed links between notes |
 | Synthesize | `/powerhouse-knowledge:synthesize` | Create MOCs from topic clusters |
-| Search | `/powerhouse-knowledge:search <query>` | Find notes (keyword, topic, semantic, provenance) |
+| Search | `/powerhouse-knowledge:search <query>` | Find notes (keyword, topic, semantic, provenance); work/project queries fork to scope-of-work |
 | Skills | `/powerhouse-knowledge:skills <need>` | Find/read agent skills stored in the vault; sync via `scripts/sync-skills.mjs` |
 | Verify | `/powerhouse-knowledge:verify` | Quality checks + auto-repair |
 | Health | `/powerhouse-knowledge:health` | Vault diagnostics saved to health-report |
@@ -187,7 +189,8 @@ The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| Projects | `/powerhouse-knowledge:projects` | Manage `powerhouse/scopeofwork` (envelopes are the projects) + `bai/wbs` — deliverables, goal tracking, agent goal-working loop |
+| Scope of work | `/powerhouse-knowledge:scope-of-work` | Read nested SOW data — envelopes, deliverables, roadmaps, milestones, cited maps, WBS goal trees |
+| Projects | `/powerhouse-knowledge:projects` | Create/mutate `powerhouse/scopeofwork` (envelopes are the projects) + `bai/wbs` — goal-working loop |
 
 ## Graph Indexer & Subgraph
 
@@ -322,12 +325,13 @@ powerhouse-knowledge/
 │   ├── verify/SKILL.md         # Quality gate + auto-repair
 │   ├── health/SKILL.md         # Vault diagnostics
 │   ├── pipeline/SKILL.md       # End-to-end processing
-│   ├── setup/SKILL.md          # Vault initialization
+│   ├── setup/SKILL.md          # First-time connect + vault folders/singletons
 │   ├── import/SKILL.md         # Bulk import
 │   ├── export/SKILL.md         # Vault export
 │   ├── watch/SKILL.md          # Real-time monitoring
 │   ├── cli-reference/SKILL.md  # Switchboard CLI commands
-│   └── projects/SKILL.md       # Scopes of work (powerhouse/scopeofwork) + WBS (bai/wbs) goal tracking
+│   ├── projects/SKILL.md       # Create/mutate scopes of work + WBS goal tracking
+│   └── scope-of-work/          # Read nested SOW data (lookup.py)
 ├── data/
 │   └── methodology/            # 249 Ars Contexta research claims (local reference)
 ├── hooks/                      # Pre-flight hooks for vault detection
