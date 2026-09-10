@@ -241,9 +241,11 @@ curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/insta
 switchboard init --url http://localhost:4001/graphql --name local --use-profile   # CLI ≥ 1.0.34, non-interactive
 switchboard config use <profile-name>   # switch between existing profiles
 
-# Sign writes with your `ph login` identity (the plugin's pre-write hook requires this)
-ph login                                # once per machine
-switchboard auth login --renown         # profile now signs docs apply / mutate / link / unlink as you
+# Sign in — both, on a protected Switchboard: the bearer is checked on every request
+# (REQUIRE_AUTHENTICATED_CALLER), signing is what the plugin's pre-write hook requires
+ph login                                              # once per machine
+switchboard auth login --token "$(ph access-token)"   # bearer (self-signed JWT, default --expiry 7d)
+switchboard auth login --renown                       # profile now signs docs apply / mutate / link / unlink as you
 
 # Introspect models (discovers bai/* types correctly — bai/source, not powerhouse/source)
 switchboard introspect
@@ -251,6 +253,8 @@ switchboard introspect
 # Create vault drive (slug becomes "knowledge-vault")
 switchboard drives create --name "Knowledge Vault" --preferred-editor knowledge-vault
 ```
+
+**Authorization.** With `DOCUMENT_PERMISSIONS_ENABLED=true` and `DEFAULT_PROTECTION=true` on the Switchboard, an authenticated identity still needs a `READ` / `WRITE` / `ADMIN` grant on the vault drive (Connect: the vault's gear menu → *Access*; CLI: `grantDocumentPermission`, administrators only). Addresses in `ADMINS` bypass every check. A `401` means no bearer; a `FORBIDDEN` means no grant — the pre-flight prints `ACCESS: …` so you know before the first write. Model and recipes: [AGENT.md → Authenticate, then get access](AGENT.md#authenticate-then-get-access--the-first-steps-before-writing).
 
 **MCP → CLI equivalents:**
 

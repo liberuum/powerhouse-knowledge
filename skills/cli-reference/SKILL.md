@@ -48,6 +48,36 @@ switchboard ping
 switchboard introspect
 ```
 
+## Authentication and access
+
+```bash
+# Identity — both, on a protected Switchboard (REQUIRE_AUTHENTICATED_CALLER):
+ph login                                              # Renown: keypair + credential in .ph/
+switchboard auth login --token "$(ph access-token)"   # bearer on every request (reads too); default --expiry 7d
+switchboard auth login --renown                       # sign writes as the user; --ph-dir <dir>, --app-name <name>
+switchboard auth status --format json                 # has_token, signing, address, credential_expired
+switchboard auth token                                # print the stored bearer — never paste it into a note or a log
+switchboard auth logout [--identity-only]             # drop the token and/or the signing identity
+SWITCHBOARD_TOKEN=<jwt> switchboard …                 # the environment overrides the profile's token
+
+# Access — ask the Switchboard what this identity may do
+switchboard query '{ canExecuteOperation(documentId: "<drive-uuid>", operationType: "ADD_FILE") }'   # true → may create documents in the drive
+switchboard query '{ userDocumentPermissions { documentId permission grantedBy } }'                    # explicit grants for this address
+
+# Administrators only (owner, ADMIN on the document, or the ADMINS list). Permission
+# mutations are not document actions — no envelope — so `query` is the right tool.
+switchboard query '{ documentAccess(documentId: "<drive-uuid>") { permissions { userAddress permission grantedBy } } }'
+switchboard query 'mutation { grantDocumentPermission(documentId: "<drive-uuid>", userAddress: "0x…", permission: WRITE) { userAddress permission } }'
+switchboard query 'mutation { revokeDocumentPermission(documentId: "<drive-uuid>", userAddress: "0x…") }'
+switchboard query '{ documentProtection(documentId: "<uuid>") { protected ownerAddress } }'
+switchboard query 'mutation { grantOperationPermission(documentId: "<drive-uuid>", operationType: "APPROVE_NOTE", userAddress: "0x…") { userAddress operationType } }'
+```
+
+`HTTP 401 … Authentication required` is identity (no or expired bearer);
+`GraphQL errors: Forbidden: insufficient permissions …` is access (no grant).
+The pre-flight prints the verdict as `ACCESS: …`; the setup skill walks the fix,
+AGENT.md → *Authenticate, then get access* explains the model.
+
 ## Drive Operations
 
 ```bash

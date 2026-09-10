@@ -14,7 +14,7 @@ This file is the single canonical instruction set. `agents/knowledge-agent.md` i
 
 ## Start here — the first five minutes
 
-1. **Establish the target.** There is no default vault. Read the pre-flight hook output (`Profile: … -> …`, `VAULT_DRIVE_ID`, `VAULT_DRIVE_SLUG`) or run `switchboard config show`; if there is no profile, ping fails, or this is the first session, **REQUIRED:** [skills/setup/SKILL.md](skills/setup/SKILL.md). If it is ambiguous which vault the user means, **ask** for the Switchboard URL and drive. See *First: Establish which vault to use*.
+1. **Establish the target.** There is no default vault. Read the pre-flight hook output (`Profile: … -> …`, `Signing: …`, `VAULT_DRIVE_ID`, `VAULT_DRIVE_SLUG`, `ACCESS: …`) or run `switchboard config show`; if there is no profile, ping fails, or this is the first session, **REQUIRED:** [skills/setup/SKILL.md](skills/setup/SKILL.md). If it is ambiguous which vault the user means, **ask** for the Switchboard URL and drive. See *First: Establish which vault to use*. Before the first write, `Signing:` must be on and `ACCESS:` must say `WRITE` — see *Authenticate, then get access*.
 2. **Find the drive** — the one containing a `bai/vault-config` document. See *Find the vault drive*. Keep its UUID (for `knowledgeGraph*` queries) and slug (for `--drive`).
 3. **Check it is ready** — folders and the three singletons exist: `/powerhouse-knowledge:setup`.
 4. **Know the job** — read *The job: from source to connected notes* below. Most requests are one of: seed a source, run the pipeline on it, search, or check health.
@@ -36,7 +36,7 @@ This file is the single canonical instruction set. `agents/knowledge-agent.md` i
 | Quality checks and auto-repair | [skills/verify/SKILL.md](skills/verify/SKILL.md) |
 | Vault health diagnostics | [skills/health/SKILL.md](skills/health/SKILL.md) |
 | End-to-end processing pipeline | [skills/pipeline/SKILL.md](skills/pipeline/SKILL.md) |
-| First-time connect + vault folders/singletons | [skills/setup/SKILL.md](skills/setup/SKILL.md) |
+| First-time connect, sign-in (bearer + signing), access check, folders/singletons | [skills/setup/SKILL.md](skills/setup/SKILL.md) |
 | Bulk import from markdown/Obsidian/JSON | [skills/import/SKILL.md](skills/import/SKILL.md) |
 | Export vault as markdown/JSON/backup | [skills/export/SKILL.md](skills/export/SKILL.md) |
 | Real-time vault monitoring | [skills/watch/SKILL.md](skills/watch/SKILL.md) |
@@ -287,7 +287,7 @@ next action in `recommendations`, and tell the user what it would take.
 
 | Command | What it does |
 |---------|-------------|
-| `/powerhouse-knowledge:setup` | Connect the CLI to the vault (first time) and verify folders, singletons, methodology |
+| `/powerhouse-knowledge:setup` | Connect the CLI to the vault (first time), sign in, check access, and verify folders, singletons, methodology |
 | `/powerhouse-knowledge:seed` | Ingest source material and queue it |
 | `/powerhouse-knowledge:extract` | Extract atomic claims from a source into notes |
 | `/powerhouse-knowledge:connect` | Find and create typed links |
@@ -412,29 +412,112 @@ switchboard docs link <moc-uuid> <note-uuid> -t CORE_IDEA
 
 The two derived types appear in `knowledgeGraphEdges`, backlinks and forward links so a reader sees what involves a note, but they are **not** knowledge edges: `stats.edgeCount`, density, orphans, triangles and bridges count the seven types above only. Idempotent on `(source, target, type)`. The *reason* a link exists lives on the edge (`--reason`, above); the note body may still carry the longer argument, but the edge is what the graph and the health report can check. An **orphan** is a node with zero **incoming** edges; outgoing links from it do not change that.
 
-## Signed writes — the first step before writing
+## Authenticate, then get access — the first steps before writing
 
-A Switchboard signs every unsigned action with **its own** Renown identity and
-stamps the user from **its own** `ph login` session. An agent writing unsigned
-is therefore attributed to whoever logged the *server* in, or to nobody. The
-plugin's pre-write hook **blocks** `docs apply` / `mutate` / `link` / `unlink`
-/ `create` until the active profile has a signing identity, and labels every
-allowed write `SWITCHBOARD_APP_NAME=powerhouse-knowledge` so the vault's
-Activity view and every note's History tab read *"powerhouse-knowledge ·
-<did:key> for <address>"* with a verified ✓.
+Two different gates stand between an agent and a vault write, and they fail
+with two different errors. Check both before the first write; the pre-flight
+hook prints them as `Signing: …` and `ACCESS: …` on every vault command.
+
+| Gate | What it is | How it is configured | When it is missing |
+|------|------------|----------------------|--------------------|
+| **Identity** (authentication) | a Renown **bearer token** on every request, and your **key signing** every write | `ph login`, then `switchboard auth login --token "$(ph access-token)"` **and** `switchboard auth login --renown` | HTTP **401** `Authentication required` / `Credentials no longer valid`; or the pre-write hook blocks an unsigned write |
+| **Access** (authorization) | a `READ` / `WRITE` / `ADMIN` grant on the vault **drive** for your address | a vault administrator, in the vault's gear menu → *Access* (or `grantDocumentPermission`) | GraphQL **FORBIDDEN** `insufficient permissions to execute operation "X" on this document` |
+
+### 1. Identity: sign in — twice
 
 ```bash
-ph login                          # once per machine: .ph/.keypair.json + .ph/.renown.json
-switchboard auth login --renown   # CLI ≥ 1.0.34; --ph-dir <dir> if the login lives elsewhere
-switchboard auth status           # Signing: on as switchboard-cli (did:key:z…) acting for 0x…
+ph login                                              # once per machine: Renown binds a local keypair to your wallet (.ph/.keypair.json, .ph/.renown.json)
+switchboard auth login --token "$(ph access-token)"   # the bearer the Switchboard checks on EVERY request, reads included; a self-signed JWT, default --expiry 7d
+switchboard auth login --renown                       # sign every write with the same key (CLI ≥ 1.0.34; --ph-dir <dir> if the login lives elsewhere)
+switchboard auth status --format json                 # has_token: true, signing: true, address: 0x…, credential_expired: false
 ```
 
-If the hook blocks you, relay those three commands to the user — do not
-work around the block with raw GraphQL (`addRelationship`, `mutateDocument`):
-those are server-signed and the hook refuses them for that reason.
+The two `auth login` forms are complementary, not alternatives. `--renown`
+alone signs but sends no bearer: on a Switchboard with
+`REQUIRE_AUTHENTICATED_CALLER=true` every call answers 401, reads included.
+`--token` alone authenticates, but writes would be signed by the *server's*
+Renown identity and attributed to whoever logged the server in — which is why
+the pre-write hook **blocks** `docs apply` / `mutate` / `link` / `unlink` /
+`create` until `signing` is true, and labels every allowed write
+`SWITCHBOARD_APP_NAME=powerhouse-knowledge`, so the vault's Activity view and a
+note's History tab read *"powerhouse-knowledge · <did:key> for <address>"* with
+a verified ✓. `SWITCHBOARD_TOKEN=<jwt>` in the environment overrides the
+profile's stored token.
+
+Both halves expire: the bearer at its `--expiry` (7 days by default) and the
+Renown credential binding key→address after 7 days. Symptoms: 401
+`Credentials no longer valid`, or `auth status` showing `credential_expired`.
+Renewal is the same commands again — `ph login`, then
+`switchboard auth login --token "$(ph access-token)"`; signatures stay valid.
+
+If the hook blocks you, relay the commands to the user — never work around
+the block with raw GraphQL (`addRelationship`, `mutateDocument`): those are
+server-signed, and the hook refuses them for that reason.
 `POWERHOUSE_KNOWLEDGE_ALLOW_UNSIGNED=1` exists for deliberate unsigned writes
-only. The Renown credential binding key→address lasts 7 days; `auth status`
-warns when it has expired (`ph login` renews it — signatures stay valid).
+only; it does nothing for a 401, which is about the bearer, not the signature.
+
+### 2. Access: a grant on the drive
+
+A vault runs with `DEFAULT_PROTECTION=true`: every document is protected and an
+anonymous caller gets nothing. Grants inherit down the tree, so **one grant on
+the drive document covers every note, MoC, source and queue inside it**. The
+addresses in the Switchboard's `ADMINS` list are supreme admins and bypass
+every check; whoever creates a document owns it.
+
+| Level | Lets the address |
+|-------|------------------|
+| `READ` | open the vault, search and read — and register a sync channel |
+| `WRITE` | create documents in the drive, mutate and link them: seed, extract, connect, approve — the whole pipeline |
+| `ADMIN` | also grant and revoke others. `canManage` is checked on the document itself (its owner, an ADMIN grant on it, or a supreme admin), so ADMIN on the drive administers the drive's access list rather than each child's |
+
+`canMutate` checks **per-operation restrictions** first: an administrator can
+restrict an operation (say `APPROVE_NOTE`) so that WRITE holders need an
+explicit `grantOperationPermission` for it — contributors draft, reviewers
+approve, and the vault's rule that approval comes from a different actor is
+enforced rather than hoped for.
+
+Check before writing, as the identity you will write with:
+
+```bash
+switchboard query '{ canExecuteOperation(documentId: "<drive-uuid>", operationType: "ADD_FILE") }'   # true → you may create documents in the drive
+switchboard query '{ userDocumentPermissions { documentId permission grantedBy } }'                    # every explicit grant for your address
+switchboard docs get <drive-uuid> --state --format json > /dev/null && echo READ ok                    # can you even read it?
+```
+
+### 3. When it fails — what the error means and what to do
+
+| You see | It means | Do |
+|---------|----------|----|
+| `HTTP 401 … Authentication required` | no bearer on the request | `switchboard auth login --token "$(ph access-token)"` (after `ph login`) |
+| `HTTP 401 … Credentials no longer valid` / `Token verification failed` | bearer or credential expired or revoked | `ph login`, then the `--token` login again |
+| `BLOCKED by powerhouse-knowledge: … no signing identity` | bearer fine, writes unsigned | `switchboard auth login --renown` |
+| `Forbidden: insufficient permissions to execute operation "X"` | identity accepted; **no grant** — or X is restricted | stop; report your address (`switchboard auth status`) and ask a vault administrator for `WRITE` on the drive, or an operation grant for X |
+| `Forbidden: You must be an admin of this document` | an admin-only query (`documentAccess`, `documentProtection`) | not needed to read or write; only administrators list or change grants |
+| `ACCESS: READ-only …` / `ACCESS: none …` in the pre-flight | the same refusal, found before you wrote | ask; do not start the pipeline |
+
+Do **not** retry a refusal in a loop, switch to raw GraphQL or MCP writes to
+get around it, or ask for `ADMIN` when `WRITE` is what the task needs. A
+refusal is a decision the vault's administrator made, not a bug to route
+around; the toast the user sees in Connect says the same thing.
+
+### 4. If the user administers the vault
+
+Only on the user's explicit instruction. Permission mutations live on the auth
+subgraph, not on a document — no `id`/`timestampUtcMs` envelope — so
+`switchboard query` is the right tool and the hooks allow it. Grant on the
+**drive**, `WRITE` unless asked for more, and read the list back afterwards.
+
+```bash
+switchboard query 'mutation { grantDocumentPermission(documentId: "<drive-uuid>", userAddress: "0x…", permission: WRITE) { userAddress permission grantedBy } }'
+switchboard query '{ documentAccess(documentId: "<drive-uuid>") { permissions { userAddress permission grantedBy createdAt } } }'
+switchboard query 'mutation { revokeDocumentPermission(documentId: "<drive-uuid>", userAddress: "0x…") }'
+switchboard query 'mutation { grantOperationPermission(documentId: "<drive-uuid>", operationType: "APPROVE_NOTE", userAddress: "0x…") { userAddress operationType } }'
+```
+
+In Connect the same controls are under the vault's gear menu → *Access*. The
+person being granted signs in there (Renown) or on their machine with the
+commands in §1, then runs `/powerhouse-knowledge:setup`, whose report ends
+with the `Access:` line.
 
 ## MoC hierarchy
 

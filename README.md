@@ -71,15 +71,21 @@ switchboard init --url https://<your-switchboard-host>/graphql --name my-vault -
 switchboard ping                     # verify connection
 ```
 
-**Sign your writes (required by the plugin's pre-write hook):**
+**Sign in — bearer and signing (both required on a protected Switchboard):**
 ```bash
-ph login                             # once per machine — creates .ph/.keypair.json + .ph/.renown.json
-switchboard auth login --renown      # the profile signs every write with that key; path only, never the key
-switchboard auth status              # Signing: on … acting for <your address>
+ph login                                              # once per machine — creates .ph/.keypair.json + .ph/.renown.json
+switchboard auth login --token "$(ph access-token)"   # bearer on every request; without it a protected Switchboard answers 401
+switchboard auth login --renown                       # the profile signs every write with that key; path only, never the key
+switchboard auth status                               # Signing: on … acting for <your address>
 ```
 Every note, edge and tension the agent writes is then signed by *your* key and labelled
 `powerhouse-knowledge`, so the vault can tell agent writes from your own in Connect. Without this,
 the Switchboard would attribute agent writes to whoever logged the *server* in.
+
+**Get access.** Identity is not permission: on a protected vault your address also needs a
+`READ` or `WRITE` grant on the drive, given by a vault administrator (Connect: the vault's gear
+menu → *Access*). The agent's pre-flight prints `ACCESS: …` so it knows before its first write;
+a `FORBIDDEN` means "ask for a grant", a `401` means "sign in".
 
 The agent always works against the active profile. If you have several vaults,
 say which one you mean — it will ask rather than guess.

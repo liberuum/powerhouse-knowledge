@@ -160,5 +160,87 @@ class LintHook(unittest.TestCase):
             os.unlink(f.name)
 
 
+def _load_probe():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "session_access_probe", os.path.join(HOOKS, "session-access-probe.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class AccessProbeTests(unittest.TestCase):
+    """The one ACCESS line the pre-flight prints, from what the CLI answered."""
+
+    E401 = 'Error: HTTP 401 Unauthorized: {"error":"Authentication required"}'
+    EFORBIDDEN = ('Error: GraphQL errors:\n  Forbidden: insufficient permissions to execute '
+                  'operation "ADD_FILE" on this document')
+    EDOWN = "Error: Failed to connect to http://localhost:4001/graphql: tcp connect error"
+    ENOFIELD = 'Error: GraphQL errors:\n  Cannot query field "canExecuteOperation" on type "Query".'
+
+    def setUp(self):
+        self.p = _load_probe()
+        self.status = {"signing": True, "has_token": True, "address": "0xabc", "credential_expired": False,
+                       "did": "did:key:zSECRET", "ph_dir": "/home/x/.ph"}
+        self.drive = {"slug": "knowledge-vault", "id": "d1"}
+        self.read_ok = ("ok", {"document": {"document": {"id": "d1"}}})
+
+    def line(self, read=None, write=("ok", {"canExecuteOperation": True}), status=None):
+        return self.p.interpret(self.status if status is None else status, self.drive,
+                                read or self.read_ok, write)
+
+    def test_classifies_the_shapes_the_cli_actually_prints(self):
+        c = self.p.classify_error
+        self.assertEqual(c(self.E401), "unauthenticated")
+        self.assertEqual(c("Error: HTTP 401 Unauthorized: Credentials no longer valid"), "unauthenticated")
+        self.assertEqual(c(self.EFORBIDDEN), "forbidden")
+        self.assertEqual(c(self.EDOWN), "unreachable")
+        self.assertEqual(c(self.ENOFIELD), "no-auth-subgraph")
+        self.assertEqual(c("Error: something else entirely"), "other")
+
+    def test_write_granted(self):
+        self.assertTrue(self.line().startswith("ACCESS: WRITE on knowledge-vault as 0xabc"))
+
+    def test_read_only_names_the_level_the_address_and_the_rule(self):
+        for write in (("ok", {"canExecuteOperation": False}), ("error", self.EFORBIDDEN)):
+            l = self.line(write=write)
+            self.assertIn("READ-only", l); self.assertIn("grant WRITE", l)
+            self.assertIn("0xabc", l); self.assertIn("do not retry", l)
+
+    def test_no_grant_at_all(self):
+        l = self.line(read=("error", self.EFORBIDDEN))
+        self.assertTrue(l.startswith("ACCESS: none on knowledge-vault for 0xabc"))
+        self.assertIn("READ (to read) or WRITE", l)
+
+    def test_missing_bearer_is_a_401_with_the_exact_commands(self):
+        l = self.line(read=("error", self.E401))
+        self.assertIn("ACCESS: 401", l)
+        self.assertIn('switchboard auth login --token "$(ph access-token)"', l)
+        self.assertIn("ph login", l)
+
+    def test_open_switchboard_is_reported_not_celebrated(self):
+        l = self.line(write=("error", self.ENOFIELD))
+        self.assertTrue(l.startswith("ACCESS: open"))
+        self.assertIn("not enforced", l)
+
+    def test_an_unreachable_server_is_not_blamed_on_the_user(self):
+        l = self.line(read=("error", self.EDOWN))
+        self.assertIn("did not answer", l)
+        self.assertNotIn("grant", l)
+
+    def test_expired_credential_is_flagged_even_when_writable(self):
+        l = self.line(status=dict(self.status, credential_expired=True))
+        self.assertTrue(l.startswith("ACCESS: WRITE"))
+        self.assertIn("WARNING", l); self.assertIn("ph login", l)
+
+    def test_never_leaks_the_key_or_paths(self):
+        for l in (self.line(), self.line(read=("error", self.E401)), self.line(read=("error", self.EFORBIDDEN))):
+            self.assertNotIn("did:key", l); self.assertNotIn("/.ph", l)
+
+    def test_no_signing_identity_still_reports_access_for_the_profile(self):
+        l = self.line(status={"signing": False})
+        self.assertIn("as this profile", l)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

@@ -6,7 +6,8 @@ description: Use when pointing the plugin at a vault for the first time, when th
 # Vault Setup
 
 Leave the session able to run every other skill: CLI profile pointed at the
-Switchboard the **user names**, a vault drive, folders, singletons, signing,
+Switchboard the **user names**, an identity that is signed in (bearer) and
+signs writes, a vault drive the identity may **write**, folders, singletons,
 local methodology.
 
 There is **no default vault**. Installing the plugin does not connect anything.
@@ -45,18 +46,24 @@ switchboard ping
 
 Pin later commands with `-p <name>` if another session might switch the default.
 
-### 2. Sign writes
+### 2. Sign in — bearer and signing
 
-The pre-write hook blocks unsigned `docs apply` / `mutate` / `link`:
+Two logins, both required on a protected Switchboard
+(`REQUIRE_AUTHENTICATED_CALLER`): the bearer is *authentication* on every
+request, reads included; signing is *attribution* of writes.
 
 ```bash
-ph login                              # once per machine
-switchboard auth login --renown
-switchboard auth status --format json # expect "signing": true
+ph login                                              # once per machine (Renown → .ph/.keypair.json + .ph/.renown.json)
+switchboard auth login --token "$(ph access-token)"   # bearer on every request — without it everything is 401
+switchboard auth login --renown                       # sign writes as the user — the pre-write hook blocks writes until this is true
+switchboard auth status --format json                 # expect has_token: true, signing: true, address: 0x…, credential_expired: false
 ```
 
-If signing is `false`, stop and give the user those two commands. Nothing below
-that writes will land until this is true.
+If `has_token` or `signing` is false, or `credential_expired` is true, stop
+and give the user the commands above (`ph login` renews the credential; the
+bearer defaults to `--expiry 7d`). Nothing below that reads or writes will
+work until this is true. Keep the `address` — it is what an administrator
+grants, and what the report names.
 
 ### 3. Vault drive
 
@@ -73,7 +80,29 @@ switchboard drives create --name "Knowledge Vault" --preferred-editor knowledge-
 
 Keep the UUID (`knowledgeGraph*` queries) and the slug (`--drive`).
 
-### 4. Models
+### 4. Access — a grant on the drive
+
+Identity says who you are; a grant says what you may do. Ask the Switchboard,
+as the identity from step 2:
+
+```bash
+switchboard query '{ canExecuteOperation(documentId: "<drive-uuid>", operationType: "ADD_FILE") }'
+```
+
+| Answer | Meaning | Do |
+|---|---|---|
+| `true` | WRITE (or an operation grant): the pipeline can run | continue |
+| `false`, reads work | READ-only | stop; ask a vault administrator to grant `WRITE` on the drive to the step-2 address |
+| `Forbidden` on a read as well | no grant at all | same — `READ` for readers, `WRITE` for contributors |
+| `HTTP 401` | bearer missing or expired | back to step 2 |
+| `Cannot query field "canExecuteOperation"` | no authorization subgraph: permissions are not enforced here | continue |
+
+The pre-flight prints the same verdict as `ACCESS: …` on every vault command.
+A refusal is an administrator's decision: report it with the address, do not
+retry or route around it. How grants work, and the administrator's own
+commands: [AGENT.md → Authenticate, then get access](../../AGENT.md#authenticate-then-get-access--the-first-steps-before-writing).
+
+### 5. Models
 
 ```bash
 switchboard models list --format json | grep -E 'bai/'
@@ -82,7 +111,7 @@ switchboard models list --format json | grep -E 'bai/'
 If `bai/` is missing: `switchboard introspect`. Still missing → that Switchboard
 does not have the knowledge package deployed; stop and say so.
 
-### 5. Folders
+### 6. Folders
 
 ```bash
 switchboard docs tree <drive-slug> --format json
@@ -106,7 +135,7 @@ switchboard docs tree <drive-slug> --format json
 If folders are missing, the vault hasn't been initialized — open it in Connect
 first (the Knowledge Vault app auto-creates them).
 
-### 6. Singletons
+### 7. Singletons
 
 ```bash
 switchboard docs list --drive <drive-slug> --format json
@@ -122,7 +151,7 @@ If missing:
 switchboard docs create --type bai/pipeline-queue --name "Pipeline Queue" --drive <drive-slug> --parent-folder <ops-queue-folder-uuid> --format json
 ```
 
-### 7. Local methodology
+### 8. Local methodology
 
 The 249 Ars Contexta claims are in the plugin at `data/methodology/*.md` — **not**
 imported into the vault.
@@ -139,13 +168,14 @@ cd /tmp/pk-methodology && git sparse-checkout set data/methodology
 cp -r /tmp/pk-methodology/data/methodology/ <plugin-dir>/data/methodology/
 ```
 
-### 8. Report — other skills may run
+### 9. Report — other skills may run
 
 ```
 === Vault Setup Complete ===
 Profile: <name> -> <url>
 Drive: <drive-name> (<drive-uuid> / <slug>)
-Signing: on
+Identity: bearer ✓  signing ✓  as 0x… (credential valid until <date>)
+Access: WRITE on the drive
 Folders: ✓  Singletons: ✓  Methodology: ✓ 249 local
 Status: Ready — search, seed, pipeline, scope-of-work, …
 ```
@@ -158,6 +188,9 @@ Status: Ready — search, seed, pipeline, scope-of-work, …
 | `connect` skill | That links notes. This points the CLI and readies the drive |
 | Skip `init` and call `docs list` | Profile, ping, then drive |
 | Bake the URL into a script | Profile on the machine; user chose it |
+| `auth login --renown` only | Also `--token "$(ph access-token)"` — signing is not authentication; a protected Switchboard answers 401 without the bearer |
+| Retry a `Forbidden` write, or route around it | Stop; the address needs a `WRITE` grant from a vault administrator |
+| Ask for `ADMIN` | `WRITE` runs the whole pipeline; `ADMIN` is for granting others |
 
 ## Idempotency
 
