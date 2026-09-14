@@ -1,17 +1,16 @@
 ---
 name: projects
-description: Manage work in the vault — scopes of work (powerhouse/scopeofwork) whose envelopes are the projects, and the bai/wbs goal trees that deliver them. Find or create a scope, add an envelope, create and link its WBS both ways, turn top-level goals into deliverables, run the agent goal-working loop (assign, start, note, complete or block), and close deliverables out. All operations run through the Switchboard CLI against the live reactor; both types are graph-indexed as SCOPE / WBS sentinel nodes (searchable outline, CITES / DELIVERED_BY edges) but are mutated by id. bai/project is retired — never create one.
+description: Manage work in the vault — scopes of work (powerhouse/scopeofwork) whose envelopes are the projects, and the bai/wbs goal trees that deliver them. Find or create a scope, add an envelope, create and link its WBS both ways, turn top-level goals into deliverables, run the agent goal-working loop (assign, start, note, complete or block), and close deliverables out. Operations run over REST `POST actions` or the Switchboard CLI against the live reactor; both types are graph-indexed as SCOPE / WBS sentinel nodes (searchable outline, CITES / DELIVERED_BY edges) but are mutated by id. bai/project is retired — never create one.
 ---
 
 # Scopes of work, projects (envelopes) and Work Breakdown Structures
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
 Work lives in two document types, both under `/projects/` in the same drive as the
 knowledge notes:

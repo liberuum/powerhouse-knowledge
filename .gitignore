@@ -7,3 +7,4 @@ node_modules/
 harness/config.json
 harness/repos.json
 .ph/
+__pycache__/

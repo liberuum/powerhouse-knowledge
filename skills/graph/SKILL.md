@@ -5,13 +5,25 @@ description: Interactive knowledge graph analysis — find synthesis opportuniti
 
 # Graph Analysis
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+These are REST routes as well as GraphQL queries:
+
+```bash
+curl -s -H "$AUTH" "$BASE/stats?drive=<UUID>"
+curl -s -H "$AUTH" "$BASE/density?drive=<UUID>"
+curl -s -H "$AUTH" "$BASE/orphans?drive=<UUID>"
+curl -s -H "$AUTH" "$BASE/triangles?drive=<UUID>&limit=20"
+curl -s -H "$AUTH" "$BASE/graph.json?drive=<UUID>"
+```
+
+Use GraphQL when you want only some fields of a large result.
+
+
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
 Structural, topical, and semantic analysis of the knowledge graph to find patterns, gaps, and opportunities.
 

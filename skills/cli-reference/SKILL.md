@@ -1,28 +1,23 @@
 ---
 name: cli-reference
-description: Switchboard CLI commands for Knowledge Vault operations. Use as an alternative to MCP when the CLI is available. Install from GitHub releases.
+description: Switchboard CLI commands for Knowledge Vault operations. Required for deleting documents, reading the drive tree, and profiles/sign-in; the fallback for everything else. Install from GitHub releases.
 ---
 
 # Switchboard CLI Reference
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
-> **The golden rule: read however you like — write ONLY through the CLI.**
-> Reads (queries, searches, state checks) are safe over raw GraphQL and faster (~0.2s vs ~1-2s).
-> Writes (create, mutate, link) go through the `switchboard` CLI or the vetted scripts: they
-> auto-stamp every action with `id` + `timestampUtcMs` and resolve drive slugs to UUIDs.
-> A single raw write missing the action `id` permanently breaks sync for every connected client.
-> Bulk writes: batch into one `switchboard docs apply --file` call.
+> **This skill is the CLI catalogue.** The CLI is required for deleting documents, reading the
+> drive tree, and profiles/sign-in. For everything else prefer the REST surface — see
+> AGENT.md § *Which surface to use*.
 > CLI ≥ 1.0.32 refuses `apply`/`mutate` payloads whose strings carry a literal `\n`/`\t`/`\r` (double-encoded line breaks) and names the field; `--allow-literal-escapes` overrides for a string that genuinely contains that text.
-> If you must write raw anyway, follow every rule in CONFIGURATION.md → "Writing via raw GraphQL — the safety rules".
 
-Alternative to MCP for vault operations. All commands work against local or remote Switchboard instances.
+All commands work against local or remote Switchboard instances.
 
 ## Installation
 
@@ -141,7 +136,6 @@ The CLI auto-injects `timestampUtcMs` and `action.id` on all actions.
 
 ### CLI version notes
 
-Current CLI is **1.0.30**. `switchboard --version` to check; install from source
 with `cargo install --path . --force` in the switchboard-cli checkout.
 
 - **>= 1.0.29** — `drives list` reports a document count per drive (`Docs`
@@ -264,7 +258,7 @@ switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":
 
 ## Batching with `docs apply`: ordered, per-action isolated, silently partial
 
-**Verified 2026-09-02 (CLI 1.0.32, reactor 6.2.2-dev.71):**
+**Verified 2026-09-14 (reactor 6.2.3-dev.4):**
 
 - **Order is preserved.** Two `SET_TITLE`s in one batch landed at increasing indices in the order given; the last won.
 - **Failures are isolated per action.** A batch of `[SET_TITLE, SET_DESCRIPTION(300 chars), SET_METADATA_FIELD]` applied the title and the metadata; the over-long description was recorded with `DescriptionTooLongError` and skipped. Same for an invalid `sourceOrigin` enum on `SET_PROVENANCE`.
@@ -280,25 +274,14 @@ switchboard docs mutate <id> --op assignTask --input '{...}'
 switchboard docs mutate <id> --op advancePhase --input '{...}'
 ```
 
-## Two-Batch Pattern
+## Batching
 
-Separate content from provenance to prevent batch failures:
+One batch, then read back. Actions run in the order given; an action the reducer
+rejects is recorded with its error and skipped, and the actions before and after
+it still land. Content, topics and provenance can go together.
 
-```bash
-# Batch 1: Content
-switchboard docs apply <note-id> --actions '[
-  {"type": "SET_TITLE", "input": {"title": "...", "updatedAt": "..."}, "scope": "global"},
-  {"type": "SET_DESCRIPTION", "input": {"description": "...", "updatedAt": "..."}, "scope": "global"},
-  {"type": "SET_NOTE_TYPE", "input": {"noteType": "concept", "updatedAt": "..."}, "scope": "global"},
-  {"type": "SET_CONTENT", "input": {"content": "...", "updatedAt": "..."}, "scope": "global"},
-  {"type": "ADD_TOPIC", "input": {"id": "t1", "name": "topic"}, "scope": "global"}
-]'
-
-# Batch 2: Provenance (separate — validation failures won't kill content)
-switchboard docs apply <note-id> --actions '[
-  {"type": "SET_PROVENANCE", "input": {"author": "agent", "sourceOrigin": "DERIVED", "createdAt": "..."}, "scope": "global"}
-]'
-```
+The job reports success even when an action was rejected, so always read the
+document — or the operation log — back.
 
 ## Full Pipeline via CLI
 

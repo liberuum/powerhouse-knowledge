@@ -84,18 +84,14 @@ For GraphQL and WebSocket endpoints on remote, replace `localhost:4001` with you
 
 ## Connection Modes
 
-> **The golden rule: read however you like — write ONLY through the CLI.**
-> Reads (queries, searches, state checks) are safe over raw GraphQL and faster (~0.2s vs ~1-2s).
-> Writes (create, mutate, link) go through the `switchboard` CLI or the vetted scripts: they
-> auto-stamp every action with `id` + `timestampUtcMs` and resolve drive slugs to UUIDs.
-> A single raw write missing the action `id` permanently breaks sync for every connected client.
-> Bulk writes: batch into one `switchboard docs apply --file` call.
+> **The golden rule: read on any surface — write over REST or the CLI, never over raw GraphQL.**
+> Batch writes into one request.
 
-The plugin supports two connection modes to the Powerhouse reactor:
+The plugin supports these connection modes to the Powerhouse reactor:
 
-### Mode 1: MCP (Default — Request/Response)
+### Mode 1: MCP (optional)
 
-All skills use MCP by default. This is the simplest setup.
+No bundled skill uses MCP; the skills use REST and the CLI. This is the simplest setup.
 
 ```json
 // .mcp.json
@@ -111,7 +107,7 @@ All skills use MCP by default. This is the simplest setup.
 
 **When to use:** Standard skill-triggered workflows — user runs `/extract`, agent does work, returns results.
 
-### Mode 2: GraphQL + WebSocket (Real-Time)
+### Mode 2: GraphQL + WebSocket (reads and subscriptions)
 
 For autonomous agent behavior — watching vault changes, auto-connecting notes, health monitoring.
 
@@ -151,15 +147,8 @@ subscription WatchVault($search: SearchFilterInput) {
 }
 ```
 
-**Mutate via GraphQL (same connection):**
-```graphql
-mutation MutateNote($id: String!, $actions: [JSONObject!]!) {
-  mutateDocument(documentIdentifier: $id, actions: $actions) {
-    id
-    name
-  }
-}
-```
+GraphQL is **read-only** for vault work — see *Writing over raw GraphQL — don't* below.
+Use the WebSocket to observe changes and the REST surface to act on them.
 
 **IMPORTANT:** Each action MUST include a unique `id` (UUID) **and** `timestampUtcMs`. The
 reactor does NOT reject id-less actions — it persists them. An action persisted without `id`
@@ -175,10 +164,12 @@ permanently breaks every browser client's sync channel (`pollSyncEnvelopes` -> n
 }
 ```
 
-**Any raw `mutateDocument` dispatch — HTTP, WebSocket, or script — MUST stamp `id` and
-`timestampUtcMs` on every action.** Prefer the switchboard CLI or the vetted scripts under
-`scripts/` (they stamp automatically); see the `envelope()` helper in `scripts/sync-skills.mjs`
-for the pattern if you must dispatch raw actions yourself.
+Write over REST or the CLI; both stamp the envelope for you.
+
+The bundled scripts under `scripts/` (`sync-skills.mjs`, `sync-repo-docs.mjs`,
+`add-skill.mjs`, `seed-source.mjs`) dispatch raw `mutateDocument` and stamp `id` and
+`timestampUtcMs` themselves — they are the one sanctioned exception to the read-only rule, and
+`envelope()` in `scripts/sync-skills.mjs` is the pattern they use.
 
 **GraphQL identifier arguments** (`sourceIdentifier`, `targetIdentifier`, `parentIdentifier`,
 `documentIdentifier`) take document **UUIDs**. Drive **slugs are CLI-only** (`--drive <slug>` is
@@ -186,49 +177,49 @@ fine — the CLI resolves them). A slug passed to GraphQL `createDocument`/`crea
 makes the containment job fail and the create hang forever.
 
 
-### Writing via raw GraphQL — the safety rules
+### Mode 0: REST HTTP surface (reads and all writes)
 
-If you choose to write with the raw API instead of the CLI, ALL of these are mandatory.
-Each rule exists because breaking it has already caused a production incident:
+Served by the knowledge-note package. Use it for writes and for most reads.
 
-1. **Stamp every action envelope** with a unique `id` (UUID v4) and `timestampUtcMs`
-   (ISO-8601 with `Z`). The reactor does NOT reject unstamped actions — it persists
-   them, and one persisted id-less action permanently bricks the sync channel of
-   every connected client. Copy the helper:
-   ```js
-   const envelope = (a) => ({ id: crypto.randomUUID(),
-     timestampUtcMs: new Date().toISOString(), scope: "global", ...a });
-   ```
-2. **UUIDs only in GraphQL identifier arguments** (`documentIdentifier`,
-   `parentIdentifier`, `sourceIdentifier`, `targetIdentifier`, `driveId`). Slugs are
-   CLI-only. A slug passed to a create makes the containment job fail and the call
-   hang forever.
-3. **Never `createEmptyDocument`.** Create through the model namespace so the
-   document enters the proper pipeline and syncs to Connect:
-   `mutation { KnowledgeNote { createDocument(name: "...", parentIdentifier: "<drive-uuid>") { id } } }`
-4. **DateTime inputs inside `input` are your job too** — full ISO with `Z`
-   (`2026-08-17T12:00:00.000Z`). Zod silently records the operation with an
-   `.error` and leaves state unchanged on bad timestamps.
-5. **Verify by read-back, never assume.** After every write, re-read the document
-   state (or its operation log) — a failed operation is still recorded, with the
-   error string on the op and no state change.
-6. **One keep-alive connection for bulk work.** Per-request connections TLS-flake
-   (~19%) on remote pods; reuse a single HTTP client/session.
-7. **Batch dependent operations one at a time**; only independent operations may
-   share a single `mutateDocument` call.
-
-A fully-formed safe action looks like:
-```json
-{
-  "id": "3e1f7c9a-8f34-4a1e-9d7b-2f4b6c8d0e12",
-  "type": "SET_TITLE",
-  "input": {"title": "My Note", "updatedAt": "2026-08-17T12:00:00.000Z"},
-  "scope": "global",
-  "timestampUtcMs": "2026-08-17T12:00:00.000Z"
-}
+```
+Base path:  <origin>/api/@powerhousedao/knowledge-note/<path>
+Auth:       Authorization: Bearer <token>   (every route except badge.svg)
 ```
 
-### Mode 3: Switchboard CLI (Full Feature Parity)
+Routes and semantics: `docs/http-api.md` in the package repo. Summary:
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `drives` | find the vault drive |
+| `GET` | `search`, `notes/:id`, `notes/:id.md` | read notes |
+| `GET` | `stats`, `topics`, `orphans`, `triangles`, `graph.json` | read the graph |
+| `GET` | `llms.txt`, `llms-full.txt`, `health.json`, `badge.svg` | whole-vault reads |
+| `POST` | `actions` | write actions to an existing document |
+| `POST` | `notes` | create up to 25 notes with their actions |
+| `POST` | `sources` | ingest a source from content |
+| `POST/PATCH/DELETE` | `relationships` | links, with `reason` and `confidence` |
+| `POST` | `tasks/:id/claim` | claim a queue task |
+
+Every synchronous write returns `readBack`. `confirmed` means verified;
+`unconfirmed` means the write **was dispatched** but could not be read back —
+do not retry, poll `jobId` or re-read. A `400` means nothing was dispatched. A
+`502` on a create means everything it created was deleted.
+
+### Writing over raw GraphQL — don't
+
+GraphQL is read-only for vault work. It cannot place a document in a folder
+(`createEmptyDocument(parentIdentifier:)` takes a document, and a folder is not
+one), and `addRelationship` cannot set a link's `reason` or `confidence`.
+
+If you write raw anyway, for anything, these still hold:
+
+1. Stamp every action with `id` (a fresh UUID) and `timestampUtcMs`.
+2. Use document UUIDs, never slugs, in GraphQL arguments.
+3. `DateTime` fields take ISO strings.
+4. Read the document back and confirm the write landed.
+5. Use one keep-alive connection for a batch of calls.
+
+### Mode 3: Switchboard CLI
 
 The Switchboard CLI (≥ 1.0.28 for drive-scoped `docs get`; see `skills/cli-reference` for version-gated features) provides full feature parity with MCP for all vault operations. The plugin's `hooks/hooks.json` is already CLI-mode: on vault commands it pings the reactor, auto-introspects a stale model cache, and prints the active profile + detected vault drive.
 
@@ -390,7 +381,7 @@ switchboard drives fix <drive> -y
 
 **`--parent-folder` placement:** The CLI creates the doc at the drive root first, then moves it into the folder via `DocumentDrive { moveNode }`. This is a two-step process — if the move fails, the doc remains at the root.
 
-**Action `id` field:** The CLI auto-generates action IDs for all `mutateDocument` operations (ADD_FILE, DELETE_NODE, etc.). This prevents null `action.id` errors in Connect's sync stream. If you use `docs apply` with raw actions, the CLI injects IDs automatically via `stamp_actions`. See the promoted rule under Mode 2 above — this CLI auto-stamping is *why* the CLI is the safe default; anything that bypasses it (raw HTTP/WebSocket/script `mutateDocument` calls) must stamp `id` + `timestampUtcMs` itself.
+**Action `id` field:** The CLI auto-generates action IDs for all `mutateDocument` operations (ADD_FILE, DELETE_NODE, etc.). This prevents null `action.id` errors in Connect's sync stream. If you use `docs apply` with raw actions, the CLI injects IDs automatically via `stamp_actions`. Both write surfaces stamp for you; anything that bypasses them (raw HTTP/WebSocket/script `mutateDocument` calls) must stamp `id` + `timestampUtcMs` itself.
 
 **Soft delete:** `docs delete` uses non-cascading soft delete (won't destroy parent drives). `drives delete` uses CASCADE (deletes drive + all children). Ghost nodes left behind by failed operations can be cleaned up with `drives check` + `drives fix`.
 
@@ -433,9 +424,9 @@ For a remote reactor, update the URLs:
 GraphQL endpoint: `https://your-reactor.example.com/graphql/r`
 WebSocket: `wss://your-reactor.example.com/graphql/subscriptions`
 
-## Folder Placement
+## Folder placement (MCP / CLI only)
 
-When creating documents via MCP, always place them in the correct folder:
+The REST create routes place documents by document type and **reject** `parentFolder`. When creating via MCP or the CLI you must place them yourself:
 
 1. Read the drive to find folder IDs:
 ```
@@ -460,7 +451,7 @@ mcp__reactor-mcp__createDocument({
 
 ## Processor
 
-The GraphIndexer processor indexes `bai/knowledge-note` and `bai/moc` documents (and the drive's `ADD_RELATIONSHIP` edges) into a relational database. Sources, tensions, observations, projects and WBS are **not** indexed — read them by id. Query the indexed data via:
+The GraphIndexer processor indexes `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation`, `powerhouse/scopeofwork` and `bai/wbs` documents (and the drive's `ADD_RELATIONSHIP` edges) into a relational database. Sources, the health report, the pipeline queue and the vault config are **not** indexed — read those by id. Query the indexed data via:
 
 ```graphql
 query {

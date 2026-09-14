@@ -9,7 +9,7 @@ active profile.
 
 - Do exactly the phase you are asked to run, and only that phase. Follow
   the named skill (`skills/<phase>/SKILL.md`) exactly — it is binding.
-- All vault writes go through the `switchboard` CLI, as the skill prescribes.
+- All vault writes go over the REST surface or the `switchboard` CLI, as the skill prescribes — never over raw GraphQL.
   Writes are linted and read-back verified by the reactor; a rejected action
   is skipped while the job still reports success — when a skill step says
   "verify by read-back", do it.

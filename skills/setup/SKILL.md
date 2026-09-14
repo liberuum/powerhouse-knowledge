@@ -12,7 +12,7 @@ local methodology.
 
 There is **no default vault**. Installing the plugin does not connect anything.
 Linking notes is **connect**. MCP / raw GraphQL: [CONFIGURATION.md](../../CONFIGURATION.md)
-— writes still go through the CLI.
+— writes go over REST or the CLI, never over raw GraphQL.
 
 ## When to use
 
@@ -30,6 +30,16 @@ which switchboard || curl -fsSL https://raw.githubusercontent.com/liberuum/switc
 switchboard --version    # ≥ 1.0.36
 switchboard config show
 switchboard ping
+```
+
+Then set up REST, which most skills use. Probe for authorization first:
+
+```bash
+BASE=<origin>/api/@powerhousedao/knowledge-note   # origin from `switchboard config show`
+curl -s -w '\n%{http_code}\n' "$BASE/ping"        # 200 + "user": null => auth off, send no header
+                                                   # 401 => auth on:
+TOKEN=$(switchboard auth token); AUTH="Authorization: Bearer $TOKEN"
+curl -s -H "$AUTH" "$BASE/drives"                  # the vault drive id for ?drive=
 ```
 
 If ping already succeeds and the user confirms that profile, skip to step 2.

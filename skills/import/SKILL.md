@@ -5,13 +5,21 @@ description: Bulk import knowledge from external sources — markdown files, Obs
 
 # Bulk Import
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+Create notes in batches of up to 25 with `POST notes` rather than one call per
+document — it places them all in one containment dispatch:
+
+```bash
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/notes" \
+  -d '{"drive":"<UUID>","notes":[{"name":"slug","actions":[…]}]}'
+```
+
+
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
 Import knowledge from external sources into the Knowledge Vault.
 
@@ -47,7 +55,7 @@ switchboard docs apply <new-doc-id> --actions '[
 ]'
 ```
 
-Then set provenance in a **separate batch** (validation failures won't kill content):
+Then set provenance (the same batch is fine — a rejected action is skipped, the rest land):
 ```bash
 switchboard docs mutate <new-doc-id> --op setProvenance --input '{"author": "...", "sourceOrigin": "IMPORT", "createdAt": "..."}'
 ```

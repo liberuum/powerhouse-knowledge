@@ -8,7 +8,7 @@ This plugin gives you (human or AI agent) the ability to manage a structured kno
 
 - **17 skills** for knowledge management (setup, seed, extract, connect, search, verify, health, graph, scopes of work/WBS, skills discovery, etc.)
 - **One canonical instruction set** — [AGENT.md](AGENT.md). The `knowledge-agent` Claude Code agent is generated from it (`node scripts/build-agent.mjs`), so there is exactly one document to keep true
-- **Connection to a Powerhouse reactor** via MCP or Switchboard CLI
+- **Connection to a Powerhouse reactor** via REST, the Switchboard CLI, GraphQL (read-only) or MCP
 - **Access to the Graph Indexer** — a relational index with keyword search, topic queries, provenance filtering, and AI-powered semantic search
 
 The vault stores knowledge as `bai/knowledge-note` documents — atomic claims with typed links, topics, provenance, and lifecycle states. Notes are organized by Maps of Content (MOCs), processed through a pipeline, and visualized as an interactive graph.
@@ -142,23 +142,19 @@ incremental by content hash, git stays canonical.)
 
 ## Connection Modes
 
-> **The golden rule: read however you like — write ONLY through the CLI.**
-> Reads (queries, searches, state checks) are safe over raw GraphQL and faster (~0.2s vs ~1-2s).
-> Writes (create, mutate, link) go through the `switchboard` CLI or the vetted scripts: they
-> auto-stamp every action with `id` + `timestampUtcMs` and resolve drive slugs to UUIDs.
-> A single raw write missing the action `id` permanently breaks sync for every connected client.
-> Bulk writes: batch into one `switchboard docs apply --file` call.
-> If you must write raw anyway, follow every rule in CONFIGURATION.md → "Writing via raw GraphQL — the safety rules".
+> **The golden rule: read on any surface — write over REST or the CLI, never over raw GraphQL.**
+> Batch writes into one request.
 
-The plugin supports three ways to interact with the reactor:
+The plugin supports four ways to interact with the reactor:
 
-| Mode | Tool | Best for |
-|------|------|----------|
-| **Switchboard CLI** | `switchboard` commands via Bash | Agent workflows, full feature parity |
-| **MCP** | `mcp__reactor-mcp__*` tools | Direct document CRUD from Claude |
-| **GraphQL** | HTTP queries to `/graphql/knowledgeGraph` | Subgraph queries, external integrations |
+| Mode | Tool | Use for |
+|------|------|---------|
+| **REST HTTP** | `curl` against `/api/@powerhousedao/knowledge-note/…` | Reads and all writes |
+| **Switchboard CLI** | `switchboard` commands via Bash | Deletes, drive tree, profiles and sign-in |
+| **GraphQL** | HTTP queries to `/graphql` | Reads where you want selected fields. **Read-only** |
+| **MCP** | `mcp__reactor-mcp__*` tools | Optional; reads and inspection. Not the sanctioned write path |
 
-The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.md](CONFIGURATION.md) for setup details.
+See [CONFIGURATION.md](CONFIGURATION.md) for setup details.
 
 ## Skills Reference
 
@@ -166,6 +162,7 @@ The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.
 
 | Skill | Command | Description |
 |-------|---------|-------------|
+| REST API | `/powerhouse-knowledge:rest-api` | Every REST route, with request and response shapes |
 | Setup | `/powerhouse-knowledge:setup` | Connect the CLI to the vault (first time) and verify folders, singletons, methodology |
 | Import | `/powerhouse-knowledge:import <path>` | Bulk import from markdown, Obsidian, or JSON |
 | Export | `/powerhouse-knowledge:export [path]` | Export vault as markdown, JSON, or .phd backup |
@@ -200,7 +197,7 @@ The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.
 
 ## Graph Indexer & Subgraph
 
-The vault includes a **Graph Indexer processor** that maintains a relational index of all knowledge notes. The **Knowledge Graph subgraph** exposes this index via GraphQL at `/graphql/knowledgeGraph`.
+The vault includes a **Graph Indexer processor** that maintains a relational index of all knowledge notes. The **Knowledge Graph subgraph** exposes this index via GraphQL at `/graphql`.
 
 ### What's indexed
 
@@ -213,7 +210,7 @@ Every operation on an indexed type — `bai/knowledge-note`, `bai/moc`, `bai/res
 ### Available queries
 
 **Search:**
-- `knowledgeGraphSemanticSearch(query, mode: HYBRID|SEMANTIC)` — meaning + keyword, ranked; `similarity` is a 0–1 relevance (package ≥ 1.0.52). **Default for natural-language questions.**
+- `knowledgeGraphSemanticSearch(query, mode: SEMANTIC)` — ranked by meaning; `similarity` is a true cosine. **Default for natural-language questions.**
 - `knowledgeGraphSearch(query)` — keyword match on title + description
 - `knowledgeGraphFullSearch(query)` — keyword match on title + description + content (ANDs terms; use 1–2 keywords)
 - `knowledgeGraphSimilar(documentId)` — semantically similar notes to a given note
@@ -248,7 +245,7 @@ Every operation on an indexed type — `bai/knowledge-note`, `bai/moc`, `bai/res
 
 | User intent | Best query |
 |-------------|-----------|
-| Natural language question | `knowledgeGraphSemanticSearch` (mode: HYBRID), question passed verbatim |
+| Natural language question | `knowledgeGraphSemanticSearch` (mode: SEMANTIC) |
 | Known keyword/term | `knowledgeGraphSearch` or `knowledgeGraphFullSearch` |
 | "Notes about topic X" | `knowledgeGraphByTopic` |
 | "Notes similar to this one" | `knowledgeGraphSimilar` |
@@ -300,13 +297,13 @@ completes the task by itself. Every note the pipeline creates must end with: tit
 Human (Connect App)                    AI Agent (Claude Code)
   |                                     |
   +── Knowledge Vault App               +── powerhouse-knowledge plugin
-  |     |── Notes tab (grid + search)   |     |── 16 skills
+  |     |── Notes tab (grid + search)   |     |──  18 skills
   |     |── Graph tab (cytoscape viz)   |     |── knowledge-agent
   |     |── Sources, Pipeline, Health   |     |── Switchboard CLI
   |     +── MOC editor, Note editor     |     +── MCP / GraphQL
   |                                     |
   +───────── Powerhouse Reactor ────────+
-              |── 11 document models
+              |── 12 document models
               |── Graph Indexer processor
               |     |── Relational index (PGlite)
               |     +── Semantic embeddings (server-side Transformers.js)

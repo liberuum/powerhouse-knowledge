@@ -1,12 +1,8 @@
 # For AI Agents
 
-> **The golden rule: read however you like — write ONLY through the CLI.**
-> Reads (queries, searches, state checks) are safe over raw GraphQL and faster (~0.2s vs ~1-2s).
-> Writes (create, mutate, link) go through the `switchboard` CLI or the vetted scripts: they
-> auto-stamp every action with `id` + `timestampUtcMs` and resolve drive slugs to UUIDs.
-> A single raw write missing the action `id` permanently breaks sync for every connected client.
-> Bulk writes: batch into one `switchboard docs apply --file` call.
-> If you must write raw anyway, follow every rule in CONFIGURATION.md → "Writing via raw GraphQL — the safety rules".
+> **The golden rule: read on any surface — write over REST or the CLI, never over raw GraphQL.**
+> Writes go through the REST HTTP surface or the `switchboard` CLI. Batch writes into one
+> request. See *Which surface to use*, and **rest-api** for every route.
 
 You are working on a **Powerhouse Knowledge Vault** through the `powerhouse-knowledge` plugin. The vault is a graph of atomic knowledge notes (`bai/knowledge-note`) organised by Maps of Content (`bai/moc`), fed by source documents (`bai/source`), tracked by a pipeline queue, and read by humans in the Knowledge Vault app. **Your job is the write path:** take source material in, extract atomic notes and create them correctly, connect them, place them in the MoC hierarchy, and verify the result. Everything else here serves that.
 
@@ -15,33 +11,169 @@ This file is the single canonical instruction set. `agents/knowledge-agent.md` i
 ## Start here — the first five minutes
 
 1. **Establish the target.** There is no default vault. Read the pre-flight hook output (`Profile: … -> …`, `Signing: …`, `VAULT_DRIVE_ID`, `VAULT_DRIVE_SLUG`, `ACCESS: …`) or run `switchboard config show`; if there is no profile, ping fails, or this is the first session, **REQUIRED:** [skills/setup/SKILL.md](skills/setup/SKILL.md). If it is ambiguous which vault the user means, **ask** for the Switchboard URL and drive. See *First: Establish which vault to use*. Before the first write, `Signing:` must be on and `ACCESS:` must say `WRITE` — see *Authenticate, then get access*.
-2. **Find the drive** — the one containing a `bai/vault-config` document. See *Find the vault drive*. Keep its UUID (for `knowledgeGraph*` queries) and slug (for `--drive`).
+2. **Find the drive** — the one containing a `bai/vault-config` document. See *Find the vault drive*. Keep its UUID (for `knowledgeGraph`* queries) and slug (for `--drive`).
 3. **Check it is ready** — folders and the three singletons exist: `/powerhouse-knowledge:setup`.
 4. **Know the job** — read *The job: from source to connected notes* below. Most requests are one of: seed a source, run the pipeline on it, search, or check health.
 5. **Pick the skill** from *Available skills* and read its `SKILL.md` before acting; each skill is the detailed procedure for one step.
 
+
+
+## Before the first call: origin, auth, drive
+
+**1. Origin.** `switchboard config show` prints the profile URL. The REST base
+is that origin plus the package path:
+
+```bash
+BASE=<origin>/api/@powerhousedao/knowledge-note
+```
+
+**2. Is authorization on?** Ask without a token — this is the first request you
+make.
+
+```bash
+curl -s -w '\n%{http_code}\n' "$BASE/ping"
+```
+
+| Answer | Meaning | What to do |
+|---|---|---|
+| `200`, `"user": null` | auth is **off** | send no `Authorization` header |
+| `401` | auth is **on** | get a token, below |
+| `200`, `"user": "0x…"` | auth on, token already valid | carry on |
+
+When auth is on:
+
+```bash
+TOKEN=$(switchboard auth token)
+AUTH="Authorization: Bearer $TOKEN"
+curl -s -H "$AUTH" "$BASE/ping"     # your address in "user" confirms it
+```
+
+Do not send a bearer token to a vault that is not asking for one, and do not
+assume a hosted vault is open — a protected Switchboard answers `401` to reads
+as well as writes.
+
+**3. Drive.** `GET drives` returns only knowledge-vault drives you may read:
+
+```bash
+curl -s -H "$AUTH" "$BASE/drives"
+```
+
+Use its `id` as `?drive=<UUID>` on every other route.
+
+## Which surface to use
+
+
+| Task                                                              | Use                                              |
+| ----------------------------------------------------------------- | ------------------------------------------------ |
+| Search, stats, topics, orphans, activity                          | REST, GraphQL or CLI                             |
+| A note with its links                                             | REST `GET notes/:id`                             |
+| Selected fields from a large result                               | GraphQL                                          |
+| Markdown, `llms.txt`, `llms-full.txt`, `health.json`, `badge.svg` | REST                                             |
+| Find the vault drive                                              | REST `GET drives`                                |
+| Drive tree, folder UUIDs                                          | CLI `switchboard docs tree`                      |
+| Write actions to an existing document                             | REST `POST actions`                              |
+| Create notes                                                      | REST `POST notes`                                |
+| Ingest a source                                                   | REST `POST sources`                              |
+| Create or change a link                                           | REST `POST/PATCH relationships`                  |
+| Claim a queue task                                                | REST `POST tasks/:id/claim`                      |
+| Delete a document                                                 | CLI `switchboard docs delete`                    |
+| Profiles, sign-in                                                 | CLI `switchboard init`, `switchboard auth login` |
+
+
+**Never write over raw GraphQL.** It cannot place a document in a folder and
+cannot set a link's `reason`. GraphQL is read-only.
+
+**On a remote vault, make as few calls as possible.** Batch actions into one
+request. If you must make several, make them in one process (`curl --next`, or
+one script holding the connection open) — not one shell command each.
+
+## The REST HTTP surface
+
+Base path: `<origin>/api/@powerhousedao/knowledge-note/<path>`.
+Auth: `Authorization: Bearer <token>` on every route except `badge.svg`.
+
+```bash
+BASE=<origin>/api/@powerhousedao/knowledge-note
+AUTH="Authorization: Bearer $TOKEN"
+
+# read
+curl -s -H "$AUTH" "$BASE/search?drive=$DRIVE&q=how+does+sync+work&mode=semantic&limit=6"
+curl -s -H "$AUTH" "$BASE/notes/$ID?drive=$DRIVE"
+curl -s -H "$AUTH" "$BASE/notes/$ID.md?drive=$DRIVE"
+curl -s -H "$AUTH" "$BASE/stats?drive=$DRIVE"
+
+# write
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/actions" \
+  -d '{"documentId":"'$ID'","actions":[{"type":"SET_TITLE","input":{"title":"…","updatedAt":"<ISO>"}}]}'
+
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/relationships" \
+  -d '{"source":"'$A'","target":"'$B'","type":"BUILDS_ON","reason":"<why>","confidence":"grounded"}'
+```
+
+
+
+### Creating documents
+
+`POST sources` takes content; the API files it in `/sources` itself.
+`POST notes` creates up to 25 notes with their actions in one call.
+Neither accepts a `parentFolder` — placement follows the document type.
+
+```bash
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/sources" \
+  -d '{"drive":"'$DRIVE'","title":"…","content":"…","sourceType":"ARTICLE"}'
+
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/notes" \
+  -d '{"drive":"'$DRIVE'","notes":[{"name":"slug","actions":[…]}]}'
+```
+
+
+
+### What the responses mean
+
+`readBack: "confirmed"` — the write is verified. `"unconfirmed"` — the write
+**was dispatched** but could not be read back. Do not retry — poll `jobId` or
+re-read the document instead. `"skipped"` — `wait: false`, nothing was checked.
+
+A `400` means nothing was dispatched. A `502` on a create means everything it
+created was deleted; if the body says `Rollback INCOMPLETE` it lists the ids
+that survived in `details[].orphaned`.
+
+### Two differences from the CLI
+
+REST writes are signed with the server's key; the caller is still recorded from
+the bearer token. CLI writes are signed with your own key. If a write must
+carry your signing identity, use the CLI.
+
+The plugin's pre-write hooks only see `switchboard` commands, not `curl`. REST
+runs the same lint and articulation checks server-side and returns `400`, so
+nothing is unchecked.
+
 ## Deep-dive references
 
-| What you need | Read this |
-|---------------|-----------|
-| Connection setup (CLI profiles, GraphQL, MCP, raw-write safety rules) | [CONFIGURATION.md](CONFIGURATION.md) |
-| Switchboard CLI commands (drives, docs, mutations, queries) | [skills/cli-reference/SKILL.md](skills/cli-reference/SKILL.md) |
-| Search (semantic, keyword, topic, provenance; rich-context recipe) | [skills/search/SKILL.md](skills/search/SKILL.md) — work/project hits fork to scope-of-work |
-| Nested scope-of-work lookup (envelopes, deliverables, roadmaps, milestones, maps, WBS) | [skills/scope-of-work/SKILL.md](skills/scope-of-work/SKILL.md) |
-| Graph analysis (triangles, bridges, clusters, semantic neighbourhoods) | [skills/graph/SKILL.md](skills/graph/SKILL.md) |
-| Finding and creating links between notes | [skills/connect/SKILL.md](skills/connect/SKILL.md) |
-| Extracting atomic claims from source material | [skills/extract/SKILL.md](skills/extract/SKILL.md) |
-| Ingesting source material into the vault | [skills/seed/SKILL.md](skills/seed/SKILL.md) |
-| Creating MoCs and the MoC hierarchy | [skills/synthesize/SKILL.md](skills/synthesize/SKILL.md) |
-| Quality checks and auto-repair | [skills/verify/SKILL.md](skills/verify/SKILL.md) |
-| Vault health diagnostics | [skills/health/SKILL.md](skills/health/SKILL.md) |
-| End-to-end processing pipeline | [skills/pipeline/SKILL.md](skills/pipeline/SKILL.md) |
-| First-time connect, sign-in (bearer + signing), access check, folders/singletons | [skills/setup/SKILL.md](skills/setup/SKILL.md) |
-| Bulk import from markdown/Obsidian/JSON | [skills/import/SKILL.md](skills/import/SKILL.md) |
-| Export vault as markdown/JSON/backup | [skills/export/SKILL.md](skills/export/SKILL.md) |
-| Real-time vault monitoring | [skills/watch/SKILL.md](skills/watch/SKILL.md) |
-| Create/mutate scopes, envelopes and WBS (goal-working loop) | [skills/projects/SKILL.md](skills/projects/SKILL.md) |
-| Skill discovery in the vault + incremental sync | [skills/skills/SKILL.md](skills/skills/SKILL.md) |
+
+| What you need                                                                          | Read this                                                                                  |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Connection setup (CLI profiles, REST, GraphQL, MCP)                                    | [CONFIGURATION.md](CONFIGURATION.md)                                                       |
+| Switchboard CLI commands (drives, docs, mutations, queries)                            | [skills/cli-reference/SKILL.md](skills/cli-reference/SKILL.md)                             |
+| Search (semantic, keyword, topic, provenance; rich-context recipe)                     | [skills/search/SKILL.md](skills/search/SKILL.md) — work/project hits fork to scope-of-work |
+| Nested scope-of-work lookup (envelopes, deliverables, roadmaps, milestones, maps, WBS) | [skills/scope-of-work/SKILL.md](skills/scope-of-work/SKILL.md)                             |
+| Graph analysis (triangles, bridges, clusters, semantic neighbourhoods)                 | [skills/graph/SKILL.md](skills/graph/SKILL.md)                                             |
+| Finding and creating links between notes                                               | [skills/connect/SKILL.md](skills/connect/SKILL.md)                                         |
+| Extracting atomic claims from source material                                          | [skills/extract/SKILL.md](skills/extract/SKILL.md)                                         |
+| Ingesting source material into the vault                                               | [skills/seed/SKILL.md](skills/seed/SKILL.md)                                               |
+| Creating MoCs and the MoC hierarchy                                                    | [skills/synthesize/SKILL.md](skills/synthesize/SKILL.md)                                   |
+| Quality checks and auto-repair                                                         | [skills/verify/SKILL.md](skills/verify/SKILL.md)                                           |
+| Vault health diagnostics                                                               | [skills/health/SKILL.md](skills/health/SKILL.md)                                           |
+| End-to-end processing pipeline                                                         | [skills/pipeline/SKILL.md](skills/pipeline/SKILL.md)                                       |
+| First-time connect, sign-in (bearer + signing), access check, folders/singletons       | [skills/setup/SKILL.md](skills/setup/SKILL.md)                                             |
+| Bulk import from markdown/Obsidian/JSON                                                | [skills/import/SKILL.md](skills/import/SKILL.md)                                           |
+| Export vault as markdown/JSON/backup                                                   | [skills/export/SKILL.md](skills/export/SKILL.md)                                           |
+| Real-time vault monitoring                                                             | [skills/watch/SKILL.md](skills/watch/SKILL.md)                                             |
+| Create/mutate scopes, envelopes and WBS (goal-working loop)                            | [skills/projects/SKILL.md](skills/projects/SKILL.md)                                       |
+| Skill discovery in the vault + incremental sync                                        | [skills/skills/SKILL.md](skills/skills/SKILL.md)                                           |
+
+
+
 
 ## First: Establish which vault to use — ASK, never assume
 
@@ -51,10 +183,10 @@ at the wrong one corrupts someone's knowledge base. Before the first vault
 operation of a session:
 
 1. Check whether a target is already established — an active CLI profile
-   (`switchboard config show`), a project `.mcp.json`, or the user having
+  (`switchboard config show`), a project `.mcp.json`, or the user having
    named one in conversation.
 2. If none is unambiguous, **ask the user** which vault to connect to:
-   the Switchboard URL (e.g. `http://localhost:4001/graphql` for local
+  the Switchboard URL (e.g. `http://localhost:4001/graphql` for local
    `ph vetra`, or `https://<their-host>/graphql` for a deployment) **and**
    which drive on it.
 3. Confirm reachability before proceeding:
@@ -72,7 +204,7 @@ server — the same rule applies: that target must be one the user chose.
 
 ### Connecting to a shared remote vault
 
-A hosted vault needs no auth for reads. Point a profile at the Switchboard and
+A hosted vault may allow anonymous reads; a protected one answers `401` to reads too. Probe with `GET ping` (above) before assuming. Point a profile at the Switchboard and
 confirm the models are deployed:
 
 ```bash
@@ -104,14 +236,10 @@ membership edges are fully indexed this reads 0 for everything, which is
 misleading; on a freshly-imported drive it reflects genuinely un-referenced
 notes. Treat a non-zero value as signal, not breakage.
 
-**Writing over a slow link:** the CLI spawns a process per call and each one
-does its own TLS handshake. For bulk writes to a remote host that is
-handshake-bound rather than CPU-bound — hundreds of calls will start failing
-with `_ssl.c:983: handshake operation timed out`. Batch actions into a single
-`docs apply`, or talk to `/graphql` over one keep-alive connection — stamping
-every action with `id` + `timestampUtcMs` yourself (copy the `envelope()`
-helper from scripts/sync-skills.mjs). An id-less action bricks sync for every
-client.
+**Writing over a slow link:** every CLI call and every separate `curl` opens a
+new connection, and each one pays a TLS handshake. Hundreds of calls will start
+failing with `_ssl.c:983: handshake operation timed out`. Batch into one
+request, or make the calls in one process.
 
 ## Find the vault drive
 
@@ -146,7 +274,7 @@ What "created correctly" means for one note is the *Definition of done* below �
 
 ## Search the vault
 
-**Start with `knowledgeGraphSemanticSearch`** (package ≥ 1.0.50). Send the
+**Start with** `knowledgeGraphSemanticSearch` (package ≥ 1.0.50). Send the
 question in plain natural language — the Switchboard embeds the query
 server-side and ranks by meaning, falling back to keyword search
 transparently if embeddings are unavailable, so it is always safe to call.
@@ -154,20 +282,25 @@ transparently if embeddings are unavailable, so it is always safe to call.
 **To answer a question, fetch context in two calls, not twenty.** The node type carries `content`, so one search returns the full text of the best hits; a second aliased query pulls the neighbourhood of the top ones. The recipe is in [skills/search/SKILL.md](skills/search/SKILL.md) § *Rich context in two calls*.
 
 ```bash
-# DEFAULT: semantic/hybrid search from plain query text — select content when you need to answer, not just list
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: HYBRID, limit: 6) { similarity matchedBy node { documentId title description content noteType status } } }'
+# DEFAULT: SEMANTIC. Select content when you need to answer, not just list.
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: SEMANTIC, limit: 6) { similarity node { documentId title description content noteType status } } }'
 ```
 
 - `similarity` is **always a 0–1 relevance** and always decreases down the result list, so it is safe to render as a percentage or threshold on in either mode (package ≥ 1.0.52).
+- **Asking how two things relate? Search the narrower one alone.** Naming both pulls the
+  embedding toward whichever the vault holds more of. Find the narrow thing, then read its links —
+  a MoC's `CORE_IDEA` members are the curated answer.
+- **`SEMANTIC` is the only mode.** Its `similarity` is a true cosine, so it can be compared and
+  thresholded. Add `content` when you intend to answer, not just list. For an exact term use
+  `knowledgeGraphFullSearch`, which is keyword-only and ANDs its terms — give it 1-2 words.
 - `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (>0.8 is a strong match)
-- `mode: HYBRID` — semantic + keyword rank fusion, rescaled onto 0–1: **~1.0 = matched by both signals at top rank, ~0.5 = matched by only one signal**. Select `matchedBy` to see which fired.
-- `score` carries the RAW number instead — cosine in SEMANTIC, the Reciprocal Rank Fusion weight in HYBRID (ordinal, tops out near 0.033) — **never render `score` as a percentage**.
-- `topics` is a per-node field resolver (one server-side query per row). One whole-vault fetch per run is cheap (~0.3 s for 500 notes); selecting it inside a per-hit loop is not.
+- `score` carries the same cosine as `similarity`.
+- `topics` is a per-node field resolver (one server-side query per row). One whole-vault fetch per run is fine; selecting it inside a per-hit loop is not.
 - **MoCs are nodes too** and come back from every query with `status = "MOC"` and `noteType = "MOC (<tier>)"` — filter them when the question is about notes.
 - **Scopes of work and work breakdowns are nodes too** (package ≥ 1.0.54-dev.7): `status = "SCOPE"` / `"WBS"` (sentinels, like MoCs — a scope's own DRAFT would otherwise pollute note-lifecycle queries) with the real state in `noteType` (`Scope (IN_PROGRESS)`, `WBS (BLOCKED)`); their `content` is a rendered outline. They are not knowledge nodes: excluded from orphans, density and `edgeCount`. A scope carries derived edges `CITES` (→ each note/MoC in an envelope's `knowledgeRefs`) and `DELIVERED_BY` (→ its WBS). Nested fields (envelope UUID, quotes, `goalRef`, goal notes) are **not** documents — **REQUIRED:** use [skills/scope-of-work/SKILL.md](skills/scope-of-work/SKILL.md). Search skill forks here when the query is about a project, deliverable, milestone, roadmap, or WBS.
 - If the field doesn't exist (schema validation error), the deployment runs an older package — fall back to `knowledgeGraphFullSearch`.
 
-Keyword search still matters for exact terms — but **`knowledgeGraphFullSearch` ANDs its terms**, so give it 1–2 distinctive keywords, never a sentence:
+Keyword search still matters for exact terms — but `knowledgeGraphFullSearch` **ANDs its terms**, so give it 1–2 distinctive keywords, never a sentence:
 
 ```bash
 switchboard query '{ knowledgeGraphFullSearch(driveId: "<UUID>", query: "operation store", limit: 20) { documentId title noteType } }'
@@ -207,12 +340,14 @@ switchboard docs apply <doc-id> --actions '[
   {"type":"ADD_TOPIC","input":{"id":"<uuid>","name":"reactor"},"scope":"global"}
 ]'
 
-# Batch 2: provenance, separately (a validation failure kills the whole batch it is in)
+# Provenance can go in the same batch; a rejected action is skipped and the rest land
 switchboard docs mutate <doc-id> --op setProvenance --input '{"author":"knowledge-agent","sourceOrigin":"DERIVED","createdAt":"<ISO>"}'
 
 # Verify it exists — never assume from a successful dispatch
 switchboard docs tree <drive-slug> --format json | grep <doc-id>
 ```
+
+
 
 ## Definition of done — leave the vault at 100% health
 
@@ -223,27 +358,33 @@ reading state back**, not assumed from a successful dispatch (invalid enums,
 over-long descriptions and bad timestamps all fail silently).
 
 **Creating a note**
+
 - [ ] title (a declarative claim), description (<= 200 chars, adds information beyond the title), `noteType` (one of the ten lowercase values), content
-- [ ] topics added; provenance set in a SEPARATE dispatch from content
+- [ ] topics added; provenance set
 - [ ] >= 2 typed relationships, each created with `--reason` (the articulation test, on the edge) and `--confidence` where you can say
 - [ ] attached to a MoC (`switchboard docs link <moc-uuid> <note-uuid> -t CORE_IDEA` — the MoC editor only renders `CORE_IDEA`/`CHILD_MOC` edges as membership; a `RELATES_TO` edge is indexed but never shows as belonging to the MoC)
 - [ ] lifecycle walked to CANONICAL (submit, then approve as a different actor — approval is only legal from `IN_REVIEW`)
 
 **Extracting from a source**
+
 - [ ] every claim is atomic; skip rate reported honestly
 - [ ] `ADD_EXTRACTED_CLAIM` per note + `DERIVED_FROM` edge per note (`switchboard docs link <note> <source> -t DERIVED_FROM --reason "<where in the source the claim comes from>" --confidence grounded`)
 - [ ] `RECORD_EXTRACTION_STATS`, then `SET_SOURCE_STATUS` -> `EXTRACTED`
 - [ ] no source left in INBOX/EXTRACTING once its notes exist
 
 **Placing notes in the MoC hierarchy**
+
 - [ ] every note is a `CORE_IDEA` of at least one TOPIC or DOMAIN MoC
 - [ ] every TOPIC/DOMAIN MoC is a `CHILD_MOC` of a parent — a DOMAIN, or the vault's single HUB
 - [ ] no MoC is left unreachable from the HUB (see *MoC hierarchy*)
 
 **Any pipeline run**
-- [ ] task advanced through each phase with a handoff — the **final `ADVANCE_PHASE` auto-completes** the task (sets DONE, `completedCount+1`, `activeCount-1`). Do **not** follow it with `COMPLETE_TASK`: that increments `completedCount` a second time and the metrics never recover. `COMPLETE_TASK` is only for a task you are ending early.
+
+- [ ] task advanced through each phase with a handoff — the **final** `ADVANCE_PHASE` **auto-completes** the task (sets DONE, `completedCount+1`, `activeCount-1`). Do **not** follow it with `COMPLETE_TASK`: that increments `completedCount` a second time and the metrics never recover. `COMPLETE_TASK` is only for a task you are ending early.
 - [ ] no PENDING or FAILED tasks left behind
 - [ ] `/health` re-run and the report rewritten (the dashboard shows the LAST report)
+
+
 
 ## Never buy a PASS with a lie
 
@@ -252,26 +393,26 @@ direct attention; an agent that games it destroys the only signal the vault
 has about itself. Specifically — do not:
 
 - **Massage a metric.** A 60% skip rate on a thin vendor blog is the finding.
-  Rounding it under the 10% target hides that the source was low-yield.
+Rounding it under the 10% target hides that the source was low-yield.
 - **Fabricate links or grounding** to raise coverage. A relationship that
-  cannot complete "A connects to B because [specific reason]" is noise, and
-  grounding a note about PGlite tables in note-taking research is a lie that
-  fails the articulation test. The same goes for the reason itself: a
-  `--reason` that restates the type ("relates to B") or the two titles is a
-  bare edge wearing a costume — articulated coverage counts sentences a
-  reader can check, not filler that satisfies the hook.
+cannot complete "A connects to B because [specific reason]" is noise, and
+grounding a note about PGlite tables in note-taking research is a lie that
+fails the articulation test. The same goes for the reason itself: a
+`--reason` that restates the type ("relates to B") or the two titles is a
+bare edge wearing a costume — articulated coverage counts sentences a
+reader can check, not filler that satisfies the hook.
 - **Move a finding to a category that happens to be green,** or file it under
-  an unrelated enum value to make a FAIL disappear.
+an unrelated enum value to make a FAIL disappear.
 - **Report PASS from what you dispatched.** Read it back first.
 - **Redefine the denominator to flatter the number.** Scope it honestly
-  (e.g. grounded / in-methodology-scope) and say so in the message.
+(e.g. grounded / in-methodology-scope) and say so in the message.
 
 If a check cannot legitimately pass, leave it WARN or FAIL, put the concrete
 next action in `recommendations`, and tell the user what it would take.
 
 ## Key rules
 
-1. **Batch freely — `docs apply` is ordered and per-action isolated** (verified 2026-09-02, CLI 1.0.32, reactor 6.2.2-dev.71). Actions run in the order given; an action whose reducer rejects it (over-long description, invalid enum, unknown task id) is recorded with its error and **skipped**, and the actions before and after it still land. So one batch can carry content + topics + provenance, or ADD_TASK → ASSIGN_TASK → ADVANCE_PHASE, or three chained advances — one round trip instead of three to six. Older guidance about a "two-batch pattern" and "never batch dependent ops" described a reactor that no longer behaves that way.
+1. **Batch freely —** `docs apply` **is ordered and per-action isolated** (verified 2026-09-14 on reactor 6.2.3-dev.4). Actions run in the order given; an action whose reducer rejects it (over-long description, invalid enum, unknown task id) is recorded with its error and **skipped**, and the actions before and after it still land. So one batch can carry content + topics + provenance, or ADD_TASK → ASSIGN_TASK → ADVANCE_PHASE, or three chained advances — one round trip instead of three to six. Older guidance about a "two-batch pattern" and "never batch dependent ops" described a reactor that no longer behaves that way.
 2. **The job reports success even when an action failed.** `--wait` returns `error: null` / `READ_READY` with a rejected action inside, and the operation log's summary still reads as if it applied. **Read back — and read the operation log, which names the rejection.** Every operation carries an `error` field: `document(identifier){ document{ operations(filter:{scopes:["global"], sinceRevision: <rev before your batch>}){ items{ index error action{ type } } } } }` lists each rejected action with the reactor's own reason ("Description exceeds 200 characters", the zod issue with the allowed enum values). **This runs automatically:** the plugin's `PostToolUse` hook reads the recent operations after every `docs apply` / `docs mutate` you issue and prints any rejection with its reason. Batching moves the cost from round trips to read-backs; the hooks do the read-back for you, but a state check of the fields you care about is still yours.
 3. **Limits: compute, never estimate — and lint before you dispatch.** Across all twelve models the reducers enforce exactly **one** hard length limit: a knowledge note's `description` must be **≤ 200 characters**, counted the way JavaScript counts (`.length`, UTF-16 units — an emoji is 2; Python's `len()` says 1, which is how an agent "checks" 200 and still fails). Titles have no limit; nothing on MoC, source, tension, observation, scope of work or WBS is length-limited (keep descriptions readable, ~150–200). An over-long description is rejected with `DescriptionTooLongError` while the rest of the batch applies, so the note ends up with *no* description and the job still reports success. Do not count by eye and do not try-fail-adjust: run `node scripts/lint-actions.mjs <actions.json>` before every `docs apply` — it checks the 200 limit the reactor's way, every enum the reactor drops silently (`noteType`, `sourceOrigin`, `SourceStatus`, `taskType`, `HealthCategory`, `MocTier`, …), and double-encoded line breaks, and exits non-zero with the JSON path of each problem. **This runs automatically:** the plugin's `PreToolUse` hook lints every `switchboard docs apply` / `docs mutate` you issue and blocks the command if the payload would be rejected — you will see the finding instead of a silent partial write.
 4. **Always verify after creating**: `switchboard docs tree <drive> --format json` to confirm the node exists. CLI bugs and network blips cause silent failures.
@@ -283,45 +424,55 @@ next action in `recommendations`, and tell the user what it would take.
 10. **Line breaks: the string must hold real newlines *before* it is JSON-encoded — encode once, then read back.** The failure is double encoding: a bash `"\n"` is two characters, and a script that then JSON-encodes that argument escapes the backslash again, so the note is stored with the text `\n` between paragraphs. The write reports success. Put the body in a file or heredoc (or build it inside Python), serialize once, `docs apply --file`, then read `content` back and confirm it contains real newlines. The CLI (≥ 1.0.32) refuses payloads whose strings carry a literal `\n`/`\t`/`\r` and names the field — `--allow-literal-escapes` overrides for the rare legitimate case.
 11. **Methodology lives on disk.** `data/methodology/*.md` (249 files) ships with the plugin and is read with Grep/Read — it is not imported into the vault.
 
+
+
 ## Available skills
 
-| Command | What it does |
-|---------|-------------|
-| `/powerhouse-knowledge:setup` | Connect the CLI to the vault (first time), sign in, check access, and verify folders, singletons, methodology |
-| `/powerhouse-knowledge:seed` | Ingest source material and queue it |
-| `/powerhouse-knowledge:extract` | Extract atomic claims from a source into notes |
-| `/powerhouse-knowledge:connect` | Find and create typed links |
-| `/powerhouse-knowledge:synthesize` | Create MoCs from topic clusters and maintain the MoC hierarchy |
-| `/powerhouse-knowledge:verify` | Quality gate + auto-repair |
-| `/powerhouse-knowledge:pipeline` | Full end-to-end processing of a queued source |
-| `/powerhouse-knowledge:health` | Vault health diagnostics, saved to the health report |
-| `/powerhouse-knowledge:search <query>` | Multi-tier search; work/project queries fork to scope-of-work |
-| `/powerhouse-knowledge:graph` | Graph structure analysis |
-| `/powerhouse-knowledge:scope-of-work` | Read nested SOW data (envelopes, deliverables, roadmaps, milestones, maps, WBS) |
-| `/powerhouse-knowledge:projects` | Create/mutate scopes of work — the envelopes are the projects — and WBS goal trees |
-| `/powerhouse-knowledge:import <path>` / `:export` | Bulk import / export |
-| `/powerhouse-knowledge:watch` | Real-time monitoring |
-| `/powerhouse-knowledge:skills <need>` | Find agent skills stored in the vault |
+
+| Command                                           | What it does                                                                                                  |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `/powerhouse-knowledge:setup`                     | Connect the CLI to the vault (first time), sign in, check access, and verify folders, singletons, methodology |
+| `/powerhouse-knowledge:seed`                      | Ingest source material and queue it                                                                           |
+| `/powerhouse-knowledge:extract`                   | Extract atomic claims from a source into notes                                                                |
+| `/powerhouse-knowledge:connect`                   | Find and create typed links                                                                                   |
+| `/powerhouse-knowledge:synthesize`                | Create MoCs from topic clusters and maintain the MoC hierarchy                                                |
+| `/powerhouse-knowledge:verify`                    | Quality gate + auto-repair                                                                                    |
+| `/powerhouse-knowledge:pipeline`                  | Full end-to-end processing of a queued source                                                                 |
+| `/powerhouse-knowledge:health`                    | Vault health diagnostics, saved to the health report                                                          |
+| `/powerhouse-knowledge:search <query>`            | Multi-tier search; work/project queries fork to scope-of-work                                                 |
+| `/powerhouse-knowledge:graph`                     | Graph structure analysis                                                                                      |
+| `/powerhouse-knowledge:scope-of-work`             | Read nested SOW data (envelopes, deliverables, roadmaps, milestones, maps, WBS)                               |
+| `/powerhouse-knowledge:projects`                  | Create/mutate scopes of work — the envelopes are the projects — and WBS goal trees                            |
+| `/powerhouse-knowledge:import <path>` / `:export` | Bulk import / export                                                                                          |
+| `/powerhouse-knowledge:watch`                     | Real-time monitoring                                                                                          |
+| `/powerhouse-knowledge:skills <need>`             | Find agent skills stored in the vault                                                                         |
+
+
+
 
 ## Document types and folders
 
-| Type | Purpose | Folder |
-|------|---------|--------|
-| `bai/knowledge-note` | Atomic claims | `/knowledge/notes/` |
-| `bai/moc` | Maps of Content | `/knowledge/` |
-| `bai/source` | Raw source material | `/sources/` |
-| `bai/pipeline-queue` | Task tracker (singleton) | `/ops/queue/` |
-| `bai/health-report` | Diagnostics (singleton) | `/ops/health/` |
-| `bai/vault-config` | Config (singleton; the drive is detected by this document) | `/self/` |
-| `bai/tension` | Unresolved contradictions | `/ops/` |
-| `bai/observation` | Operational signals | `/ops/` |
-| `powerhouse/scopeofwork` | Scope of work: envelopes (the projects), priced deliverables, roadmaps, milestones, contributors | `/projects/` |
-| `bai/wbs` | Work-breakdown goal tree that delivers one envelope | `/projects/` |
-| _(methodology)_ | _249 Ars Contexta claims_ | _local: `data/methodology/`, not in the vault_ |
 
-The drive app scaffolds 12 folders on first open: `knowledge/{notes,inbox,insights}`, `sources`, `projects`, `ops/{sessions,health,queue}`, `self/methodology`. There is **no** graph singleton — the graph lives in the indexer's tables and is read through `knowledgeGraph*` queries. The three singletons are PipelineQueue, HealthReport and VaultConfig. Read the tree first to find folder UUIDs: `switchboard docs tree <drive-slug> --format json`.
+| Type                     | Purpose                                                                                          | Folder                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| `bai/knowledge-note`     | Atomic claims                                                                                    | `/knowledge/notes/`                              |
+| `bai/moc`                | Maps of Content                                                                                  | `/knowledge/`                                    |
+| `bai/source`             | Raw source material                                                                              | `/sources/`                                      |
+| `bai/pipeline-queue`     | Task tracker (singleton)                                                                         | `/ops/queue/`                                    |
+| `bai/health-report`      | Diagnostics (singleton)                                                                          | `/ops/health/`                                   |
+| `bai/vault-config`       | Config (singleton; the drive is detected by this document)                                       | `/self/`                                         |
+| `bai/tension`            | Unresolved contradictions                                                                        | `/ops/`                                          |
+| `bai/observation`        | Operational signals                                                                              | `/ops/`                                          |
+| `powerhouse/scopeofwork` | Scope of work: envelopes (the projects), priced deliverables, roadmaps, milestones, contributors | `/projects/`                                     |
+| `bai/wbs`                | Work-breakdown goal tree that delivers one envelope                                              | `/projects/`                                     |
+| *(methodology)*          | *249 Ars Contexta claims*                                                                        | *local:* `data/methodology/`*, not in the vault* |
+
+
+The drive app scaffolds 12 folders on first open: `knowledge/{notes,inbox,insights}`, `sources`, `projects`, `ops/{sessions,health,queue}`, `self/methodology`. There is **no** graph singleton — the graph lives in the indexer's tables and is read through `knowledgeGraph`* queries. The three singletons are PipelineQueue, HealthReport and VaultConfig. Read the tree first to find folder UUIDs: `switchboard docs tree <drive-slug> --format json`.
 
 ## Document models and operations
+
+
 
 ### `bai/knowledge-note`
 
@@ -329,7 +480,7 @@ The drive app scaffolds 12 folders on first open: `knowledge/{notes,inbox,insigh
 
 **Metadata is where a note stops being prose.** 18 whitelisted string fields (`scope`, `confidence`, `severity`, `editor`, `modelId`, `version`, `filePath`, `computes`, `context`, `decisionStatus`, `model`, `sourceType`, `targetType`, `relationType`, `cardinality`, `errorMessage`, `rootCause`, `correctPattern`) and 9 list fields (`models`, `modules`, `hooksUsed`, `dispatchTargets`, `inputs`, `outputs`, `consumedBy`, `alternatives`, `consequences`). Which ones a note should carry depends on its `noteType` — the table is in [skills/extract/SKILL.md](skills/extract/SKILL.md) § *Populate the structured metadata*. Fill what the source supports; leave the rest empty.
 
-**`noteType`** — ten lowercase values, always lowercase: `concept`, `decision`, `pattern`, `observation`, `procedure`, `architecture`, `bug-pattern`, `integration`, `workflow`, `reference`.
+`noteType` — ten lowercase values, always lowercase: `concept`, `decision`, `pattern`, `observation`, `procedure`, `architecture`, `bug-pattern`, `integration`, `workflow`, `reference`.
 
 Content: `SET_TITLE { title, updatedAt }` · `SET_DESCRIPTION { description, updatedAt }` · `SET_NOTE_TYPE { noteType, updatedAt }` · `SET_CONTENT { content, updatedAt }` · `PATCH_CONTENT { offset, removeCount, insert, updatedAt }` · `SET_METADATA_FIELD { field, value, updatedAt }` · `SET_METADATA_LIST_FIELD { field, values[], updatedAt }` (the only way to write list metadata such as `models`, `inputs`, `outputs`, `modules`, `alternatives`, `consequences`)
 
@@ -371,7 +522,7 @@ Operational signals about how the vault is being worked. Live in `/ops/`. **Stat
 
 Singleton in `/ops/queue/`. `ADD_TASK { id, taskType, target, documentRef?, createdAt }` · `ASSIGN_TASK { taskId, assignedTo, updatedAt }` · `ADVANCE_PHASE { taskId, handoff: { id, phase, workDone, filesModified, completedAt, completedBy? }, updatedAt }` · `COMPLETE_TASK { taskId, updatedAt }` · `FAIL_TASK { taskId, reason, updatedAt }` · `BLOCK_TASK { taskId, reason, updatedAt }` · `UNBLOCK_TASK { taskId, updatedAt }`
 
-`taskType` is **`claim`** (phases `create → reflect → reweave → verify`) or **`enrichment`** (`enrich → reflect → reweave → verify`). Nothing else exists in `phaseOrder`: any other value yields a task that can never advance or complete. The final `ADVANCE_PHASE` completes the task; never follow it with `COMPLETE_TASK`. Check for an existing task with the same `documentRef` before adding one.
+`taskType` is `claim` (phases `create → reflect → reweave → verify`) or `enrichment` (`enrich → reflect → reweave → verify`). Nothing else exists in `phaseOrder`: any other value yields a task that can never advance or complete. The final `ADVANCE_PHASE` completes the task; never follow it with `COMPLETE_TASK`. Check for an existing task with the same `documentRef` before adding one.
 
 ### `bai/health-report`
 
@@ -398,17 +549,19 @@ switchboard docs link <moc-uuid> <note-uuid> -t CORE_IDEA
 
 `--reason` is the **articulation test in data**: "A connects to B because [specific reason]". The pre-write hook blocks a `RELATES_TO` / `BUILDS_ON` / `CONTRADICTS` / `SUPERSEDES` / `DERIVED_FROM` link without one (a real sentence, ≥ 20 chars — not the type name, not "because"); `CORE_IDEA` and `CHILD_MOC` may stay bare. `--confidence` ∈ `grounded` (backed by evidence or a source) · `established` (well accepted, not evidenced here) · `speculative` (a lead). The graph exposes both on every edge (`knowledgeGraphEdges { reason confidence }`) and `knowledgeGraphStats.articulatedEdgeCount / edgeCount` is the coverage `/health` reports. A repeated `docs link` for the same `(source, target, type)` is a no-op in the reactor, metadata included — that is why changing a reason is `docs annotate`.
 
-| Type | Direction | Meaning |
-|------|-----------|---------|
-| `RELATES_TO` | note → note | General thematic connection |
-| `BUILDS_ON` | note → note | Extends or strengthens the target |
-| `CONTRADICTS` | note → note | Challenges the target — the indexer opens a `bai/tension` for the pair |
-| `SUPERSEDES` | note → note | Replaces the target |
-| `DERIVED_FROM` | note → source | Extracted from this source |
-| `CORE_IDEA` | MoC → note | This note is a core idea of the MoC (membership) |
-| `CHILD_MOC` | MoC → MoC | Parent → child in the hierarchy |
-| `INVOLVES` | tension → note | **Derived** by the indexer from a tension's `involvedRefs`; not created with `docs link` |
-| `PROMOTED_TO` | observation → note | **Derived** from an observation's `promotedTo` |
+
+| Type           | Direction          | Meaning                                                                                  |
+| -------------- | ------------------ | ---------------------------------------------------------------------------------------- |
+| `RELATES_TO`   | note → note        | General thematic connection                                                              |
+| `BUILDS_ON`    | note → note        | Extends or strengthens the target                                                        |
+| `CONTRADICTS`  | note → note        | Challenges the target — the indexer opens a `bai/tension` for the pair                   |
+| `SUPERSEDES`   | note → note        | Replaces the target                                                                      |
+| `DERIVED_FROM` | note → source      | Extracted from this source                                                               |
+| `CORE_IDEA`    | MoC → note         | This note is a core idea of the MoC (membership)                                         |
+| `CHILD_MOC`    | MoC → MoC          | Parent → child in the hierarchy                                                          |
+| `INVOLVES`     | tension → note     | **Derived** by the indexer from a tension's `involvedRefs`; not created with `docs link` |
+| `PROMOTED_TO`  | observation → note | **Derived** from an observation's `promotedTo`                                           |
+
 
 The two derived types appear in `knowledgeGraphEdges`, backlinks and forward links so a reader sees what involves a note, but they are **not** knowledge edges: `stats.edgeCount`, density, orphans, triangles and bridges count the seven types above only. Idempotent on `(source, target, type)`. The *reason* a link exists lives on the edge (`--reason`, above); the note body may still carry the longer argument, but the edge is what the graph and the health report can check. An **orphan** is a node with zero **incoming** edges; outgoing links from it do not change that.
 
@@ -418,10 +571,14 @@ Two different gates stand between an agent and a vault write, and they fail
 with two different errors. Check both before the first write; the pre-flight
 hook prints them as `Signing: …` and `ACCESS: …` on every vault command.
 
-| Gate | What it is | How it is configured | When it is missing |
-|------|------------|----------------------|--------------------|
+
+| Gate                          | What it is                                                                       | How it is configured                                                                                             | When it is missing                                                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | **Identity** (authentication) | a Renown **bearer token** on every request, and your **key signing** every write | `ph login`, then `switchboard auth login --token "$(ph access-token)"` **and** `switchboard auth login --renown` | HTTP **401** `Authentication required` / `Credentials no longer valid`; or the pre-write hook blocks an unsigned write |
-| **Access** (authorization) | a `READ` / `WRITE` / `ADMIN` grant on the vault **drive** for your address | a vault administrator, in the vault's gear menu → *Access* (or `grantDocumentPermission`) | GraphQL **FORBIDDEN** `insufficient permissions to execute operation "X" on this document` |
+| **Access** (authorization)    | a `READ` / `WRITE` / `ADMIN` grant on the vault **drive** for your address       | a vault administrator, in the vault's gear menu → *Access* (or `grantDocumentPermission`)                        | GraphQL **FORBIDDEN** `insufficient permissions to execute operation "X" on this document`                             |
+
+
+
 
 ### 1. Identity: sign in — twice
 
@@ -440,7 +597,7 @@ Renown identity and attributed to whoever logged the server in — which is why
 the pre-write hook **blocks** `docs apply` / `mutate` / `link` / `unlink` /
 `create` until `signing` is true, and labels every allowed write
 `SWITCHBOARD_APP_NAME=powerhouse-knowledge`, so the vault's Activity view and a
-note's History tab read *"powerhouse-knowledge · <did:key> for <address>"* with
+note's History tab read *"powerhouse-knowledge · [did:key](did:key) for "* with
 a verified ✓. `SWITCHBOARD_TOKEN=<jwt>` in the environment overrides the
 profile's stored token.
 
@@ -464,11 +621,13 @@ the drive document covers every note, MoC, source and queue inside it**. The
 addresses in the Switchboard's `ADMINS` list are supreme admins and bypass
 every check; whoever creates a document owns it.
 
-| Level | Lets the address |
-|-------|------------------|
-| `READ` | open the vault, search and read — and register a sync channel |
-| `WRITE` | create documents in the drive, mutate and link them: seed, extract, connect, approve — the whole pipeline |
+
+| Level   | Lets the address                                                                                                                                                                                                      |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `READ`  | open the vault, search and read — and register a sync channel                                                                                                                                                         |
+| `WRITE` | create documents in the drive, mutate and link them: seed, extract, connect, approve — the whole pipeline                                                                                                             |
 | `ADMIN` | also grant and revoke others. `canManage` is checked on the document itself (its owner, an ADMIN grant on it, or a supreme admin), so ADMIN on the drive administers the drive's access list rather than each child's |
+
 
 `canMutate` checks **per-operation restrictions** first: an administrator can
 restrict an operation (say `APPROVE_NOTE`) so that WRITE holders need an
@@ -484,16 +643,20 @@ switchboard query '{ userDocumentPermissions { documentId permission grantedBy }
 switchboard docs get <drive-uuid> --state --format json > /dev/null && echo READ ok                    # can you even read it?
 ```
 
+
+
 ### 3. When it fails — what the error means and what to do
 
-| You see | It means | Do |
-|---------|----------|----|
-| `HTTP 401 … Authentication required` | no bearer on the request | `switchboard auth login --token "$(ph access-token)"` (after `ph login`) |
-| `HTTP 401 … Credentials no longer valid` / `Token verification failed` | bearer or credential expired or revoked | `ph login`, then the `--token` login again |
-| `BLOCKED by powerhouse-knowledge: … no signing identity` | bearer fine, writes unsigned | `switchboard auth login --renown` |
-| `Forbidden: insufficient permissions to execute operation "X"` | identity accepted; **no grant** — or X is restricted | stop; report your address (`switchboard auth status`) and ask a vault administrator for `WRITE` on the drive, or an operation grant for X |
-| `Forbidden: You must be an admin of this document` | an admin-only query (`documentAccess`, `documentProtection`) | not needed to read or write; only administrators list or change grants |
-| `ACCESS: READ-only …` / `ACCESS: none …` in the pre-flight | the same refusal, found before you wrote | ask; do not start the pipeline |
+
+| You see                                                                | It means                                                     | Do                                                                                                                                        |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `HTTP 401 … Authentication required`                                   | no bearer on the request                                     | `switchboard auth login --token "$(ph access-token)"` (after `ph login`)                                                                  |
+| `HTTP 401 … Credentials no longer valid` / `Token verification failed` | bearer or credential expired or revoked                      | `ph login`, then the `--token` login again                                                                                                |
+| `BLOCKED by powerhouse-knowledge: … no signing identity`               | bearer fine, writes unsigned                                 | `switchboard auth login --renown`                                                                                                         |
+| `Forbidden: insufficient permissions to execute operation "X"`         | identity accepted; **no grant** — or X is restricted         | stop; report your address (`switchboard auth status`) and ask a vault administrator for `WRITE` on the drive, or an operation grant for X |
+| `Forbidden: You must be an admin of this document`                     | an admin-only query (`documentAccess`, `documentProtection`) | not needed to read or write; only administrators list or change grants                                                                    |
+| `ACCESS: READ-only …` / `ACCESS: none …` in the pre-flight             | the same refusal, found before you wrote                     | ask; do not start the pipeline                                                                                                            |
+
 
 Do **not** retry a refusal in a loop, switch to raw GraphQL or MCP writes to
 get around it, or ask for `ADMIN` when `WRITE` is what the task needs. A
@@ -523,11 +686,13 @@ with the `Access:` line.
 
 Maps of Content form a tree that both humans and agents use to explore the vault by cluster. Keep it to three tiers, one root:
 
-| Tier | What it holds | Size | Parent |
-|------|---------------|------|--------|
-| `TOPIC` | a focused cluster of notes (`CORE_IDEA` edges) | 3–9 notes | a `DOMAIN`, or the HUB if no domain fits |
-| `DOMAIN` | a broad area: its own `CORE_IDEA` notes plus `CHILD_MOC` TOPIC MoCs | 10+ notes, or 2+ topic MoCs | the HUB |
-| `HUB` | the vault's single entry point: `CHILD_MOC` edges to every DOMAIN (and any TOPIC without a domain) | one per vault | — |
+
+| Tier     | What it holds                                                                                      | Size                        | Parent                                   |
+| -------- | -------------------------------------------------------------------------------------------------- | --------------------------- | ---------------------------------------- |
+| `TOPIC`  | a focused cluster of notes (`CORE_IDEA` edges)                                                     | 3–9 notes                   | a `DOMAIN`, or the HUB if no domain fits |
+| `DOMAIN` | a broad area: its own `CORE_IDEA` notes plus `CHILD_MOC` TOPIC MoCs                                | 10+ notes, or 2+ topic MoCs | the HUB                                  |
+| `HUB`    | the vault's single entry point: `CHILD_MOC` edges to every DOMAIN (and any TOPIC without a domain) | one per vault               | —                                        |
+
 
 Rules the pipeline applies (`/synthesize`, reweave phase):
 
@@ -541,28 +706,32 @@ Read the hierarchy with `knowledgeGraphEdges(driveId)` filtered to `CHILD_MOC` (
 
 ## Graph indexer queries (quick reference)
 
-All queries take `driveId: "<UUID>"` (a slug is also accepted). Five kinds are indexed — `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation` — and every node carries `documentType` so you can tell them apart (see [skills/search/SKILL.md](skills/search/SKILL.md) for the table). Tensions and observations are indexed to be *found*, not counted as knowledge: they never appear in `orphans`, and `stats` reports `noteCount`, `mocCount`, `claimCount`, `tensionCount`, `openTensionCount`, `observationCount` beside the total `nodeCount`. Knowledge edges come from `docs link` (ADD_RELATIONSHIP); `INVOLVES` / `PROMOTED_TO` are derived from state.
+All queries take `driveId: "<UUID>"` (a slug is also accepted). Seven kinds are indexed — `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation`, `powerhouse/scopeofwork` and `bai/wbs` — and every node carries `documentType` so you can tell them apart (see [skills/search/SKILL.md](skills/search/SKILL.md) for the table). Tensions and observations are indexed to be *found*, not counted as knowledge: they never appear in `orphans`, and `stats` reports `noteCount`, `mocCount`, `claimCount`, `tensionCount`, `openTensionCount`, `observationCount` beside the total `nodeCount`. Knowledge edges come from `docs link` (ADD_RELATIONSHIP); `INVOLVES` / `PROMOTED_TO` are derived from state.
 
-| Query | Use when |
-|-------|----------|
-| `knowledgeGraphSemanticSearch(query, mode, limit)` | **Default for natural language.** Select `content` to answer, not just list |
-| `knowledgeGraphFullSearch(query, limit)` | Exact terms in title+description+content; ANDs terms — 1–2 keywords |
-| `knowledgeGraphSearch(query, limit)` | Title+description only |
-| `knowledgeGraphNodeByDocumentId(documentId)` | One full node (content, topics) |
-| `knowledgeGraphNodesByStatus(status)` | All notes in a lifecycle state, or all MoCs (`"MOC"`), scopes of work (`"SCOPE"`), work breakdowns (`"WBS"`) |
-| `knowledgeGraphNodesByType(documentType)` | All nodes of one kind — e.g. every `bai/tension` |
-| `knowledgeGraphByTopic(topic)` / `knowledgeGraphTopics` | Topic membership / the topic vocabulary with counts |
-| `knowledgeGraphSimilar(documentId, limit)` | Semantic neighbours of a note |
-| `knowledgeGraphRelatedByTopic(documentId, limit)` | Notes sharing topics |
-| `knowledgeGraphForwardLinks(documentId)` / `knowledgeGraphBacklinks(documentId)` | Edges out of / into a note (the real link data). `targetTitle` is denormalised at link time and can be `null` for a target indexed later — resolve via `knowledgeGraphNodeByDocumentId` when you need the title |
-| `knowledgeGraphConnections(documentId, depth)` | BFS over outgoing edges |
-| `knowledgeGraphEdges` / `knowledgeGraphNodes` | The whole graph in one call each — cheaper than N queries when scanning |
-| `knowledgeGraphStats` / `knowledgeGraphDensity` / `knowledgeGraphOrphans` | Per-kind counts (`noteCount`, `mocCount`, `openTensionCount`, …; `nodeCount` is the total), density over knowledge nodes, zero-incoming notes/MoCs/claims |
-| `knowledgeGraphTriangles(limit)` / `knowledgeGraphBridges` | Synthesis opportunities / articulation points (bridges is O(V·E) — avoid on large vaults) |
-| `knowledgeGraphByAuthor(author)` / `knowledgeGraphByOrigin(origin)` / `knowledgeGraphRecent(limit, since)` | Provenance and recency |
+
+| Query                                                                                                                                                       | Use when                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `knowledgeGraphSemanticSearch(query, mode, limit)`                                                                                                          | **Default for natural language.** Select `content` to answer, not just list                                                                                                                                                                                                      |
+| `knowledgeGraphFullSearch(query, limit)`                                                                                                                    | Exact terms in title+description+content; ANDs terms — 1–2 keywords                                                                                                                                                                                                              |
+| `knowledgeGraphSearch(query, limit)`                                                                                                                        | Title+description only                                                                                                                                                                                                                                                           |
+| `knowledgeGraphNodeByDocumentId(documentId)`                                                                                                                | One full node (content, topics)                                                                                                                                                                                                                                                  |
+| `knowledgeGraphNodesByStatus(status)`                                                                                                                       | All notes in a lifecycle state, or all MoCs (`"MOC"`), scopes of work (`"SCOPE"`), work breakdowns (`"WBS"`)                                                                                                                                                                     |
+| `knowledgeGraphNodesByType(documentType)`                                                                                                                   | All nodes of one kind — e.g. every `bai/tension`                                                                                                                                                                                                                                 |
+| `knowledgeGraphByTopic(topic)` / `knowledgeGraphTopics`                                                                                                     | Topic membership / the topic vocabulary with counts                                                                                                                                                                                                                              |
+| `knowledgeGraphSimilar(documentId, limit)`                                                                                                                  | Semantic neighbours of a note                                                                                                                                                                                                                                                    |
+| `knowledgeGraphRelatedByTopic(documentId, limit)`                                                                                                           | Notes sharing topics                                                                                                                                                                                                                                                             |
+| `knowledgeGraphForwardLinks(documentId)` / `knowledgeGraphBacklinks(documentId)`                                                                            | Edges out of / into a note (the real link data). `targetTitle` is denormalised at link time and can be `null` for a target indexed later — resolve via `knowledgeGraphNodeByDocumentId` when you need the title                                                                  |
+| `knowledgeGraphConnections(documentId, depth)`                                                                                                              | BFS over outgoing edges                                                                                                                                                                                                                                                          |
+| `knowledgeGraphEdges` / `knowledgeGraphNodes`                                                                                                               | The whole graph in one call each — cheaper than N queries when scanning                                                                                                                                                                                                          |
+| `knowledgeGraphStats` / `knowledgeGraphDensity` / `knowledgeGraphOrphans`                                                                                   | Per-kind counts (`noteCount`, `mocCount`, `openTensionCount`, …; `nodeCount` is the total), density over knowledge nodes, zero-incoming notes/MoCs/claims                                                                                                                        |
+| `knowledgeGraphTriangles(limit)` / `knowledgeGraphBridges`                                                                                                  | Synthesis opportunities / articulation points (bridges is O(V·E) — avoid on large vaults)                                                                                                                                                                                        |
+| `knowledgeGraphByAuthor(author)` / `knowledgeGraphByOrigin(origin)` / `knowledgeGraphRecent(limit, since)`                                                  | Provenance and recency                                                                                                                                                                                                                                                           |
 | `knowledgeGraphStale(since, limit)` / `knowledgeGraphHistory(documentId)` / `knowledgeGraphActivity(since)` / `knowledgeGraphActivityByType(operationType)` | Change tracking. Each `OperationRecord` carries `inputJson` (what changed), `signerAddress`, `signerApp`, `signerKey` (did:key) and `signature` — the stored tuple, verifiable by any reader (ECDSA P-256 over `"\x19Signed Operation:\n"+len+timestamp+did+hash+prevStateHash`) |
-| `knowledgeGraphMissingEmbeddings` | Should be `[]`; otherwise semantic search is degraded |
-| `knowledgeGraphReindex(driveId)` (mutation) | Rebuild the index after a deployment or bulk import |
+| `knowledgeGraphMissingEmbeddings`                                                                                                                           | Should be `[]`; otherwise semantic search is degraded                                                                                                                                                                                                                            |
+| `knowledgeGraphReindex(driveId)` (mutation)                                                                                                                 | Rebuild the index after a deployment or bulk import                                                                                                                                                                                                                              |
+
+
+
 
 ## Ars Contexta methodology (local reference)
 
@@ -575,6 +744,8 @@ Each file has YAML frontmatter: `description`, `kind` (`research|foundation|meth
 - During **health**: report grounding coverage in `recommendations` (there is no `METHODOLOGY_GROUNDING` category).
 - When **explaining a design decision**: read and cite the relevant claim.
 
+
+
 ## Quality principles
 
 - Each note makes **one atomic claim**; its title is a declarative sentence.
@@ -584,3 +755,4 @@ Each file has YAML frontmatter: `description`, `kind` (`research|foundation|meth
 - **Comprehensive extraction**: skip rate < 10% for domain-relevant sources — and report it honestly when it isn't.
 - Confidence vocabulary, where used: `grounded` | `established` | `speculative`.
 - **Knowledge is retired, not deleted.** When new information disregards a claim: write the new note, `docs link <new> <old> -t SUPERSEDES --reason "…"`, then `ARCHIVE_NOTE` the old one with a comment. Archived notes leave search, topic browsing and semantic neighbours (`includeArchived: true` brings them back for archaeology) but keep their history, backlinks and the `SUPERSEDES` chain — the editor shows "Superseded by →" and chat chips mark them. Duplicates: merge, `SUPERSEDES` from the survivor, archive the duplicate. `docs delete` is for things that were never knowledge — test artefacts, accidental creates — because deletion breaks provenance in three places at once (the source's `extractedClaims`, `DERIVED_FROM` edges, and every chat citation that pointed at it) while saving nothing in an event-sourced store.
+

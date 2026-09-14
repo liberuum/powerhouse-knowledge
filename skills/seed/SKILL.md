@@ -5,31 +5,42 @@ description: Ingest source material into the Knowledge Vault for processing. Use
 
 # Seed Source Material
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
 Add source material to the Knowledge Vault and queue it for the extraction pipeline.
 
 ## Seeding process
 
 1. **Receive the source** — text content, URL, file path, or pasted content from the user
-2. **Find the `/sources/` folder ID** by reading the drive:
-```bash
-switchboard docs tree <drive-slug> --format json
-# Find: kind="folder", name="sources", parentFolder=null
-```
 
-3. **Create the source document** in the correct folder. Use the source's real title as `--name`: sources are not graph-indexed, so the drive node name is what the note editor shows next to a `DERIVED_FROM` link — a slug here reads as a slug there.
+2. **Ingest it.** One call. The API files it in `/sources` and queues it.
 ```bash
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/sources" -d '{
+  "drive": "<drive-uuid>",
+  "title": "<source title>",
+  "content": "<full text>",
+  "sourceType": "ARTICLE"
+}'
+```
+`sourceType`: `ARTICLE`, `PAPER`, `BOOK_CHAPTER`, `TRANSCRIPT`, `DOCUMENTATION`,
+`CONVERSATION`, `WEB_PAGE`, `MANUAL_ENTRY`. Add `"queue": false` to skip the
+pipeline task. Do not send `parentFolder` — it is rejected.
+
+The response gives `id`, `path` (must be `/sources`) and `readBack`.
+
+<details><summary>Without the REST surface (CLI)</summary>
+
+```bash
+switchboard docs tree <drive-slug> --format json   # find the sources folder
 switchboard docs create --type bai/source --name "<source title>" --drive <drive-slug> --parent-folder <sources-folder-uuid> --format json
 ```
 
-4. **Set the source metadata via INGEST_SOURCE** (single operation that initializes all fields):
+2. **Set the source metadata via INGEST_SOURCE** (single operation that initializes all fields):
 ```bash
 switchboard docs mutate <doc-id> --op ingestSource --input '{
   "title": "<source title>",
@@ -60,7 +71,7 @@ EOF
 switchboard docs apply <doc-id> --file /tmp/ingest-action.json
 ```
 
-5. **Queue for processing** — add a pipeline task:
+3. **Queue for processing** — add a pipeline task:
 ```bash
 # Find the PipelineQueue singleton
 switchboard docs tree <drive-slug> --format json
@@ -83,7 +94,9 @@ switchboard docs mutate <source-doc-id> --op setSourceStatus --input '{"status":
 ```
 The lifecycle is `INBOX → EXTRACTING → EXTRACTED → ARCHIVED`; the extract skill sets `EXTRACTED` when the notes exist.
 
-6. **Suggest next steps**:
+</details>
+
+3. **Suggest next steps**:
    - Run `/powerhouse-knowledge:extract` to extract atomic claims from this source
    - Or run `/powerhouse-knowledge:pipeline` for the full extract → connect → reweave → verify flow — which also places the new notes in the MoC hierarchy (TOPIC → DOMAIN → HUB) so they are explorable by cluster
 

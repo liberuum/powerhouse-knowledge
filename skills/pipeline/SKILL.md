@@ -5,13 +5,12 @@ description: Run the knowledge processing pipeline on a source or batch of notes
 
 # Processing Pipeline
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
 Carry a source through to connected, verified notes in the MoC hierarchy. The six R names (Record, Reduce, Reflect, Reweave, Verify, Rethink) are the vocabulary; the pipeline-queue task underneath has **four phases**, and this skill drives them:
 
@@ -102,7 +101,7 @@ Use `/powerhouse-knowledge:extract` on the source document:
   A source left in `EXTRACTING` reads as unprocessed in the app forever —
   this is the single most-missed step when driving the pipeline by script
   instead of by skill.
-- **Split actions into two batches**: content first (title, description, noteType, content, topics), provenance second — so a provenance validation error doesn't kill content
+- **One batch is fine**: content, topics and provenance together. A rejected action is skipped and the rest land — then read back to confirm
 
 Record handoff with sequential `docs mutate` calls:
 ```bash
@@ -149,46 +148,11 @@ Then **cross-reference with local methodology files** in the plugin's `data/meth
 - **Verify each MOC appears in the drive tree after creation** — don't skip this
 - This is NOT optional — the health check will flag missing MOCs as WARN
 
-Then **detect tensions** — look for contradictions between notes:
-- Check if any CONTRADICTS links were created during connection
-- Compare claims that address the same topic but reach different conclusions
-- For each genuine contradiction, create a `bai/tension` document:
-
-```bash
-switchboard docs create --type bai/tension --name "<what contradicts what>" --drive <drive-slug> --parent-folder <ops-folder-uuid> --format json
-```
-
-```bash
-switchboard docs apply <tension-id> --actions '[{
-  "type": "CREATE_TENSION",
-  "input": {
-    "title": "<what contradicts what>",
-    "description": "<brief summary of the conflict>",
-    "content": "<full analysis: Side A says X because..., Side B says Y because..., this matters because...>",
-    "involvedRefs": ["<note-id-1>", "<note-id-2>"],
-    "observedAt": "<ISO>",
-    "observedBy": "knowledge-agent"
-  },
-  "scope": "global"
-}]'
-```
-
-Also add the tension to the relevant MOC if one exists:
-```bash
-switchboard docs mutate <moc-id> --op addTension --input '{
-  "id": "<unique-id>",
-  "description": "<tension summary>",
-  "involvedRefs": ["<note-id-1>", "<note-id-2>"],
-  "addedAt": "<ISO>"
-}'
-```
-
-**Three outcomes for tensions:**
-- **OPEN** — genuine unresolved contradiction, needs human judgment
-- **RESOLVED** — one side is correct, the other should be updated or archived
-- **DISSOLVED** — apparent contradiction only, both sides are compatible at different levels
-
-Record handoff with sequential `docs mutate` calls for `ADVANCE_PHASE`.
+Then **detect tensions**. The graph-indexer opens a `bai/tension` itself when a
+`CONTRADICTS` edge lands, one per pair, and adds it to every MoC holding either
+note. Do not create one by hand — read the indexer's tension back (it is the
+`INVOLVES` backlink on either note), articulate the conflict in both notes, then
+resolve or dissolve it. See **connect** § Tension detection.
 
 ### Step 4: Phase 3 — REWEAVE (Update older notes)
 
