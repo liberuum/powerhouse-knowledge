@@ -29,6 +29,17 @@ want only selected fields of a large result.
 terms**. A whole question has too many terms to match anything, so the keyword
 leg returns nothing and hybrid silently degrades to semantic-only.
 
+**For a question about how two things relate, search the narrower one alone.**
+Naming both pulls the embedding toward whichever concept the vault holds more
+of, and you get generic notes about that one. Measured: "What is Swarm and how
+is it connected with Powerhouse?" returned five Powerhouse-general notes and one
+about Swarm; searching `Swarm` alone returned the Swarm MoC, whose `CORE_IDEA`
+members are the connection. Find the narrow thing, then read its links.
+
+**For a proper noun or an exact term, `knowledgeGraphFullSearch` is better than
+semantic.** It is keyword-only and ANDs its terms, so give it 1-2 words — but it
+is precise where an embedding is fuzzy.
+
 **`semantic` is the only mode.** Its `similarity` is a true cosine, so it can be compared and
 thresholded. For an exact term use `knowledgeGraphFullSearch`, which is keyword-only.
 

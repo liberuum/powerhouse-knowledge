@@ -287,6 +287,9 @@ switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how
 ```
 
 - `similarity` is **always a 0–1 relevance** and always decreases down the result list, so it is safe to render as a percentage or threshold on in either mode (package ≥ 1.0.52).
+- **Asking how two things relate? Search the narrower one alone.** Naming both pulls the
+  embedding toward whichever the vault holds more of. Find the narrow thing, then read its links —
+  a MoC's `CORE_IDEA` members are the curated answer.
 - **`SEMANTIC` is the only mode.** Its `similarity` is a true cosine, so it can be compared and
   thresholded. Add `content` when you intend to answer, not just list. For an exact term use
   `knowledgeGraphFullSearch`, which is keyword-only and ANDs its terms — give it 1-2 words.
