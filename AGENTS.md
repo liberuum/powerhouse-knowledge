@@ -5,7 +5,7 @@ and skills for working with a Powerhouse Knowledge Vault. There is nothing to
 build or test here. Read the instructions below, then read the skill you need
 from `skills/<name>/SKILL.md`.
 
-<!-- GENERATED from AGENT.md (sha256:0b23c0a94b434412) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:d820992be05509c7) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -431,7 +431,7 @@ next action in `recommendations`, and tell the user what it would take.
 8. **GraphQL identifier arguments take UUIDs, not slugs**: `sourceIdentifier`, `targetIdentifier`, `parentIdentifier`, `documentIdentifier` take document UUIDs. Drive slugs are CLI-only (`--drive <slug>` is fine — the CLI resolves them). A slug passed to GraphQL `createDocument` makes the containment job fail and the create hangs forever.
 9. **Re-run health after every fix.** The dashboard shows the LAST report; a repair after a run leaves the UI showing stale problems.
 10. **Line breaks: the string must hold real newlines *before* it is JSON-encoded — encode once, then read back.** The failure is double encoding: a bash `"\n"` is two characters, and a script that then JSON-encodes that argument escapes the backslash again, so the note is stored with the text `\n` between paragraphs. The write reports success. Put the body in a file or heredoc (or build it inside Python), serialize once, `docs apply --file`, then read `content` back and confirm it contains real newlines. The CLI (≥ 1.0.32) refuses payloads whose strings carry a literal `\n`/`\t`/`\r` and names the field — `--allow-literal-escapes` overrides for the rare legitimate case.
-11. **Methodology lives on disk.** `data/methodology/*.md` (249 files) ships with the plugin and is read with Grep/Read — it is not imported into the vault.
+11. **Methodology lives on disk.** The 249 claims ship as `data/methodology.tar.gz`; unpack once with `node scripts/methodology.mjs`, then read `data/methodology/*.md` with Grep/Read. They are not imported into the vault.
 
 
 
@@ -474,7 +474,7 @@ next action in `recommendations`, and tell the user what it would take.
 | `bai/observation`        | Operational signals                                                                              | `/ops/`                                          |
 | `powerhouse/scopeofwork` | Scope of work: envelopes (the projects), priced deliverables, roadmaps, milestones, contributors | `/projects/`                                     |
 | `bai/wbs`                | Work-breakdown goal tree that delivers one envelope                                              | `/projects/`                                     |
-| *(methodology)*          | *249 Ars Contexta claims*                                                                        | *local:* `data/methodology/`*, not in the vault* |
+| *(methodology)*          | *249 Ars Contexta claims*                                                                        | *local:* `data/methodology/` *after* `node scripts/methodology.mjs`*; not in the vault* |
 
 
 The drive app scaffolds 12 folders on first open: `knowledge/{notes,inbox,insights}`, `sources`, `projects`, `ops/{sessions,health,queue}`, `self/methodology`. There is **no** graph singleton — the graph lives in the indexer's tables and is read through `knowledgeGraph`* queries. The three singletons are PipelineQueue, HealthReport and VaultConfig. Read the tree first to find folder UUIDs: `switchboard docs tree <drive-slug> --format json`.
@@ -744,7 +744,13 @@ All queries take `driveId: "<UUID>"` (a slug is also accepted). Seven kinds are 
 
 ## Ars Contexta methodology (local reference)
 
-The 249 Ars Contexta research claims are bundled with the plugin in `data/methodology/*.md`. They are **not** stored in the vault — read them from disk with Grep/Read.
+The 249 Ars Contexta research claims ship as `data/methodology.tar.gz`. Unpack them once:
+
+```bash
+node scripts/methodology.mjs        # writes data/methodology/*.md
+```
+
+They are **not** stored in the vault — read them from disk with Grep/Read. They are archived rather than loose because agent-directed prose full of `[[wikilinks]]` reads as prompt injection to a plugin security scanner and blocked installation.
 
 Each file has YAML frontmatter: `description`, `kind` (`research|foundation|methodology|principle|example`), `methodology[]`, `source`, `topics[]`, `confidence` (`grounded|established|speculative`), then the claim body with `[[wiki links]]` to other claims.
 

@@ -8,3 +8,6 @@ harness/config.json
 harness/repos.json
 .ph/
 __pycache__/
+
+# unpacked from data/methodology.tar.gz by scripts/methodology.mjs
+data/methodology/

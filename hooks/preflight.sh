@@ -62,6 +62,8 @@ else:
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
   node "$CLAUDE_PLUGIN_ROOT/scripts/build-agent.mjs" --check >/dev/null 2>&1 \
     || echo 'WARNING: agents/knowledge-agent.md or AGENTS.md is stale — run: node scripts/build-agent.mjs'
+  node "$CLAUDE_PLUGIN_ROOT/scripts/methodology.mjs" --check >/dev/null 2>&1 \
+    || echo 'NOTE: methodology corpus not unpacked — run: node scripts/methodology.mjs (grounding checks need it)'
   python3 "$CLAUDE_PLUGIN_ROOT/hooks/session-access-probe.py" 2>/dev/null
 fi
 

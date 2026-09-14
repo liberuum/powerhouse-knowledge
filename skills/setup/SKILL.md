@@ -164,10 +164,11 @@ switchboard docs create --type bai/pipeline-queue --name "Pipeline Queue" --driv
 
 ### 8. Local methodology
 
-The 249 Ars Contexta claims are in the plugin at `data/methodology/*.md` — **not**
+The 249 Ars Contexta claims ship as `data/methodology.tar.gz` in the plugin — **not**
 imported into the vault.
 
 ```bash
+node scripts/methodology.mjs       # unpack once (idempotent)
 ls data/methodology/*.md | wc -l   # 249
 ```
 

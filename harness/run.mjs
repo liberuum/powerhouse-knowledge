@@ -110,7 +110,7 @@ function printStatus(cfg) {
 function startupChecks(cfg, state, log) {
   const v = cliVersion();
   if (!isCliVersionAtLeast(v, [1, 0, 36])) {
-    throw new Error(`switchboard CLI v${v.join(".")} < 1.0.36 — upgrade: curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash`);
+    throw new Error(`switchboard CLI v${v.join(".")} < 1.0.36 — upgrade: switchboard update`);
   }
   const id = assertIdentity();
   log(`startup: signing on (did ${id.did.slice(0, 20)}…, profile ${id.profile})`);

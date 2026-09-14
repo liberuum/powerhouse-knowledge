@@ -360,7 +360,7 @@ switchboard docs mutate $PQ --op advancePhase --input '{"taskId":"task-1","hando
 
 ### 6. Methodology Cross-Reference (Local)
 
-Methodology claims are read from the plugin's local `data/methodology/*.md` files, not from the remote vault. Use Grep/Read tools to search them:
+Methodology claims are read from the plugin's local `data/methodology/*.md` files (unpack once: `node scripts/methodology.mjs`), not from the remote vault. Use Grep/Read tools to search them:
 
 ```bash
 # Search local methodology files by keyword

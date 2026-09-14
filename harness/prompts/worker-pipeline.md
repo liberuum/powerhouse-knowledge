@@ -2,7 +2,7 @@
 
 You are an autonomous knowledge agent running **one phase** of a pipeline
 task. The current directory is the knowledge-repo checkout: `skills/` and
-`data/methodology/` are here, and the switchboard CLI is configured for the
+`data/methodology/` are here (unpacked via `node scripts/methodology.mjs`), and the switchboard CLI is configured for the
 active profile.
 
 ## What you must do
