@@ -287,6 +287,10 @@ switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how
 ```
 
 - `similarity` is **always a 0–1 relevance** and always decreases down the result list, so it is safe to render as a percentage or threshold on in either mode (package ≥ 1.0.52).
+- **Phrase the query for the mode.** HYBRID's keyword leg **ANDs its terms**, so a whole question
+  matches nothing there and HYBRID quietly becomes semantic-only. Use `SEMANTIC` with the claim you
+  expect for a concept, `HYBRID` with 1-3 keywords for a known term. Add `content` when you intend
+  to answer, not just list.
 - `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (>0.8 is a strong match)
 - `mode: HYBRID` — semantic + keyword rank fusion, rescaled onto 0–1: **~1.0 = matched by both signals at top rank, ~0.5 = matched by only one signal**. Select `matchedBy` to see which fired.
 - `score` carries the RAW number instead — cosine in SEMANTIC, the Reciprocal Rank Fusion weight in HYBRID (ordinal, tops out near 0.033) — **never render** `score` **as a percentage**.

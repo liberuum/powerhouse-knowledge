@@ -23,6 +23,28 @@ curl -s -H "$AUTH" "$BASE/notes/<id>.md?drive=<UUID>"   # readable markdown
 Add `&content=1` to `search` for full note bodies. Use GraphQL instead when you
 want only selected fields of a large result.
 
+## Choosing the query and the mode
+
+`hybrid` fuses a semantic leg with a keyword leg, and **the keyword leg ANDs its
+terms**. A whole question has too many terms to match anything, so the keyword
+leg returns nothing and hybrid silently degrades to semantic-only.
+
+| You want | Send |
+|---|---|
+| A concept explained ("how does X work") | `mode=semantic`, phrased as the claim you expect |
+| A known term or name | `mode=hybrid`, **1-3 keywords**, not a sentence |
+
+**Always add `content=1` when you intend to answer.** Without it a hit carries
+only title and description, which is enough to list results and not enough to
+explain anything.
+
+```bash
+curl -s -H "$AUTH" "$BASE/search?drive=$DRIVE&q=how+a+document+model+works:+state+schema,+actions,+reducer&mode=semantic&limit=6&content=1"
+```
+
+Then follow the best hit's MoC: `GET notes/:id/links` lists its `CORE_IDEA`
+members with their titles, which is the curated reading order for that topic.
+
 ## Work vs knowledge — fork first
 
 Graph search ranks **documents**. A project is an envelope inside
