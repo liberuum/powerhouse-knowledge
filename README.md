@@ -31,7 +31,7 @@ anything is stale.
 | Host | Reads | Install |
 |---|---|---|
 | **Claude Code** | `.claude-plugin/` + `agents/knowledge-agent.md` | marketplace, below |
-| **Hermes** | `plugin.yaml` + `plugin.json` at the root, `skills/` | install from the Git URL |
+| **Hermes** | `plugin.json` at the root, `skills/` | install from the Git URL, then see *Hermes* below |
 | **Codex, Cursor, Gemini CLI, Zed, Windsurf, OpenCode, Grok** | [`AGENTS.md`](AGENTS.md) | clone the repo, or point the tool at it |
 | **Anything else** | [`AGENTS.md`](AGENTS.md) and `skills/<name>/SKILL.md` | read them directly |
 
@@ -41,6 +41,40 @@ frontmatter file, which is why both are generated.
 
 Skills are plain markdown at `skills/<name>/SKILL.md` and work on any host,
 whether or not it has a skill loader.
+
+### Hermes
+
+```bash
+hermes plugins install liberuum/powerhouse-knowledge
+hermes plugins enable powerhouse-knowledge
+```
+
+Then point Hermes's skill index at the plugin's `skills/` directory:
+
+```bash
+hermes config set skills.external_dirs \
+  '["~/.hermes/plugins/powerhouse-knowledge/skills"]'
+```
+
+Restart Hermes (the skill index is cached per process and the system prompt is
+byte-stable for the life of a conversation), then check the skills are listed:
+
+```bash
+hermes plugins list | grep powerhouse   # enabled?
+```
+
+**Why the extra step.** Hermes has two independent surfaces and the plugin
+needs both:
+
+- The **plugin loader** registers skills from `plugin.json`, which makes them
+  loadable by exact name.
+- The **skill index** — the list the agent scans before replying — is built
+  from directories on disk only (local skills, `skills.external_dirs`, project
+  dirs). It does not consult the plugin registry.
+
+Without `skills.external_dirs` the plugin loads and reports `enabled`, yet the
+agent never sees the skills and so never uses them. If `external_dirs` already
+has entries, append to the list rather than replacing it.
 
 ### Claude Code
 

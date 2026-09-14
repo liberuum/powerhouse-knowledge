@@ -1,13 +1,12 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "powerhouse-knowledge",
-  "description": "Agent instructions and skills for a Powerhouse Knowledge Vault \u2014 seed sources, extract atomic notes, connect and verify them over the vault's REST API and the Switchboard CLI.",
+  "description": "Agent instructions and skills for a Powerhouse Knowledge Vault — seed sources, extract atomic notes, connect and verify them over the vault's REST API and the Switchboard CLI.",
   "version": "1.4.0",
   "author": {
     "name": "BAI",
     "url": "https://bai.dev"
   },
   "repository": "https://github.com/liberuum/powerhouse-knowledge",
-  "license": "AGPL-3.0-only",
-  "skills": "skills",
-  "agent": "AGENTS.md"
+  "license": "AGPL-3.0-only"
 }
