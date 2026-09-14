@@ -5,13 +5,12 @@ description: Find connections between knowledge notes and create links. Use afte
 
 # Connect Knowledge Notes
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
 Find genuine connections between notes and create typed links. This is the "reflect" phase — the step that transforms isolated claims into a knowledge graph.
 
@@ -25,7 +24,15 @@ Find genuine connections between notes and create typed links. This is the "refl
    - `knowledgeGraphSearch(query)` — keyword search on title + description
    - `knowledgeGraphFullSearch(query)` — full-text search; ANDs terms, so use 1-2 keywords
 3. **Apply the articulation test** — for each candidate, answer: "[[A]] connects to [[B]] because [specific reason]". The sentence you write here IS the edge's `--reason` in the next step; if you cannot write it, there is no link.
-4. **If the connection is genuine**, create the edge with `docs link --reason`. Since the drive-override migration, edges live in the reactor's `DocumentRelationship` table (one row per ADD_RELATIONSHIP system action) — not in the source note's `links[]` array. The legacy `--op addLink` writes to the old per-doc array and is **not** indexed by the graph subgraph.
+4. **If the connection is genuine**, create the edge with its reason.
+
+```bash
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/relationships" \
+  -d '{"source":"<a>","target":"<b>","type":"BUILDS_ON","reason":"<why>","confidence":"grounded"}'
+```
+
+`PATCH` the same body to change a reason; `DELETE` `{source,target,type}` to remove.
+A bare knowledge edge is refused. The CLI equivalent is `docs link --reason`. Since the drive-override migration, edges live in the reactor's `DocumentRelationship` table (one row per ADD_RELATIONSHIP system action) — not in the source note's `links[]` array. The legacy `--op addLink` writes to the old per-doc array and is **not** indexed by the graph subgraph.
 
 ```bash
 switchboard docs link <source-uuid> <target-uuid> -t BUILDS_ON \

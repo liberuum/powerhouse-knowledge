@@ -5,24 +5,19 @@ description: Switchboard CLI commands for Knowledge Vault operations. Use as an 
 
 # Switchboard CLI Reference
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
-> **The golden rule: read however you like — write ONLY through the CLI.**
-> Reads (queries, searches, state checks) are safe over raw GraphQL and faster (~0.2s vs ~1-2s).
-> Writes (create, mutate, link) go through the `switchboard` CLI or the vetted scripts: they
-> auto-stamp every action with `id` + `timestampUtcMs` and resolve drive slugs to UUIDs.
-> A single raw write missing the action `id` permanently breaks sync for every connected client.
-> Bulk writes: batch into one `switchboard docs apply --file` call.
+> **This skill is the CLI catalogue.** The CLI is required for deleting documents, reading the
+> drive tree, and profiles/sign-in. For everything else prefer the REST surface — see
+> AGENT.md § *Which surface to use*.
 > CLI ≥ 1.0.32 refuses `apply`/`mutate` payloads whose strings carry a literal `\n`/`\t`/`\r` (double-encoded line breaks) and names the field; `--allow-literal-escapes` overrides for a string that genuinely contains that text.
-> If you must write raw anyway, follow every rule in CONFIGURATION.md → "Writing via raw GraphQL — the safety rules".
 
-Alternative to MCP for vault operations. All commands work against local or remote Switchboard instances.
+All commands work against local or remote Switchboard instances.
 
 ## Installation
 

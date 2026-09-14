@@ -142,23 +142,20 @@ incremental by content hash, git stays canonical.)
 
 ## Connection Modes
 
-> **The golden rule: read however you like — write ONLY through the CLI.**
-> Reads (queries, searches, state checks) are safe over raw GraphQL and faster (~0.2s vs ~1-2s).
-> Writes (create, mutate, link) go through the `switchboard` CLI or the vetted scripts: they
-> auto-stamp every action with `id` + `timestampUtcMs` and resolve drive slugs to UUIDs.
-> A single raw write missing the action `id` permanently breaks sync for every connected client.
-> Bulk writes: batch into one `switchboard docs apply --file` call.
-> If you must write raw anyway, follow every rule in CONFIGURATION.md → "Writing via raw GraphQL — the safety rules".
+> **The golden rule: read on any surface — write over REST or the CLI, never over raw GraphQL.**
+> Both write surfaces stamp every action with `id` + `timestampUtcMs`; a raw action missing `id`
+> permanently breaks sync for every connected client. Batch writes into one request.
 
-The plugin supports three ways to interact with the reactor:
+The plugin supports four ways to interact with the reactor:
 
-| Mode | Tool | Best for |
-|------|------|----------|
-| **Switchboard CLI** | `switchboard` commands via Bash | Agent workflows, full feature parity |
+| Mode | Tool | Use for |
+|------|------|---------|
+| **REST HTTP** | `curl` against `/api/@powerhousedao/knowledge-note/…` | Reads and all writes |
+| **Switchboard CLI** | `switchboard` commands via Bash | Deletes, drive tree, profiles and sign-in |
+| **GraphQL** | HTTP queries to `/graphql` | Reads where you want selected fields. **Read-only** |
 | **MCP** | `mcp__reactor-mcp__*` tools | Direct document CRUD from Claude |
-| **GraphQL** | HTTP queries to `/graphql/knowledgeGraph` | Subgraph queries, external integrations |
 
-The **knowledge-agent** uses the Switchboard CLI by default. See [CONFIGURATION.md](CONFIGURATION.md) for setup details.
+See [CONFIGURATION.md](CONFIGURATION.md) for setup details.
 
 ## Skills Reference
 

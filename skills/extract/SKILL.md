@@ -5,17 +5,47 @@ description: Extract atomic knowledge claims from source material. Creates bai/k
 
 # Extract Atomic Claims
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
 Extract individual knowledge claims from a source document and create `bai/knowledge-note` documents for each.
 
 ## Writing many notes at once
+
+Create the notes and their content in one call, up to 25 at a time:
+
+```bash
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/notes" -d '{
+  "drive": "<drive-uuid>",
+  "notes": [
+    {"name": "note-slug", "actions": [
+      {"type":"SET_TITLE","input":{"title":"<claim as a sentence>","updatedAt":"<ISO>"}},
+      {"type":"SET_DESCRIPTION","input":{"description":"<= 200 chars","updatedAt":"<ISO>"}},
+      {"type":"SET_NOTE_TYPE","input":{"noteType":"concept","updatedAt":"<ISO>"}},
+      {"type":"SET_CONTENT","input":{"content":"<body>","updatedAt":"<ISO>"}},
+      {"type":"ADD_TOPIC","input":{"id":"<uuid>","name":"<topic>"}}
+    ]}
+  ]
+}'
+```
+
+Notes go to `/knowledge/notes` automatically; `parentFolder` is rejected. Every
+action is linted before anything is created, so a `400` means no note was made.
+Check each note's `readBack` in the response.
+
+Then link each note to its source:
+
+```bash
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/relationships" \
+  -d '{"source":"<note>","target":"<source>","type":"DERIVED_FROM","reason":"<where in the source>","confidence":"grounded"}'
+```
+
+### Generating a large batch
+
 
 Extracting a batch by hand-editing JS template literals fails on backtick and
 `${` escaping, repeatedly. Generate the batch instead: a small script that

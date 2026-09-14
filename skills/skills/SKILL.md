@@ -5,13 +5,12 @@ description: Find, read, and add agent skills stored in the Knowledge Vault. Use
 
 # Skill Discovery
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
 The vault stores every agent skill as knowledge: one PROCEDURE note per
 skill (the searchable index) paired with a `bai/source` holding the full

@@ -5,13 +5,12 @@ description: Run verification checks on knowledge notes — recite test, schema 
 
 # Verify Knowledge Notes
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
 Three-part verification combining cold-read prediction, schema compliance, and link health. **Automatically repairs fixable issues.**
 

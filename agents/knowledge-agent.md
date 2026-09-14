@@ -11,17 +11,14 @@ tools:
   - WebFetch
   - Agent
 ---
-<!-- GENERATED from AGENT.md (sha256:e0475f20c68fccb5) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:867cad9028af80a1) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
-> **The golden rule: read however you like — write ONLY through the CLI.**
-> Reads (queries, searches, state checks) are safe over raw GraphQL and faster (~0.2s vs ~1-2s).
-> Writes (create, mutate, link) go through the `switchboard` CLI or the vetted scripts: they
-> auto-stamp every action with `id` + `timestampUtcMs` and resolve drive slugs to UUIDs.
-> A single raw write missing the action `id` permanently breaks sync for every connected client.
-> Bulk writes: batch into one `switchboard docs apply --file` call.
-> If you must write raw anyway, follow every rule in CONFIGURATION.md → "Writing via raw GraphQL — the safety rules".
+> **The golden rule: read on any surface — write over REST or the CLI, never over raw GraphQL.**
+> Writes go through the REST HTTP surface or the `switchboard` CLI. Both stamp every action with
+> `id` + `timestampUtcMs`; a raw action missing `id` permanently breaks sync for every connected
+> client. Batch writes into one request. See *Which surface to use*.
 
 You are working on a **Powerhouse Knowledge Vault** through the `powerhouse-knowledge` plugin. The vault is a graph of atomic knowledge notes (`bai/knowledge-note`) organised by Maps of Content (`bai/moc`), fed by source documents (`bai/source`), tracked by a pipeline queue, and read by humans in the Knowledge Vault app. **Your job is the write path:** take source material in, extract atomic notes and create them correctly, connect them, place them in the MoC hierarchy, and verify the result. Everything else here serves that.
 
@@ -35,11 +32,94 @@ This file is the single canonical instruction set. `agents/knowledge-agent.md` i
 4. **Know the job** — read *The job: from source to connected notes* below. Most requests are one of: seed a source, run the pipeline on it, search, or check health.
 5. **Pick the skill** from *Available skills* and read its `SKILL.md` before acting; each skill is the detailed procedure for one step.
 
+## Which surface to use
+
+| Task | Use |
+|---|---|
+| Search, stats, topics, orphans, activity | REST, GraphQL or CLI |
+| A note with its links | REST `GET notes/:id` |
+| Selected fields from a large result | GraphQL |
+| Markdown, `llms.txt`, `llms-full.txt`, `health.json`, `badge.svg` | REST |
+| Find the vault drive | REST `GET drives` |
+| Drive tree, folder UUIDs | CLI `switchboard docs tree` |
+| Write actions to an existing document | REST `POST actions` |
+| Create notes | REST `POST notes` |
+| Ingest a source | REST `POST sources` |
+| Create or change a link | REST `POST/PATCH relationships` |
+| Claim a queue task | REST `POST tasks/:id/claim` |
+| Delete a document | CLI `switchboard docs delete` |
+| Profiles, sign-in | CLI `switchboard init`, `switchboard auth login` |
+
+**Never write over raw GraphQL.** It cannot place a document in a folder and
+cannot set a link's `reason`. GraphQL is read-only.
+
+**On a remote vault, make as few calls as possible.** Batch actions into one
+request. If you must make several, make them in one process (`curl --next`, or
+one script holding the connection open) — not one shell command each.
+
+## The REST HTTP surface
+
+Base path: `<origin>/api/@powerhousedao/knowledge-note/<path>`.
+Auth: `Authorization: Bearer <token>` on every route except `badge.svg`.
+Full route list: `docs/http-api.md` in the knowledge-note package repo.
+
+```bash
+BASE=<origin>/api/@powerhousedao/knowledge-note
+AUTH="Authorization: Bearer $TOKEN"
+
+# read
+curl -s -H "$AUTH" "$BASE/search?drive=$DRIVE&q=how+does+sync+work&mode=hybrid&limit=6"
+curl -s -H "$AUTH" "$BASE/notes/$ID?drive=$DRIVE"
+curl -s -H "$AUTH" "$BASE/notes/$ID.md?drive=$DRIVE"
+curl -s -H "$AUTH" "$BASE/stats?drive=$DRIVE"
+
+# write
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/actions" \
+  -d '{"documentId":"'$ID'","actions":[{"type":"SET_TITLE","input":{"title":"…","updatedAt":"<ISO>"}}]}'
+
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/relationships" \
+  -d '{"source":"'$A'","target":"'$B'","type":"BUILDS_ON","reason":"<why>","confidence":"grounded"}'
+```
+
+### Creating documents
+
+`POST sources` takes content; the API files it in `/sources` itself.
+`POST notes` creates up to 25 notes with their actions in one call.
+Neither accepts a `parentFolder` — placement follows the document type.
+
+```bash
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/sources" \
+  -d '{"drive":"'$DRIVE'","title":"…","content":"…","sourceType":"ARTICLE"}'
+
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/notes" \
+  -d '{"drive":"'$DRIVE'","notes":[{"name":"slug","actions":[…]}]}'
+```
+
+### What the responses mean
+
+`readBack: "confirmed"` — the write is verified. `"unconfirmed"` — the write
+**was dispatched** but could not be read back; do not retry, poll `jobId` or
+re-read the document. `"skipped"` — `wait: false`, nothing was checked.
+
+A `400` means nothing was dispatched. A `502` on a create means everything it
+created was deleted; if the body says `Rollback INCOMPLETE` it lists the ids
+that survived in `details[].orphaned`.
+
+### Two differences from the CLI
+
+REST writes are signed with the server's key; the caller is still recorded from
+the bearer token. CLI writes are signed with your own key. If a write must
+carry your signing identity, use the CLI.
+
+The plugin's pre-write hooks only see `switchboard` commands, not `curl`. REST
+runs the same lint and articulation checks server-side and returns `400`, so
+nothing is unchecked.
+
 ## Deep-dive references
 
 | What you need | Read this |
 |---------------|-----------|
-| Connection setup (CLI profiles, GraphQL, MCP, raw-write safety rules) | [CONFIGURATION.md](CONFIGURATION.md) |
+| Connection setup (CLI profiles, REST, GraphQL, MCP) | [CONFIGURATION.md](CONFIGURATION.md) |
 | Switchboard CLI commands (drives, docs, mutations, queries) | [skills/cli-reference/SKILL.md](skills/cli-reference/SKILL.md) |
 | Search (semantic, keyword, topic, provenance; rich-context recipe) | [skills/search/SKILL.md](skills/search/SKILL.md) — work/project hits fork to scope-of-work |
 | Nested scope-of-work lookup (envelopes, deliverables, roadmaps, milestones, maps, WBS) | [skills/scope-of-work/SKILL.md](skills/scope-of-work/SKILL.md) |
@@ -119,14 +199,10 @@ membership edges are fully indexed this reads 0 for everything, which is
 misleading; on a freshly-imported drive it reflects genuinely un-referenced
 notes. Treat a non-zero value as signal, not breakage.
 
-**Writing over a slow link:** the CLI spawns a process per call and each one
-does its own TLS handshake. For bulk writes to a remote host that is
-handshake-bound rather than CPU-bound — hundreds of calls will start failing
-with `_ssl.c:983: handshake operation timed out`. Batch actions into a single
-`docs apply`, or talk to `/graphql` over one keep-alive connection — stamping
-every action with `id` + `timestampUtcMs` yourself (copy the `envelope()`
-helper from scripts/sync-skills.mjs). An id-less action bricks sync for every
-client.
+**Writing over a slow link:** every CLI call and every separate `curl` opens a
+new connection, and each one pays a TLS handshake. Hundreds of calls will start
+failing with `_ssl.c:983: handshake operation timed out`. Batch into one
+request, or make the calls in one process.
 
 ## Find the vault drive
 

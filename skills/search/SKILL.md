@@ -5,15 +5,23 @@ description: Use when the user wants to find notes, look up knowledge, explore w
 
 # Search Knowledge Notes
 
-> **Target first.** Every command below runs against the Switchboard the
-> active CLI profile points at, and `<UUID>` / `<drive-slug>` mean *that*
-> server's vault drive. If the pre-flight hook printed `Profile: … -> …` and
-> `VAULT_DRIVE_ID` / `VAULT_DRIVE_SLUG`, use those. Otherwise run
-> `switchboard config show` and the drive detection in AGENT.md § *Find the
-> vault drive*. If it is still ambiguous which vault the user means, **ask for
-> the Switchboard URL and the drive** — never assume an endpoint.
+> **Target first.** Every command below runs against the Switchboard the active
+> profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
+> drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
+> `VAULT_DRIVE_SLUG`, use those. Otherwise run `switchboard config show` and the
+> drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
+> drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
 Search the Knowledge Vault using the graph indexer subgraph. Supports keyword search, topic filtering, provenance queries, and AI-powered semantic search.
+
+```bash
+curl -s -H "$AUTH" "$BASE/search?drive=<UUID>&q=<question>&mode=hybrid&limit=6"
+curl -s -H "$AUTH" "$BASE/notes/<id>?drive=<UUID>"      # note with its links
+curl -s -H "$AUTH" "$BASE/notes/<id>.md?drive=<UUID>"   # readable markdown
+```
+
+Add `&content=1` to `search` for full note bodies. Use GraphQL instead when you
+want only selected fields of a large result.
 
 ## Work vs knowledge — fork first
 
