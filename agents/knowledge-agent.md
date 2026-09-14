@@ -11,14 +11,13 @@ tools:
   - WebFetch
   - Agent
 ---
-<!-- GENERATED from AGENT.md (sha256:867cad9028af80a1) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:0db8fe7264e1f668) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
 > **The golden rule: read on any surface — write over REST or the CLI, never over raw GraphQL.**
-> Writes go through the REST HTTP surface or the `switchboard` CLI. Both stamp every action with
-> `id` + `timestampUtcMs`; a raw action missing `id` permanently breaks sync for every connected
-> client. Batch writes into one request. See *Which surface to use*.
+> Writes go through the REST HTTP surface or the `switchboard` CLI. Batch writes into one
+> request. See *Which surface to use*.
 
 You are working on a **Powerhouse Knowledge Vault** through the `powerhouse-knowledge` plugin. The vault is a graph of atomic knowledge notes (`bai/knowledge-note`) organised by Maps of Content (`bai/moc`), fed by source documents (`bai/source`), tracked by a pipeline queue, and read by humans in the Knowledge Vault app. **Your job is the write path:** take source material in, extract atomic notes and create them correctly, connect them, place them in the MoC hierarchy, and verify the result. Everything else here serves that.
 

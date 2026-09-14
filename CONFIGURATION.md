@@ -85,8 +85,7 @@ For GraphQL and WebSocket endpoints on remote, replace `localhost:4001` with you
 ## Connection Modes
 
 > **The golden rule: read on any surface — write over REST or the CLI, never over raw GraphQL.**
-> Both write surfaces stamp every action with `id` + `timestampUtcMs`; a raw action missing `id`
-> permanently breaks sync for every connected client. Batch writes into one request.
+> Batch writes into one request.
 
 The plugin supports these connection modes to the Powerhouse reactor:
 
@@ -225,7 +224,7 @@ If you write raw anyway, for anything, these still hold:
 4. Read the document back and confirm the write landed.
 5. Use one keep-alive connection for a batch of calls.
 
-### Mode 3: Switchboard CLI (Full Feature Parity)
+### Mode 3: Switchboard CLI
 
 The Switchboard CLI (≥ 1.0.28 for drive-scoped `docs get`; see `skills/cli-reference` for version-gated features) provides full feature parity with MCP for all vault operations. The plugin's `hooks/hooks.json` is already CLI-mode: on vault commands it pings the reactor, auto-introspects a stale model cache, and prints the active profile + detected vault drive.
 

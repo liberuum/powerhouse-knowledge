@@ -143,8 +143,7 @@ incremental by content hash, git stays canonical.)
 ## Connection Modes
 
 > **The golden rule: read on any surface — write over REST or the CLI, never over raw GraphQL.**
-> Both write surfaces stamp every action with `id` + `timestampUtcMs`; a raw action missing `id`
-> permanently breaks sync for every connected client. Batch writes into one request.
+> Batch writes into one request.
 
 The plugin supports four ways to interact with the reactor:
 
