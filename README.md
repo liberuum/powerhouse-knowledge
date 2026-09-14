@@ -19,7 +19,7 @@ The vault stores knowledge as `bai/knowledge-note` documents — atomic claims w
 
 - **Powerhouse reactor** running with the `bai-knowledge-note` Vetra package deployed
 - **An agent host** — Claude Code, Hermes, Codex, Cursor, OpenCode, Gemini CLI, Zed and others (see *Installation*)
-- **Switchboard CLI** installed (recommended — `curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash`)
+- **Switchboard CLI** installed (recommended — download [install.sh](https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh), read it, then run it)
 
 ## Installation
 

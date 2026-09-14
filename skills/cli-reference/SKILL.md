@@ -22,7 +22,9 @@ All commands work against local or remote Switchboard instances.
 ## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh -o /tmp/switchboard-install.sh
+less /tmp/switchboard-install.sh    # read it before running it
+sh /tmp/switchboard-install.sh
 ```
 
 ## Configuration

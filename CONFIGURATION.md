@@ -226,7 +226,9 @@ The Switchboard CLI (≥ 1.0.28 for drive-scoped `docs get`; see `skills/cli-ref
 **Setup:**
 ```bash
 # Install CLI
-curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh -o /tmp/switchboard-install.sh
+less /tmp/switchboard-install.sh    # read it before running it
+sh /tmp/switchboard-install.sh
 
 # Create / select a profile (no default vault — point it at the Switchboard the user names)
 switchboard init --url http://localhost:4001/graphql --name local --use-profile   # CLI ≥ 1.0.34, non-interactive

@@ -26,7 +26,8 @@ curl -s -w '\n%{http_code}\n' "$BASE/ping"         # no token — is auth on?
 
 ```bash
 AUTH="Authorization: Bearer $TOKEN"     # omit entirely when auth is off
-DRIVE=$(curl -s -H "$AUTH" "$BASE/drives" | python3 -c 'import json,sys;print(json.load(sys.stdin)["drives"][0]["id"])')
+curl -s -H "$AUTH" "$BASE/drives"       # read the id you want from the output
+DRIVE=<the drive id>
 ```
 
 Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.

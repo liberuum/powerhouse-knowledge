@@ -26,7 +26,8 @@ Linking notes is **connect**. MCP / raw GraphQL: [CONFIGURATION.md](../../CONFIG
 ### 1. CLI and profile
 
 ```bash
-which switchboard || curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash
+# install if missing — download, read, then run; never pipe a URL into a shell
+which switchboard || { curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh -o /tmp/sb-install.sh && sh /tmp/sb-install.sh; }
 switchboard --version    # ≥ 1.0.36
 switchboard config show
 switchboard ping
