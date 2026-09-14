@@ -8,7 +8,7 @@
     {
       "name": "powerhouse-knowledge",
       "source": "./",
-      "description": "AI agent integration for Powerhouse Knowledge Vault. Query, create, connect, and verify knowledge notes via the Switchboard CLI and GraphQL."
+      "description": "AI agent integration for Powerhouse Knowledge Vault. Query, create, connect, and verify knowledge notes over the vault's REST API and the Switchboard CLI."
     }
   ]
 }

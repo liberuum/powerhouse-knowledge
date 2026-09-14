@@ -89,9 +89,9 @@ For GraphQL and WebSocket endpoints on remote, replace `localhost:4001` with you
 
 The plugin supports these connection modes to the Powerhouse reactor:
 
-### Mode 1: MCP (Default — Request/Response)
+### Mode 1: MCP (optional)
 
-All skills use MCP by default. This is the simplest setup.
+No bundled skill uses MCP; the skills use REST and the CLI. This is the simplest setup.
 
 ```json
 // .mcp.json
@@ -107,7 +107,7 @@ All skills use MCP by default. This is the simplest setup.
 
 **When to use:** Standard skill-triggered workflows — user runs `/extract`, agent does work, returns results.
 
-### Mode 2: GraphQL + WebSocket (Real-Time)
+### Mode 2: GraphQL + WebSocket (reads and subscriptions)
 
 For autonomous agent behavior — watching vault changes, auto-connecting notes, health monitoring.
 
@@ -147,15 +147,8 @@ subscription WatchVault($search: SearchFilterInput) {
 }
 ```
 
-**Mutate via GraphQL (same connection):**
-```graphql
-mutation MutateNote($id: String!, $actions: [JSONObject!]!) {
-  mutateDocument(documentIdentifier: $id, actions: $actions) {
-    id
-    name
-  }
-}
-```
+GraphQL is **read-only** for vault work — see *Writing over raw GraphQL — don't* below.
+Use the WebSocket to observe changes and the REST surface to act on them.
 
 **IMPORTANT:** Each action MUST include a unique `id` (UUID) **and** `timestampUtcMs`. The
 reactor does NOT reject id-less actions — it persists them. An action persisted without `id`
@@ -171,10 +164,12 @@ permanently breaks every browser client's sync channel (`pollSyncEnvelopes` -> n
 }
 ```
 
-**Any raw `mutateDocument` dispatch — HTTP, WebSocket, or script — MUST stamp `id` and
-`timestampUtcMs` on every action.** Prefer the switchboard CLI or the vetted scripts under
-`scripts/` (they stamp automatically); see the `envelope()` helper in `scripts/sync-skills.mjs`
-for the pattern if you must dispatch raw actions yourself.
+Write over REST or the CLI; both stamp the envelope for you.
+
+The bundled scripts under `scripts/` (`sync-skills.mjs`, `sync-repo-docs.mjs`,
+`add-skill.mjs`, `seed-source.mjs`) dispatch raw `mutateDocument` and stamp `id` and
+`timestampUtcMs` themselves — they are the one sanctioned exception to the read-only rule, and
+`envelope()` in `scripts/sync-skills.mjs` is the pattern they use.
 
 **GraphQL identifier arguments** (`sourceIdentifier`, `targetIdentifier`, `parentIdentifier`,
 `documentIdentifier`) take document **UUIDs**. Drive **slugs are CLI-only** (`--drive <slug>` is
@@ -182,7 +177,7 @@ fine — the CLI resolves them). A slug passed to GraphQL `createDocument`/`crea
 makes the containment job fail and the create hang forever.
 
 
-### REST HTTP surface
+### Mode 0: REST HTTP surface (reads and all writes)
 
 Served by the knowledge-note package. Use it for writes and for most reads.
 
@@ -386,7 +381,7 @@ switchboard drives fix <drive> -y
 
 **`--parent-folder` placement:** The CLI creates the doc at the drive root first, then moves it into the folder via `DocumentDrive { moveNode }`. This is a two-step process — if the move fails, the doc remains at the root.
 
-**Action `id` field:** The CLI auto-generates action IDs for all `mutateDocument` operations (ADD_FILE, DELETE_NODE, etc.). This prevents null `action.id` errors in Connect's sync stream. If you use `docs apply` with raw actions, the CLI injects IDs automatically via `stamp_actions`. See the promoted rule under Mode 2 above — this CLI auto-stamping is *why* the CLI is the safe default; anything that bypasses it (raw HTTP/WebSocket/script `mutateDocument` calls) must stamp `id` + `timestampUtcMs` itself.
+**Action `id` field:** The CLI auto-generates action IDs for all `mutateDocument` operations (ADD_FILE, DELETE_NODE, etc.). This prevents null `action.id` errors in Connect's sync stream. If you use `docs apply` with raw actions, the CLI injects IDs automatically via `stamp_actions`. Both write surfaces stamp for you; anything that bypasses them (raw HTTP/WebSocket/script `mutateDocument` calls) must stamp `id` + `timestampUtcMs` itself.
 
 **Soft delete:** `docs delete` uses non-cascading soft delete (won't destroy parent drives). `drives delete` uses CASCADE (deletes drive + all children). Ghost nodes left behind by failed operations can be cleaned up with `drives check` + `drives fix`.
 
@@ -429,9 +424,9 @@ For a remote reactor, update the URLs:
 GraphQL endpoint: `https://your-reactor.example.com/graphql/r`
 WebSocket: `wss://your-reactor.example.com/graphql/subscriptions`
 
-## Folder Placement
+## Folder placement (MCP / CLI only)
 
-When creating documents via MCP, always place them in the correct folder:
+The REST create routes place documents by document type and **reject** `parentFolder`. When creating via MCP or the CLI you must place them yourself:
 
 1. Read the drive to find folder IDs:
 ```
@@ -456,7 +451,7 @@ mcp__reactor-mcp__createDocument({
 
 ## Processor
 
-The GraphIndexer processor indexes `bai/knowledge-note` and `bai/moc` documents (and the drive's `ADD_RELATIONSHIP` edges) into a relational database. Sources, tensions, observations, projects and WBS are **not** indexed — read them by id. Query the indexed data via:
+The GraphIndexer processor indexes `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation`, `powerhouse/scopeofwork` and `bai/wbs` documents (and the drive's `ADD_RELATIONSHIP` edges) into a relational database. Sources, the health report, the pipeline queue and the vault config are **not** indexed — read those by id. Query the indexed data via:
 
 ```graphql
 query {

@@ -1,6 +1,6 @@
 ---
 name: cli-reference
-description: Switchboard CLI commands for Knowledge Vault operations. Use as an alternative to MCP when the CLI is available. Install from GitHub releases.
+description: Switchboard CLI commands for Knowledge Vault operations. Required for deleting documents, reading the drive tree, and profiles/sign-in; the fallback for everything else. Install from GitHub releases.
 ---
 
 # Switchboard CLI Reference
@@ -136,7 +136,6 @@ The CLI auto-injects `timestampUtcMs` and `action.id` on all actions.
 
 ### CLI version notes
 
-Current CLI is **1.0.30**. `switchboard --version` to check; install from source
 with `cargo install --path . --force` in the switchboard-cli checkout.
 
 - **>= 1.0.29** — `drives list` reports a document count per drive (`Docs`
@@ -259,7 +258,7 @@ switchboard docs mutate <pq-id> --op addTask --input '{"id":"task-1","taskType":
 
 ## Batching with `docs apply`: ordered, per-action isolated, silently partial
 
-**Verified 2026-09-02 (CLI 1.0.32, reactor 6.2.2-dev.71):**
+**Verified 2026-09-14 (reactor 6.2.3-dev.4):**
 
 - **Order is preserved.** Two `SET_TITLE`s in one batch landed at increasing indices in the order given; the last won.
 - **Failures are isolated per action.** A batch of `[SET_TITLE, SET_DESCRIPTION(300 chars), SET_METADATA_FIELD]` applied the title and the metadata; the over-long description was recorded with `DescriptionTooLongError` and skipped. Same for an invalid `sourceOrigin` enum on `SET_PROVENANCE`.
@@ -275,25 +274,14 @@ switchboard docs mutate <id> --op assignTask --input '{...}'
 switchboard docs mutate <id> --op advancePhase --input '{...}'
 ```
 
-## Two-Batch Pattern
+## Batching
 
-Separate content from provenance to prevent batch failures:
+One batch, then read back. Actions run in the order given; an action the reducer
+rejects is recorded with its error and skipped, and the actions before and after
+it still land. Content, topics and provenance can go together.
 
-```bash
-# Batch 1: Content
-switchboard docs apply <note-id> --actions '[
-  {"type": "SET_TITLE", "input": {"title": "...", "updatedAt": "..."}, "scope": "global"},
-  {"type": "SET_DESCRIPTION", "input": {"description": "...", "updatedAt": "..."}, "scope": "global"},
-  {"type": "SET_NOTE_TYPE", "input": {"noteType": "concept", "updatedAt": "..."}, "scope": "global"},
-  {"type": "SET_CONTENT", "input": {"content": "...", "updatedAt": "..."}, "scope": "global"},
-  {"type": "ADD_TOPIC", "input": {"id": "t1", "name": "topic"}, "scope": "global"}
-]'
-
-# Batch 2: Provenance (separate — validation failures won't kill content)
-switchboard docs apply <note-id> --actions '[
-  {"type": "SET_PROVENANCE", "input": {"author": "agent", "sourceOrigin": "DERIVED", "createdAt": "..."}, "scope": "global"}
-]'
-```
+The job reports success even when an action was rejected, so always read the
+document — or the operation log — back.
 
 ## Full Pipeline via CLI
 

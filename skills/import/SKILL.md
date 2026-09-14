@@ -5,6 +5,15 @@ description: Bulk import knowledge from external sources — markdown files, Obs
 
 # Bulk Import
 
+Create notes in batches of up to 25 with `POST notes` rather than one call per
+document — it places them all in one containment dispatch:
+
+```bash
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/notes" \
+  -d '{"drive":"<UUID>","notes":[{"name":"slug","actions":[…]}]}'
+```
+
+
 > **Target first.** Every command below runs against the Switchboard the active
 > profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
 > drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
@@ -46,7 +55,7 @@ switchboard docs apply <new-doc-id> --actions '[
 ]'
 ```
 
-Then set provenance in a **separate batch** (validation failures won't kill content):
+Then set provenance (the same batch is fine — a rejected action is skipped, the rest land):
 ```bash
 switchboard docs mutate <new-doc-id> --op setProvenance --input '{"author": "...", "sourceOrigin": "IMPORT", "createdAt": "..."}'
 ```

@@ -5,6 +5,19 @@ description: Interactive knowledge graph analysis — find synthesis opportuniti
 
 # Graph Analysis
 
+These are REST routes as well as GraphQL queries:
+
+```bash
+curl -s -H "$AUTH" "$BASE/stats?drive=<UUID>"
+curl -s -H "$AUTH" "$BASE/density?drive=<UUID>"
+curl -s -H "$AUTH" "$BASE/orphans?drive=<UUID>"
+curl -s -H "$AUTH" "$BASE/triangles?drive=<UUID>&limit=20"
+curl -s -H "$AUTH" "$BASE/graph.json?drive=<UUID>"
+```
+
+Use GraphQL when you want only some fields of a large result.
+
+
 > **Target first.** Every command below runs against the Switchboard the active
 > profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
 > drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /

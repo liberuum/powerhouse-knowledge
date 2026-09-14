@@ -5,6 +5,16 @@ description: Export knowledge vault data — full backup, filtered export, or ma
 
 # Export Knowledge Vault
 
+REST serves the export surface directly:
+
+```bash
+curl -s -H "$AUTH" "$BASE/llms-full.txt?drive=<UUID>"   # every canonical note, one file
+curl -s -H "$AUTH" "$BASE/llms.txt?drive=<UUID>"        # MoC index
+curl -s -H "$AUTH" "$BASE/graph.json?drive=<UUID>"      # nodes + edges
+curl -s -H "$AUTH" "$BASE/notes/<id>.md?drive=<UUID>"   # one note as markdown
+```
+
+
 > **Target first.** Every command below runs against the Switchboard the active
 > profile points at, and `<UUID>` / `<drive-slug>` mean *that* server's vault
 > drive. If the pre-flight hook printed `Profile: … -> …` and `VAULT_DRIVE_ID` /
@@ -66,7 +76,7 @@ Links:
 
 Read the links from the **graph**, not from `state.global.links[]` — that array is empty for anything linked since the relationship migration, so an export built from it has no links. One call per note (`knowledgeGraphForwardLinks(driveId, documentId) { targetDocumentId targetTitle linkType }`) or one call for the vault (`knowledgeGraphEdges(driveId)`), then join on the note id.
 
-Note that `knowledgeGraphDebug` returns only the indexed types (`bai/knowledge-note`, `bai/moc`): sources, tensions, observations, projects and WBS are not in it, so it is not a complete export on its own.
+Note that `knowledgeGraphDebug` returns only the indexed types: sources, the health report, the pipeline queue and the vault config are not in it, so it is not a complete export on its own.
 
 3. Write to local filesystem:
 ```

@@ -40,15 +40,15 @@ to `lookup.py get` or `outline`.
 
 ## Rich context in two calls (answering a question)
 
-When the user wants an **answer**, not a list, do not fetch hits one at a time. The node type carries `content`, and GraphQL aliases let one request fan out. Measured on a 521-note vault: ~1.4 s and ~4.3k tokens for everything below, versus 12+ round trips for less.
+When the user wants an **answer**, not a list, do not fetch hits one at a time. The node type carries `content`, and GraphQL aliases let one request fan out. Fetch context in two calls, not twenty.
 
-**Call 1 — the best notes, with their full text** (~1 s):
+**Call 1 — the best notes, with their full text:**
 
 ```bash
 switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<the question, verbatim>", mode: HYBRID, limit: 6) { similarity matchedBy node { documentId title description content noteType status documentType } } }' --format json > /tmp/hits.json
 ```
 
-**Call 2 — the neighbourhood of the top 3, and the MoC map, in ONE request** (~0.4 s). Substitute the three ids from call 1:
+**Call 2 — the neighbourhood of the top 3, and the MoC map, in ONE request.** Substitute the three ids from call 1:
 
 ```bash
 switchboard query '{
@@ -72,7 +72,7 @@ What that gives you, and how to use it:
 - **`sim*`** — notes that say similar things without a link: candidates for a follow-up, or for `/connect`.
 - If a hit is a MoC (`status = "MOC"`), its `content` is the orientation — a ready-made summary of the whole cluster; mention it and its `CHILD_MOC` children rather than re-deriving.
 
-Only go deeper (`knowledgeGraphNodeByDocumentId` on a neighbour, `knowledgeGraphConnections(depth: 2)`) when the first two calls leave a specific gap. `topics` is a per-node resolver (one server-side query per row): one whole-vault fetch per run is cheap (~0.3 s / 500 notes), but do not select it inside a per-hit loop.
+Only go deeper (`knowledgeGraphNodeByDocumentId` on a neighbour, `knowledgeGraphConnections(depth: 2)`) when the first two calls leave a specific gap. `topics` is a per-node resolver (one server-side query per row): one whole-vault fetch per run is fine, but do not select it inside a per-hit loop.
 
 ## Search tiers (try in order)
 
@@ -164,7 +164,7 @@ switchboard query '{ knowledgeGraphNodesByStatus(driveId: "<UUID>", status: "DRA
 switchboard query '{ knowledgeGraphStale(driveId: "<UUID>", since: "<ISO>", limit: 50) { documentId title updatedAt } }'
 ```
 
-**Five kinds of node come back from every query above.** Select `documentType` to tell them apart:
+**Seven kinds of node come back from every query above.** Select `documentType` to tell them apart:
 
 | `documentType` | what it is | `status` carries | how to use it |
 |---|---|---|---|

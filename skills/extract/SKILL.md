@@ -100,7 +100,7 @@ For each claim, create a document and populate it:
 switchboard docs create --type bai/knowledge-note --name "<declarative claim title>" --drive <drive-slug> --parent-folder <notes-folder-uuid> --format json
 ```
 
-Then populate the note in **two separate batches** (never mix provenance with content — if provenance fails with an invalid enum value, it kills the entire batch):
+Then populate the note. One batch is fine: actions run in order and a rejected action is skipped while the rest land.
 
 **Batch 1 — Content (must succeed):**
 ```bash

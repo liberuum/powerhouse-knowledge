@@ -8,7 +8,7 @@ This plugin gives you (human or AI agent) the ability to manage a structured kno
 
 - **17 skills** for knowledge management (setup, seed, extract, connect, search, verify, health, graph, scopes of work/WBS, skills discovery, etc.)
 - **One canonical instruction set** — [AGENT.md](AGENT.md). The `knowledge-agent` Claude Code agent is generated from it (`node scripts/build-agent.mjs`), so there is exactly one document to keep true
-- **Connection to a Powerhouse reactor** via MCP or Switchboard CLI
+- **Connection to a Powerhouse reactor** via REST, the Switchboard CLI, GraphQL (read-only) or MCP
 - **Access to the Graph Indexer** — a relational index with keyword search, topic queries, provenance filtering, and AI-powered semantic search
 
 The vault stores knowledge as `bai/knowledge-note` documents — atomic claims with typed links, topics, provenance, and lifecycle states. Notes are organized by Maps of Content (MOCs), processed through a pipeline, and visualized as an interactive graph.
@@ -152,7 +152,7 @@ The plugin supports four ways to interact with the reactor:
 | **REST HTTP** | `curl` against `/api/@powerhousedao/knowledge-note/…` | Reads and all writes |
 | **Switchboard CLI** | `switchboard` commands via Bash | Deletes, drive tree, profiles and sign-in |
 | **GraphQL** | HTTP queries to `/graphql` | Reads where you want selected fields. **Read-only** |
-| **MCP** | `mcp__reactor-mcp__*` tools | Direct document CRUD from Claude |
+| **MCP** | `mcp__reactor-mcp__*` tools | Optional; reads and inspection. Not the sanctioned write path |
 
 See [CONFIGURATION.md](CONFIGURATION.md) for setup details.
 
@@ -196,7 +196,7 @@ See [CONFIGURATION.md](CONFIGURATION.md) for setup details.
 
 ## Graph Indexer & Subgraph
 
-The vault includes a **Graph Indexer processor** that maintains a relational index of all knowledge notes. The **Knowledge Graph subgraph** exposes this index via GraphQL at `/graphql/knowledgeGraph`.
+The vault includes a **Graph Indexer processor** that maintains a relational index of all knowledge notes. The **Knowledge Graph subgraph** exposes this index via GraphQL at `/graphql`.
 
 ### What's indexed
 
@@ -296,13 +296,13 @@ completes the task by itself. Every note the pipeline creates must end with: tit
 Human (Connect App)                    AI Agent (Claude Code)
   |                                     |
   +── Knowledge Vault App               +── powerhouse-knowledge plugin
-  |     |── Notes tab (grid + search)   |     |── 16 skills
+  |     |── Notes tab (grid + search)   |     |──  17 skills
   |     |── Graph tab (cytoscape viz)   |     |── knowledge-agent
   |     |── Sources, Pipeline, Health   |     |── Switchboard CLI
   |     +── MOC editor, Note editor     |     +── MCP / GraphQL
   |                                     |
   +───────── Powerhouse Reactor ────────+
-              |── 11 document models
+              |── 12 document models
               |── Graph Indexer processor
               |     |── Relational index (PGlite)
               |     +── Semantic embeddings (server-side Transformers.js)

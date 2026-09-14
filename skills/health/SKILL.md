@@ -1,6 +1,6 @@
 ---
 name: health
-description: Check remote vault health — orphan notes, dangling links, graph density, methodology grounding, MOC coverage, processing stats. Saves results to the bai/health-report document. All checks run against the live reactor via Switchboard CLI.
+description: Check remote vault health — orphan notes, dangling links, graph density, methodology grounding, MOC coverage, processing stats. Saves results to the bai/health-report document. All checks run against the live reactor over REST or the Switchboard CLI.
 ---
 
 # Vault Health Check
@@ -71,7 +71,7 @@ switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title
 
 ## Step 2: Gather everything from the graph in one request
 
-Do **not** read notes one by one with `docs get` — on a 500-note vault that is 500 CLI processes. The graph index carries every field the checks need, MoCs included, and one aliased request returns all of it (measured: ~0.3 s for 487 notes + 38 MoCs):
+Do **not** read notes one by one with `docs get` — on a 500-note vault that is 500 CLI processes. The graph index carries every field the checks need, MoCs included, and one aliased request returns all of it:
 
 ```bash
 switchboard query "{
@@ -89,13 +89,13 @@ switchboard query "{
 
 Then compute in Python from that one file. The rules that keep the numbers honest:
 
-- **Count by kind, not by `nodeCount`.** The index holds five kinds — `documentType` is `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension` or `bai/observation` — and `stats` reports each: use `stats.noteCount` for every note metric, never `nodeCount` (the total). `orphans` already excludes tensions and observations (they have nothing pointing at them by design) but still includes MoCs; an orphan MoC is a hierarchy problem, not an orphan note. MoCs are still recognisable by `status = "MOC"` / `noteType = "MOC (<tier>)"` on older indexes that lack `documentType`.
+- **Count by kind, not by `nodeCount`.** The index holds seven kinds — `documentType` is one of `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation`, `powerhouse/scopeofwork` and `bai/wbs` — and `stats` reports each: use `stats.noteCount` for every note metric, never `nodeCount` (the total). `orphans` already excludes tensions and observations (they have nothing pointing at them by design) but still includes MoCs; an orphan MoC is a hierarchy problem, not an orphan note. MoCs are still recognisable by `status = "MOC"` / `noteType = "MOC (<tier>)"` on older indexes that lack `documentType`.
 - **Open tensions** = `stats.openTensionCount` (or `tensions` filtered to `status = "OPEN"`). This is what THREE_SPACE_BOUNDARIES grades. A tension whose `observedBy` is `graph-indexer` was opened automatically from a CONTRADICTS edge — it still needs a human to resolve or dissolve it, so it counts.
 - **Orphan** = a note with zero incoming edges — exactly what `orphans` returns. Outgoing links do not change it.
 - **Links** come from `edges`, never from a note's `links[]` (empty since the relationship migration). `averageLinksPerNote` = outgoing edges per note; `connectionCount` = `stats.edgeCount`.
 - **Articulation coverage** = `stats.articulatedEdgeCount / stats.edgeCount` — the share of knowledge edges whose relationship metadata carries a `reason` (what `docs link --reason` writes). `edges[].reason` is null on the bare ones; list the notes with the most bare outgoing edges so `/connect` knows where to start. On a pre-1.0.36 Switchboard the field is absent — say so instead of reporting 0%.
 - **MoC coverage** = share of notes that are the target of a `CORE_IDEA` edge.
-- **MOC_COHERENCE** = notes whose `topics` is empty (the dashboard's definition): `PASS` at 0, `WARN` ≤ 3, `FAIL` above. Selecting `topics` on `knowledgeGraphNodes` costs one server-side query per node, which is fine once per run (~0.3 s / 500 notes) — just never do it inside a per-hit loop.
+- **MOC_COHERENCE** = notes whose `topics` is empty (the dashboard's definition): `PASS` at 0, `WARN` ≤ 3, `FAIL` above. Selecting `topics` on `knowledgeGraphNodes` costs one server-side query per node, which is fine once per run — just never do it inside a per-hit loop.
 - **Descriptions**: missing fails; < 80 is a quality warning. A description > 200 cannot exist in state — the reducer rejects it — so a missing description is often an over-long attempt that was silently dropped. Count length as UTF-16 units (JavaScript `.length`), the way the reducer does.
 - **STALE_NOTES**: `stale` entries with `status = "DRAFT"`.
 - **Lifecycle**: report the DRAFT share in `recommendations` — a vault where nearly every note is DRAFT has never been verified.
@@ -124,7 +124,7 @@ From the Step 2 data: a note is covered when it is the target of a `CORE_IDEA` e
 **LINK_HEALTH message carries articulation coverage.** The grade stays on average links per note (the dashboard's rule — grading it differently would make `/health` and the in-app check disagree on the same vault), but the check's `message` states both numbers — `Avg 2.4 links/note; 1,180 of 2,257 knowledge edges (52%) carry a reason` — and `recommendations` names the backlog: how many bare edges, which notes hold most of them, and that `/connect` articulates them with `docs annotate` (or unlinks the ones nobody can explain). A vault at 100% average links and 0% reasons is an address book; the report must say so even while LINK_HEALTH shows PASS.
 
 **Description quality check (not just presence):**
-- Length: 80-200 chars (aim ~150). < 30 = too terse, > 200 = **will silently fail SET_DESCRIPTION** (kill entire batch)
+- Length: 80-200 chars (aim ~150). < 30 = too terse, > 200 = `SET_DESCRIPTION` is rejected and skipped; the note ends up with no description while the rest of the batch lands
 - Restatement: if description uses >70% same words as title = WARN
 - Must add scope, mechanism, or implication beyond the title
 
@@ -360,7 +360,7 @@ switchboard docs get <note-id> --state --format json
 # Count links, check descriptions, etc. from state data
 ```
 
-This is slower (one HTTP call per document) but works when the subgraph indexer is behind.
+One call per document; use it when the subgraph indexer is behind.
 
 ## Automation
 

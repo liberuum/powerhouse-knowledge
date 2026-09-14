@@ -122,7 +122,7 @@ switchboard docs mutate <note-id> --op setContent --input '{
 - `CONTRADICTS` — note's findings challenge the methodology claim
 - `RELATES_TO` — thematic connection without direct support/conflict
 
-**Why this matters:** Cross-referencing grounds working knowledge in the methodology foundation. The claims live locally as plugin reference data — the agent reads them directly from disk, which is faster and requires no remote import step.
+**Why this matters:** Cross-referencing grounds working knowledge in the methodology foundation. The claims live locally as plugin reference data — the agent reads them directly from disk — no remote import step.
 
 ## Tension detection
 

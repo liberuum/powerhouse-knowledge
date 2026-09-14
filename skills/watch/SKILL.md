@@ -101,31 +101,13 @@ Variables:
 }
 ```
 
-## Mutate via GraphQL (Bidirectional)
+## Acting on what you see
 
-The same WebSocket connection can send mutations:
+The WebSocket is for **reading** change events. To act on one, write over REST:
 
-```graphql
-mutation MutateNote($id: String!, $actions: [JSONObject!]!) {
-  mutateDocument(documentIdentifier: $id, actions: $actions) {
-    id name
-  }
-}
+```bash
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/actions" \
+  -d '{"documentId":"<id>","actions":[{"type":"SET_TITLE","input":{"title":"…","updatedAt":"<ISO>"}}]}'
 ```
 
-Each action must be fully stamped before it is sent:
-```json
-{
-  "id": "2b1b1b0a-6b1e-4c1a-9b1a-6b1e4c1a9b1a",
-  "type": "SET_TITLE",
-  "input": {"title": "My Note", "updatedAt": "2026-03-26T21:00:00.000Z"},
-  "scope": "global",
-  "timestampUtcMs": "2026-03-26T21:00:00.000Z"
-}
-```
-
-Required envelope fields, `id` **first**: `id` (UUID), `timestampUtcMs`, `scope`, `type`, `input`.
-An action persisted without `id` permanently breaks every browser client's sync channel
-(`pollSyncEnvelopes` -> non-nullable `Action.id`).
-
-If "$ARGUMENTS" is provided, use it as the drive UUID to watch.
+Links go to `POST relationships`. Never write over raw GraphQL.

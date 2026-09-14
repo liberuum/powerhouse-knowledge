@@ -19,6 +19,48 @@ This file is the single canonical instruction set. `agents/knowledge-agent.md` i
 
 
 
+## Before the first call: origin, auth, drive
+
+**1. Origin.** `switchboard config show` prints the profile URL. The REST base
+is that origin plus the package path:
+
+```bash
+BASE=<origin>/api/@powerhousedao/knowledge-note
+```
+
+**2. Is authorization on?** Ask without a token — this is the first request you
+make.
+
+```bash
+curl -s -w '\n%{http_code}\n' "$BASE/ping"
+```
+
+| Answer | Meaning | What to do |
+|---|---|---|
+| `200`, `"user": null` | auth is **off** | send no `Authorization` header |
+| `401` | auth is **on** | get a token, below |
+| `200`, `"user": "0x…"` | auth on, token already valid | carry on |
+
+When auth is on:
+
+```bash
+TOKEN=$(switchboard auth token)
+AUTH="Authorization: Bearer $TOKEN"
+curl -s -H "$AUTH" "$BASE/ping"     # your address in "user" confirms it
+```
+
+Do not send a bearer token to a vault that is not asking for one, and do not
+assume a hosted vault is open — a protected Switchboard answers `401` to reads
+as well as writes.
+
+**3. Drive.** `GET drives` returns only knowledge-vault drives you may read:
+
+```bash
+curl -s -H "$AUTH" "$BASE/drives"
+```
+
+Use its `id` as `?drive=<UUID>` on every other route.
+
 ## Which surface to use
 
 
@@ -90,8 +132,8 @@ curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/notes" \
 ### What the responses mean
 
 `readBack: "confirmed"` — the write is verified. `"unconfirmed"` — the write
-**was dispatched** but could not be read back; do not retry, poll `jobId` or
-re-read the document. `"skipped"` — `wait: false`, nothing was checked.
+**was dispatched** but could not be read back. Do not retry — poll `jobId` or
+re-read the document instead. `"skipped"` — `wait: false`, nothing was checked.
 
 A `400` means nothing was dispatched. A `502` on a create means everything it
 created was deleted; if the body says `Rollback INCOMPLETE` it lists the ids
@@ -163,7 +205,7 @@ server — the same rule applies: that target must be one the user chose.
 
 ### Connecting to a shared remote vault
 
-A hosted vault needs no auth for reads. Point a profile at the Switchboard and
+A hosted vault may allow anonymous reads; a protected one answers `401` to reads too. Probe with `GET ping` (above) before assuming. Point a profile at the Switchboard and
 confirm the models are deployed:
 
 ```bash
@@ -249,7 +291,7 @@ switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how
 - `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (>0.8 is a strong match)
 - `mode: HYBRID` — semantic + keyword rank fusion, rescaled onto 0–1: **~1.0 = matched by both signals at top rank, ~0.5 = matched by only one signal**. Select `matchedBy` to see which fired.
 - `score` carries the RAW number instead — cosine in SEMANTIC, the Reciprocal Rank Fusion weight in HYBRID (ordinal, tops out near 0.033) — **never render** `score` **as a percentage**.
-- `topics` is a per-node field resolver (one server-side query per row). One whole-vault fetch per run is cheap (~0.3 s for 500 notes); selecting it inside a per-hit loop is not.
+- `topics` is a per-node field resolver (one server-side query per row). One whole-vault fetch per run is fine; selecting it inside a per-hit loop is not.
 - **MoCs are nodes too** and come back from every query with `status = "MOC"` and `noteType = "MOC (<tier>)"` — filter them when the question is about notes.
 - **Scopes of work and work breakdowns are nodes too** (package ≥ 1.0.54-dev.7): `status = "SCOPE"` / `"WBS"` (sentinels, like MoCs — a scope's own DRAFT would otherwise pollute note-lifecycle queries) with the real state in `noteType` (`Scope (IN_PROGRESS)`, `WBS (BLOCKED)`); their `content` is a rendered outline. They are not knowledge nodes: excluded from orphans, density and `edgeCount`. A scope carries derived edges `CITES` (→ each note/MoC in an envelope's `knowledgeRefs`) and `DELIVERED_BY` (→ its WBS). Nested fields (envelope UUID, quotes, `goalRef`, goal notes) are **not** documents — **REQUIRED:** use [skills/scope-of-work/SKILL.md](skills/scope-of-work/SKILL.md). Search skill forks here when the query is about a project, deliverable, milestone, roadmap, or WBS.
 - If the field doesn't exist (schema validation error), the deployment runs an older package — fall back to `knowledgeGraphFullSearch`.
@@ -294,7 +336,7 @@ switchboard docs apply <doc-id> --actions '[
   {"type":"ADD_TOPIC","input":{"id":"<uuid>","name":"reactor"},"scope":"global"}
 ]'
 
-# Batch 2: provenance, separately (a validation failure kills the whole batch it is in)
+# Provenance can go in the same batch; a rejected action is skipped and the rest land
 switchboard docs mutate <doc-id> --op setProvenance --input '{"author":"knowledge-agent","sourceOrigin":"DERIVED","createdAt":"<ISO>"}'
 
 # Verify it exists — never assume from a successful dispatch
@@ -314,7 +356,7 @@ over-long descriptions and bad timestamps all fail silently).
 **Creating a note**
 
 - [ ] title (a declarative claim), description (<= 200 chars, adds information beyond the title), `noteType` (one of the ten lowercase values), content
-- [ ] topics added; provenance set in a SEPARATE dispatch from content
+- [ ] topics added; provenance set
 - [ ] >= 2 typed relationships, each created with `--reason` (the articulation test, on the edge) and `--confidence` where you can say
 - [ ] attached to a MoC (`switchboard docs link <moc-uuid> <note-uuid> -t CORE_IDEA` — the MoC editor only renders `CORE_IDEA`/`CHILD_MOC` edges as membership; a `RELATES_TO` edge is indexed but never shows as belonging to the MoC)
 - [ ] lifecycle walked to CANONICAL (submit, then approve as a different actor — approval is only legal from `IN_REVIEW`)
@@ -366,7 +408,7 @@ next action in `recommendations`, and tell the user what it would take.
 
 ## Key rules
 
-1. **Batch freely —** `docs apply` **is ordered and per-action isolated** (verified 2026-09-02, CLI 1.0.32, reactor 6.2.2-dev.71). Actions run in the order given; an action whose reducer rejects it (over-long description, invalid enum, unknown task id) is recorded with its error and **skipped**, and the actions before and after it still land. So one batch can carry content + topics + provenance, or ADD_TASK → ASSIGN_TASK → ADVANCE_PHASE, or three chained advances — one round trip instead of three to six. Older guidance about a "two-batch pattern" and "never batch dependent ops" described a reactor that no longer behaves that way.
+1. **Batch freely —** `docs apply` **is ordered and per-action isolated** (verified 2026-09-14 on reactor 6.2.3-dev.4). Actions run in the order given; an action whose reducer rejects it (over-long description, invalid enum, unknown task id) is recorded with its error and **skipped**, and the actions before and after it still land. So one batch can carry content + topics + provenance, or ADD_TASK → ASSIGN_TASK → ADVANCE_PHASE, or three chained advances — one round trip instead of three to six. Older guidance about a "two-batch pattern" and "never batch dependent ops" described a reactor that no longer behaves that way.
 2. **The job reports success even when an action failed.** `--wait` returns `error: null` / `READ_READY` with a rejected action inside, and the operation log's summary still reads as if it applied. **Read back — and read the operation log, which names the rejection.** Every operation carries an `error` field: `document(identifier){ document{ operations(filter:{scopes:["global"], sinceRevision: <rev before your batch>}){ items{ index error action{ type } } } } }` lists each rejected action with the reactor's own reason ("Description exceeds 200 characters", the zod issue with the allowed enum values). **This runs automatically:** the plugin's `PostToolUse` hook reads the recent operations after every `docs apply` / `docs mutate` you issue and prints any rejection with its reason. Batching moves the cost from round trips to read-backs; the hooks do the read-back for you, but a state check of the fields you care about is still yours.
 3. **Limits: compute, never estimate — and lint before you dispatch.** Across all twelve models the reducers enforce exactly **one** hard length limit: a knowledge note's `description` must be **≤ 200 characters**, counted the way JavaScript counts (`.length`, UTF-16 units — an emoji is 2; Python's `len()` says 1, which is how an agent "checks" 200 and still fails). Titles have no limit; nothing on MoC, source, tension, observation, scope of work or WBS is length-limited (keep descriptions readable, ~150–200). An over-long description is rejected with `DescriptionTooLongError` while the rest of the batch applies, so the note ends up with *no* description and the job still reports success. Do not count by eye and do not try-fail-adjust: run `node scripts/lint-actions.mjs <actions.json>` before every `docs apply` — it checks the 200 limit the reactor's way, every enum the reactor drops silently (`noteType`, `sourceOrigin`, `SourceStatus`, `taskType`, `HealthCategory`, `MocTier`, …), and double-encoded line breaks, and exits non-zero with the JSON path of each problem. **This runs automatically:** the plugin's `PreToolUse` hook lints every `switchboard docs apply` / `docs mutate` you issue and blocks the command if the payload would be rejected — you will see the finding instead of a silent partial write.
 4. **Always verify after creating**: `switchboard docs tree <drive> --format json` to confirm the node exists. CLI bugs and network blips cause silent failures.
@@ -660,7 +702,7 @@ Read the hierarchy with `knowledgeGraphEdges(driveId)` filtered to `CHILD_MOC` (
 
 ## Graph indexer queries (quick reference)
 
-All queries take `driveId: "<UUID>"` (a slug is also accepted). Five kinds are indexed — `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation` — and every node carries `documentType` so you can tell them apart (see [skills/search/SKILL.md](skills/search/SKILL.md) for the table). Tensions and observations are indexed to be *found*, not counted as knowledge: they never appear in `orphans`, and `stats` reports `noteCount`, `mocCount`, `claimCount`, `tensionCount`, `openTensionCount`, `observationCount` beside the total `nodeCount`. Knowledge edges come from `docs link` (ADD_RELATIONSHIP); `INVOLVES` / `PROMOTED_TO` are derived from state.
+All queries take `driveId: "<UUID>"` (a slug is also accepted). Seven kinds are indexed — `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation`, `powerhouse/scopeofwork` and `bai/wbs` — and every node carries `documentType` so you can tell them apart (see [skills/search/SKILL.md](skills/search/SKILL.md) for the table). Tensions and observations are indexed to be *found*, not counted as knowledge: they never appear in `orphans`, and `stats` reports `noteCount`, `mocCount`, `claimCount`, `tensionCount`, `openTensionCount`, `observationCount` beside the total `nodeCount`. Knowledge edges come from `docs link` (ADD_RELATIONSHIP); `INVOLVES` / `PROMOTED_TO` are derived from state.
 
 
 | Query                                                                                                                                                       | Use when                                                                                                                                                                                                                                                                         |
