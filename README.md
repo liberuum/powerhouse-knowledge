@@ -1,13 +1,13 @@
 # powerhouse-knowledge
 
-Claude Code plugin for the Powerhouse Knowledge Vault. Enables AI agents and humans to query, create, connect, and verify knowledge notes stored as Powerhouse document models.
+Agent plugin for the Powerhouse Knowledge Vault. Enables AI agents and humans to query, create, connect, and verify knowledge notes stored as Powerhouse document models.
 
 ## What This Plugin Does
 
 This plugin gives you (human or AI agent) the ability to manage a structured knowledge graph inside a Powerhouse reactor. It provides:
 
 - **17 skills** for knowledge management (setup, seed, extract, connect, search, verify, health, graph, scopes of work/WBS, skills discovery, etc.)
-- **One canonical instruction set** — [AGENT.md](AGENT.md). The `knowledge-agent` Claude Code agent is generated from it (`node scripts/build-agent.mjs`), so there is exactly one document to keep true
+- **One canonical instruction set** — [AGENT.md](AGENT.md). Every host-specific artifact is generated from it (`node scripts/build-agent.mjs`), so there is exactly one document to keep true
 - **Connection to a Powerhouse reactor** via REST, the Switchboard CLI, GraphQL (read-only) or MCP
 - **Access to the Graph Indexer** — a relational index with keyword search, topic queries, provenance filtering, and AI-powered semantic search
 
@@ -18,10 +18,32 @@ The vault stores knowledge as `bai/knowledge-note` documents — atomic claims w
 ## Prerequisites
 
 - **Powerhouse reactor** running with the `bai-knowledge-note` Vetra package deployed
-- **Claude Code** CLI installed (for AI agent use)
+- **An agent host** — Claude Code, Hermes, Codex, Cursor, OpenCode, Gemini CLI, Zed and others (see *Installation*)
 - **Switchboard CLI** installed (recommended — `curl -fsSL https://raw.githubusercontent.com/liberuum/switchboard-cli/main/install.sh | bash`)
 
 ## Installation
+
+The instruction set lives once in [AGENT.md](AGENT.md); each host reads a
+different generated artifact from the repository root. Run
+`node scripts/build-agent.mjs` after editing AGENT.md — `--check` exits 1 if
+anything is stale.
+
+| Host | Reads | Install |
+|---|---|---|
+| **Claude Code** | `.claude-plugin/` + `agents/knowledge-agent.md` | marketplace, below |
+| **Hermes** | `plugin.yaml` + `plugin.json` at the root, `skills/` | install from the Git URL |
+| **Codex, Cursor, Gemini CLI, Zed, Windsurf, OpenCode, Grok** | [`AGENTS.md`](AGENTS.md) | clone the repo, or point the tool at it |
+| **Anything else** | [`AGENTS.md`](AGENTS.md) and `skills/<name>/SKILL.md` | read them directly |
+
+`AGENTS.md` is the cross-tool convention stewarded by the Linux Foundation's
+Agentic AI Foundation; Claude Code is the exception that reads its own
+frontmatter file, which is why both are generated.
+
+Skills are plain markdown at `skills/<name>/SKILL.md` and work on any host,
+whether or not it has a skill loader.
+
+### Claude Code
+
 
 Claude Code loads plugins from **marketplaces** — a plugin directory sitting
 on disk (e.g. cloned into `.claude/plugins/`) is NOT discovered by itself.
