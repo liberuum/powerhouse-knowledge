@@ -97,7 +97,7 @@ BASE=<origin>/api/@powerhousedao/knowledge-note
 AUTH="Authorization: Bearer $TOKEN"
 
 # read
-curl -s -H "$AUTH" "$BASE/search?drive=$DRIVE&q=how+does+sync+work&mode=hybrid&limit=6"
+curl -s -H "$AUTH" "$BASE/search?drive=$DRIVE&q=how+does+sync+work&mode=semantic&limit=6"
 curl -s -H "$AUTH" "$BASE/notes/$ID?drive=$DRIVE"
 curl -s -H "$AUTH" "$BASE/notes/$ID.md?drive=$DRIVE"
 curl -s -H "$AUTH" "$BASE/stats?drive=$DRIVE"
@@ -282,15 +282,16 @@ transparently if embeddings are unavailable, so it is always safe to call.
 **To answer a question, fetch context in two calls, not twenty.** The node type carries `content`, so one search returns the full text of the best hits; a second aliased query pulls the neighbourhood of the top ones. The recipe is in [skills/search/SKILL.md](skills/search/SKILL.md) § *Rich context in two calls*.
 
 ```bash
-# DEFAULT: semantic/hybrid search from plain query text — select content when you need to answer, not just list
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: HYBRID, limit: 6) { similarity matchedBy node { documentId title description content noteType status } } }'
+# DEFAULT: SEMANTIC. Select content when you need to answer, not just list.
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: SEMANTIC, limit: 6) { similarity node { documentId title description content noteType status } } }'
 ```
 
 - `similarity` is **always a 0–1 relevance** and always decreases down the result list, so it is safe to render as a percentage or threshold on in either mode (package ≥ 1.0.52).
-- **Phrase the query for the mode.** HYBRID's keyword leg **ANDs its terms**, so a whole question
-  matches nothing there and HYBRID quietly becomes semantic-only. Use `SEMANTIC` with the claim you
-  expect for a concept, `HYBRID` with 1-3 keywords for a known term. Add `content` when you intend
-  to answer, not just list.
+- **Use `SEMANTIC` unless you need to know whether an exact term matched.** Its `similarity` is a
+  true cosine, so it can be compared and thresholded. HYBRID's keyword leg **ANDs its terms**: a
+  whole question matches nothing there, HYBRID becomes semantic-only, and it then rescales a
+  genuine 0.97 match down to ~0.5 — a caller filtering on `similarity > 0.7` discards every hit.
+  Add `content` when you intend to answer, not just list.
 - `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (>0.8 is a strong match)
 - `mode: HYBRID` — semantic + keyword rank fusion, rescaled onto 0–1: **~1.0 = matched by both signals at top rank, ~0.5 = matched by only one signal**. Select `matchedBy` to see which fired.
 - `score` carries the RAW number instead — cosine in SEMANTIC, the Reciprocal Rank Fusion weight in HYBRID (ordinal, tops out near 0.033) — **never render** `score` **as a percentage**.

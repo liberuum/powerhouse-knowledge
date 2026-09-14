@@ -41,7 +41,7 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 |---|---|---|---|
 | `GET` | `ping` | — | `{ ok, subgraph, user }` |
 | `GET` | `drives` | — | `{ drives: [{ id, name, slug, nodes }] }`, knowledge-vault drives only |
-| `GET` | `search` | `drive`, `q`, `mode=hybrid\|semantic`, `limit` (≤25), `content=1`, `includeArchived=1` | `{ query, mode, hits: [{ similarity, score, matchedBy, node }] }` |
+| `GET` | `search` | `drive`, `q`, `mode=semantic` (default choice) `\|hybrid`, `limit` (≤25), `content=1`, `includeArchived=1` | `{ query, mode, hits: [{ similarity, score, matchedBy, node }] }` |
 | `GET` | `notes/:id` | `drive` | `{ id, name, documentType, state, edges }` |
 | `GET` | `notes/:id.md` | `drive` | markdown with YAML frontmatter |
 | `GET` | `notes/:id/similar` | `drive`, `limit` | semantic neighbours |
@@ -97,7 +97,7 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 
 ```bash
 # search, with note bodies
-curl -s -H "$AUTH" "$BASE/search?drive=$DRIVE&q=how+does+sync+work&mode=hybrid&limit=6&content=1"
+curl -s -H "$AUTH" "$BASE/search?drive=$DRIVE&q=how+does+sync+work&mode=semantic&limit=6&content=1"
 
 # a note and its edges, one call
 curl -s -H "$AUTH" "$BASE/notes/$ID?drive=$DRIVE"

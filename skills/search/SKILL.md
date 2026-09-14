@@ -15,7 +15,7 @@ description: Use when the user wants to find notes, look up knowledge, explore w
 Search the Knowledge Vault using the graph indexer subgraph. Supports keyword search, topic filtering, provenance queries, and AI-powered semantic search.
 
 ```bash
-curl -s -H "$AUTH" "$BASE/search?drive=<UUID>&q=<question>&mode=hybrid&limit=6"
+curl -s -H "$AUTH" "$BASE/search?drive=<UUID>&q=<question>&mode=semantic&limit=6"
 curl -s -H "$AUTH" "$BASE/notes/<id>?drive=<UUID>"      # note with its links
 curl -s -H "$AUTH" "$BASE/notes/<id>.md?drive=<UUID>"   # readable markdown
 ```
@@ -29,10 +29,9 @@ want only selected fields of a large result.
 terms**. A whole question has too many terms to match anything, so the keyword
 leg returns nothing and hybrid silently degrades to semantic-only.
 
-| You want | Send |
-|---|---|
-| A concept explained ("how does X work") | `mode=semantic`, phrased as the claim you expect |
-| A known term or name | `mode=hybrid`, **1-3 keywords**, not a sentence |
+**Use `semantic`.** Its `similarity` is a true cosine, so it can be thresholded and compared.
+Reach for `hybrid` only when you need `matchedBy` to tell you an exact term was present — its
+ranking was no better in testing, and on one query it was worse.
 
 **Always add `content=1` when you intend to answer.** Without it a hit carries
 only title and description, which is enough to list results and not enough to
@@ -67,7 +66,7 @@ When the user wants an **answer**, not a list, do not fetch hits one at a time. 
 **Call 1 — the best notes, with their full text:**
 
 ```bash
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<the question, verbatim>", mode: HYBRID, limit: 6) { similarity matchedBy node { documentId title description content noteType status documentType } } }' --format json > /tmp/hits.json
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<the question>", mode: SEMANTIC, limit: 6) { similarity matchedBy node { documentId title description content noteType status documentType } } }' --format json > /tmp/hits.json
 ```
 
 **Call 2 — the neighbourhood of the top 3, and the MoC map, in ONE request.** Substitute the three ids from call 1:
@@ -103,14 +102,14 @@ Only go deeper (`knowledgeGraphNodeByDocumentId` on a neighbour, `knowledgeGraph
 When the user asks a question or uses natural language (e.g., "how does storage work?", "notes about legal setup"), use `knowledgeGraphSemanticSearch` (package ≥ 1.0.50). Pass the question as-is — the server embeds it and ranks by meaning, and falls back to keyword search transparently if embeddings are unavailable:
 
 ```bash
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<natural language question>", mode: HYBRID, limit: 10) { similarity matchedBy node { documentId title description noteType status topics } } }'
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<natural language question>", mode: SEMANTIC, limit: 10) { similarity matchedBy node { documentId title description noteType status topics } } }'
 ```
 
 - `similarity` is **always a 0–1 relevance**, monotonic with result order — safe to show as a percentage or threshold on in either mode (package ≥ 1.0.52).
 - `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (>0.8 strong match)
 - `mode: HYBRID` — semantic + keyword fusion rescaled onto 0–1: **~1.0 = both signals matched at top rank, ~0.5 = only one signal matched**. `matchedBy` tells you which.
 - `score` is the RAW value (cosine, or an ordinal RRF weight topping out near 0.033) — **never display `score` as a percentage**.
-- **Before 1.0.52** HYBRID leaked the raw RRF weight into `similarity`, so a perfect match read as ~3%. Rank only; don't threshold.
+- **Never threshold a HYBRID `similarity`.** A hit matched by one signal is rescaled to ~0.5 however good it is, so a `> 0.7` filter discards everything. SEMANTIC's cosine is safe to threshold.
 - If the field fails schema validation, the deployment runs an older package — use tier 2 with 1-2 keywords instead.
 
 ### 2. Keyword search (fast, exact matches)
@@ -212,7 +211,7 @@ If the subgraph returns empty (index needs rebuilding), scan directly:
 
 | User intent | Best query |
 |-------------|-----------|
-| Natural language question | `knowledgeGraphSemanticSearch` (mode: HYBRID) — pass the question verbatim |
+| Natural language question | `knowledgeGraphSemanticSearch` (mode: SEMANTIC) |
 | Known keyword/term | `knowledgeGraphSearch` or `knowledgeGraphFullSearch` (1-2 keywords, terms are ANDed) |
 | Project / deliverable / milestone / roadmap / WBS / "what's the status of X" | **scope-of-work** (`lookup.py search` / `get`) — not graph search |
 | "Notes about topic X" | `knowledgeGraphByTopic` |
