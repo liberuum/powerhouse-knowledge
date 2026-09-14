@@ -162,6 +162,7 @@ See [CONFIGURATION.md](CONFIGURATION.md) for setup details.
 
 | Skill | Command | Description |
 |-------|---------|-------------|
+| REST API | `/powerhouse-knowledge:rest-api` | Every REST route, with request and response shapes |
 | Setup | `/powerhouse-knowledge:setup` | Connect the CLI to the vault (first time) and verify folders, singletons, methodology |
 | Import | `/powerhouse-knowledge:import <path>` | Bulk import from markdown, Obsidian, or JSON |
 | Export | `/powerhouse-knowledge:export [path]` | Export vault as markdown, JSON, or .phd backup |
@@ -296,7 +297,7 @@ completes the task by itself. Every note the pipeline creates must end with: tit
 Human (Connect App)                    AI Agent (Claude Code)
   |                                     |
   +── Knowledge Vault App               +── powerhouse-knowledge plugin
-  |     |── Notes tab (grid + search)   |     |──  17 skills
+  |     |── Notes tab (grid + search)   |     |──  18 skills
   |     |── Graph tab (cytoscape viz)   |     |── knowledge-agent
   |     |── Sources, Pipeline, Health   |     |── Switchboard CLI
   |     +── MOC editor, Note editor     |     +── MCP / GraphQL
