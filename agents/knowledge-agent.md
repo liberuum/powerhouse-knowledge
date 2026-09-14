@@ -11,7 +11,7 @@ tools:
   - WebFetch
   - Agent
 ---
-<!-- GENERATED from AGENT.md (sha256:972b70439482ae8d) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:a4a1dc902dd54b12) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -302,14 +302,11 @@ switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how
 ```
 
 - `similarity` is **always a 0–1 relevance** and always decreases down the result list, so it is safe to render as a percentage or threshold on in either mode (package ≥ 1.0.52).
-- **Use `SEMANTIC` unless you need to know whether an exact term matched.** Its `similarity` is a
-  true cosine, so it can be compared and thresholded. HYBRID's keyword leg **ANDs its terms**: a
-  whole question matches nothing there, HYBRID becomes semantic-only, and it then rescales a
-  genuine 0.97 match down to ~0.5 — a caller filtering on `similarity > 0.7` discards every hit.
-  Add `content` when you intend to answer, not just list.
+- **`SEMANTIC` is the only mode.** Its `similarity` is a true cosine, so it can be compared and
+  thresholded. Add `content` when you intend to answer, not just list. For an exact term use
+  `knowledgeGraphFullSearch`, which is keyword-only and ANDs its terms — give it 1-2 words.
 - `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (>0.8 is a strong match)
-- `mode: HYBRID` — semantic + keyword rank fusion, rescaled onto 0–1: **~1.0 = matched by both signals at top rank, ~0.5 = matched by only one signal**. Select `matchedBy` to see which fired.
-- `score` carries the RAW number instead — cosine in SEMANTIC, the Reciprocal Rank Fusion weight in HYBRID (ordinal, tops out near 0.033) — **never render** `score` **as a percentage**.
+- `score` carries the same cosine as `similarity`.
 - `topics` is a per-node field resolver (one server-side query per row). One whole-vault fetch per run is fine; selecting it inside a per-hit loop is not.
 - **MoCs are nodes too** and come back from every query with `status = "MOC"` and `noteType = "MOC (<tier>)"` — filter them when the question is about notes.
 - **Scopes of work and work breakdowns are nodes too** (package ≥ 1.0.54-dev.7): `status = "SCOPE"` / `"WBS"` (sentinels, like MoCs — a scope's own DRAFT would otherwise pollute note-lifecycle queries) with the real state in `noteType` (`Scope (IN_PROGRESS)`, `WBS (BLOCKED)`); their `content` is a rendered outline. They are not knowledge nodes: excluded from orphans, density and `edgeCount`. A scope carries derived edges `CITES` (→ each note/MoC in an envelope's `knowledgeRefs`) and `DELIVERED_BY` (→ its WBS). Nested fields (envelope UUID, quotes, `goalRef`, goal notes) are **not** documents — **REQUIRED:** use [skills/scope-of-work/SKILL.md](skills/scope-of-work/SKILL.md). Search skill forks here when the query is about a project, deliverable, milestone, roadmap, or WBS.

@@ -21,7 +21,7 @@ content hash), so the two never drift silently.
 ## Find a skill (by need, not by name)
 
 ```bash
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<what you need to do>", mode: HYBRID, limit: 5) { similarity node { documentId title description } } }'
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<what you need to do>", mode: SEMANTIC, limit: 5) { similarity node { documentId title description } } }'
 ```
 
 Skill notes are recognizable by their `Agent skill: /<name>` title prefix

@@ -41,7 +41,7 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 |---|---|---|---|
 | `GET` | `ping` | — | `{ ok, subgraph, user }` |
 | `GET` | `drives` | — | `{ drives: [{ id, name, slug, nodes }] }`, knowledge-vault drives only |
-| `GET` | `search` | `drive`, `q`, `mode=semantic` (default choice) `\|hybrid`, `limit` (≤25), `content=1`, `includeArchived=1` | `{ query, mode, hits: [{ similarity, score, matchedBy, node }] }` |
+| `GET` | `search` | `drive`, `q`, `mode=semantic` (the only mode), `limit` (≤25), `content=1`, `includeArchived=1` | `{ query, mode, hits: [{ similarity, score, matchedBy, node }] }` |
 | `GET` | `notes/:id` | `drive` | `{ id, name, documentType, state, edges }` |
 | `GET` | `notes/:id.md` | `drive` | markdown with YAML frontmatter |
 | `GET` | `notes/:id/similar` | `drive`, `limit` | semantic neighbours |

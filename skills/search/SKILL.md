@@ -29,9 +29,8 @@ want only selected fields of a large result.
 terms**. A whole question has too many terms to match anything, so the keyword
 leg returns nothing and hybrid silently degrades to semantic-only.
 
-**Use `semantic`.** Its `similarity` is a true cosine, so it can be thresholded and compared.
-Reach for `hybrid` only when you need `matchedBy` to tell you an exact term was present — its
-ranking was no better in testing, and on one query it was worse.
+**`semantic` is the only mode.** Its `similarity` is a true cosine, so it can be compared and
+thresholded. For an exact term use `knowledgeGraphFullSearch`, which is keyword-only.
 
 **Always add `content=1` when you intend to answer.** Without it a hit carries
 only title and description, which is enough to list results and not enough to
@@ -107,9 +106,7 @@ switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<na
 
 - `similarity` is **always a 0–1 relevance**, monotonic with result order — safe to show as a percentage or threshold on in either mode (package ≥ 1.0.52).
 - `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (>0.8 strong match)
-- `mode: HYBRID` — semantic + keyword fusion rescaled onto 0–1: **~1.0 = both signals matched at top rank, ~0.5 = only one signal matched**. `matchedBy` tells you which.
 - `score` is the RAW value (cosine, or an ordinal RRF weight topping out near 0.033) — **never display `score` as a percentage**.
-- **Never threshold a HYBRID `similarity`.** A hit matched by one signal is rescaled to ~0.5 however good it is, so a `> 0.7` filter discards everything. SEMANTIC's cosine is safe to threshold.
 - If the field fails schema validation, the deployment runs an older package — use tier 2 with 1-2 keywords instead.
 
 ### 2. Keyword search (fast, exact matches)

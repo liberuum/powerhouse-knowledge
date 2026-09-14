@@ -210,7 +210,7 @@ Every operation on an indexed type — `bai/knowledge-note`, `bai/moc`, `bai/res
 ### Available queries
 
 **Search:**
-- `knowledgeGraphSemanticSearch(query, mode: HYBRID|SEMANTIC)` — meaning + keyword, ranked; `similarity` is a 0–1 relevance (package ≥ 1.0.52). **Default for natural-language questions.**
+- `knowledgeGraphSemanticSearch(query, mode: SEMANTIC)` — ranked by meaning; `similarity` is a true cosine. **Default for natural-language questions.**
 - `knowledgeGraphSearch(query)` — keyword match on title + description
 - `knowledgeGraphFullSearch(query)` — keyword match on title + description + content (ANDs terms; use 1–2 keywords)
 - `knowledgeGraphSimilar(documentId)` — semantically similar notes to a given note
@@ -245,7 +245,7 @@ Every operation on an indexed type — `bai/knowledge-note`, `bai/moc`, `bai/res
 
 | User intent | Best query |
 |-------------|-----------|
-| Natural language question | `knowledgeGraphSemanticSearch` (mode: HYBRID), question passed verbatim |
+| Natural language question | `knowledgeGraphSemanticSearch` (mode: SEMANTIC) |
 | Known keyword/term | `knowledgeGraphSearch` or `knowledgeGraphFullSearch` |
 | "Notes about topic X" | `knowledgeGraphByTopic` |
 | "Notes similar to this one" | `knowledgeGraphSimilar` |
