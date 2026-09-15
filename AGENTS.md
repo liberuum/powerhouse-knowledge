@@ -5,7 +5,7 @@ and skills for working with a Powerhouse Knowledge Vault. There is nothing to
 build or test here. Read the instructions below, then read the skill you need
 from `skills/<name>/SKILL.md`.
 
-<!-- GENERATED from AGENT.md (sha256:8ed7ec5331f565f7) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:381b58c4c3b59a96) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -297,8 +297,16 @@ next to a hundred directly connected notes.
 ```bash
 # DEFAULT: SEMANTIC, with the neighbourhood. Select content when you need to
 # answer, not just list.
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: SEMANTIC, limit: 6) { similarity node { documentId title description content noteType status } related(limit: 5) { title description noteType hitCount via { linkType reason } } } }'
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: SEMANTIC, limit: 6) { similarity node { documentId title description content noteType status } related(limit: 5) { title description noteType hitCount via { linkType reason } } linkedHits { from to linkType reason } } }'
 ```
+
+- **Select `linkedHits` too — it is the half that catches wrong answers.**
+  `related` lists what is one link AWAY from the hits, and by construction
+  excludes nodes that are themselves hits. Semantic search returns both sides
+  of a disagreement often enough that the `CONTRADICTS` joining two results
+  would otherwise be invisible: you would see two confident claims and no sign
+  that one disputes the other. `linkedHits` is that edge, reported on both of
+  its ends, written source → target.
 
 - `related` is ranked by `hit similarity x link-type weight`, summed over
   every edge, so a note SEVERAL results point at outranks one only a single

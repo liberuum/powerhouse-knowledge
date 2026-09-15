@@ -288,8 +288,16 @@ next to a hundred directly connected notes.
 ```bash
 # DEFAULT: SEMANTIC, with the neighbourhood. Select content when you need to
 # answer, not just list.
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: SEMANTIC, limit: 6) { similarity node { documentId title description content noteType status } related(limit: 5) { title description noteType hitCount via { linkType reason } } } }'
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: SEMANTIC, limit: 6) { similarity node { documentId title description content noteType status } related(limit: 5) { title description noteType hitCount via { linkType reason } } linkedHits { from to linkType reason } } }'
 ```
+
+- **Select `linkedHits` too — it is the half that catches wrong answers.**
+  `related` lists what is one link AWAY from the hits, and by construction
+  excludes nodes that are themselves hits. Semantic search returns both sides
+  of a disagreement often enough that the `CONTRADICTS` joining two results
+  would otherwise be invisible: you would see two confident claims and no sign
+  that one disputes the other. `linkedHits` is that edge, reported on both of
+  its ends, written source → target.
 
 - `related` is ranked by `hit similarity x link-type weight`, summed over
   every edge, so a note SEVERAL results point at outranks one only a single

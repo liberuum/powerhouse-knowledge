@@ -85,8 +85,16 @@ switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<th
   similarity matchedBy
   node { documentId title description content noteType status documentType }
   related(limit: 6) { documentId title description noteType hitCount via { from to linkType reason confidence } }
+  linkedHits { from to linkType reason confidence }
 } }' --format json > /tmp/hits.json
 ```
+
+**Select both.** `related` is what is one link AWAY from the hits; `linkedHits`
+is the edges BETWEEN them. `related` excludes nodes that are themselves hits by
+construction, and semantic search routinely returns both sides of a
+disagreement — so the `CONTRADICTS` joining two of your results appears ONLY in
+`linkedHits`. Omit it and you will report two confident claims without noticing
+that one disputes the other.
 
 How to read `related`:
 
@@ -95,10 +103,14 @@ How to read `related`:
   `hitCount` is how many — treat a high `hitCount` as the vault agreeing.
 - `via` is always written **source → target**, so there is no direction to
   decode, and carries the edge's `reason` when the author gave one.
-- **`CONTRADICTS` / `SUPERSEDES` in `via` is a finding, not a footnote.** It
-  means a hit is disputed or stale. Say so and cite both sides rather than
-  reporting the hit as settled — this is the case where ignoring the
-  neighbourhood produces a WRONG answer, not merely a thin one.
+- **`CONTRADICTS` / `SUPERSEDES` — in `via` OR in `linkedHits` — is a finding,
+  not a footnote.** It means a hit is disputed or stale. Say so and cite both
+  sides rather than reporting the hit as settled: this is the case where
+  ignoring the neighbourhood produces a WRONG answer, not merely a thin one.
+  Check whether a `bai/tension` over the pair is OPEN or already
+  RESOLVED/DISSOLVED before calling the dispute live — a retained
+  `CONTRADICTS` edge is often the provenance of a correction that was already
+  made, not an argument still running.
 - A `CORE_IDEA` edge **into** a hit is the MoC that owns it: name the cluster
   so the user can explore around the answer.
 - An `INVOLVES` edge is a tension involving the note — read it (`docs get`)
@@ -149,10 +161,10 @@ whole-vault fetch per run is fine, but do not select it inside a per-hit loop.
 When the user asks a question or uses natural language (e.g., "how does storage work?", "notes about legal setup"), use `knowledgeGraphSemanticSearch` (package ≥ 1.0.50). Pass the question as-is — the server embeds it and ranks by meaning, and falls back to keyword search transparently if embeddings are unavailable:
 
 ```bash
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<natural language question>", mode: SEMANTIC, limit: 10) { similarity matchedBy node { documentId title description noteType status } related(limit: 5) { title noteType hitCount via { linkType reason } } } }'
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<natural language question>", mode: SEMANTIC, limit: 10) { similarity matchedBy node { documentId title description noteType status } related(limit: 5) { title noteType hitCount via { linkType reason } } linkedHits { from to linkType reason } } }'
 ```
 
-- Add `related` whenever the user wants an answer rather than a list — see *Rich context in ONE call* above.
+- Add `related` AND `linkedHits` whenever the user wants an answer rather than a list — see *Rich context in ONE call* above. Neither costs a query per hit.
 - `similarity` is **always a 0–1 relevance**, monotonic with result order — safe to show as a percentage or threshold on in either mode (package ≥ 1.0.52).
 - `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (>0.8 strong match)
 - `score` is the RAW value (cosine, or an ordinal RRF weight topping out near 0.033) — **never display `score` as a percentage**.
