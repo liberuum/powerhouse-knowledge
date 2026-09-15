@@ -69,17 +69,47 @@ A `SCOPE` / `WBS` hit from the queries below is a rendered outline, not
 structured state (quotes, envelope UUID, `goalRef`). Pass its `documentId`
 to `lookup.py get` or `outline`.
 
-## Rich context in two calls (answering a question)
+## Rich context in ONE call (answering a question)
 
-When the user wants an **answer**, not a list, do not fetch hits one at a time. The node type carries `content`, and GraphQL aliases let one request fan out. Fetch context in two calls, not twenty.
+When the user wants an **answer**, not a list, do not fetch hits one at a time.
+The node type carries `content`, and **`related` carries the neighbourhood** —
+so a single request returns the best notes, their full text, and what they
+connect to. This replaces the old two-call recipe: `related` gives you what a
+second aliased query of `forwardLinks` + `backlinks` + `similar` used to.
 
-**Call 1 — the best notes, with their full text:**
+Most of what the vault knows about a question is in the edges, not the
+ranking. Six hits typically sit next to a hundred directly connected notes.
 
 ```bash
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<the question>", mode: SEMANTIC, limit: 6) { similarity matchedBy node { documentId title description content noteType status documentType } } }' --format json > /tmp/hits.json
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<the question>", mode: SEMANTIC, limit: 6) {
+  similarity matchedBy
+  node { documentId title description content noteType status documentType }
+  related(limit: 6) { documentId title description noteType hitCount via { from to linkType reason confidence } }
+} }' --format json > /tmp/hits.json
 ```
 
-**Call 2 — the neighbourhood of the top 3, and the MoC map, in ONE request.** Substitute the three ids from call 1:
+How to read `related`:
+
+- Ranked by `hit similarity x link-type weight`, summed over every edge, so a
+  note **several** hits point at outranks one only a single hit points at.
+  `hitCount` is how many — treat a high `hitCount` as the vault agreeing.
+- `via` is always written **source → target**, so there is no direction to
+  decode, and carries the edge's `reason` when the author gave one.
+- **`CONTRADICTS` / `SUPERSEDES` in `via` is a finding, not a footnote.** It
+  means a hit is disputed or stale. Say so and cite both sides rather than
+  reporting the hit as settled — this is the case where ignoring the
+  neighbourhood produces a WRONG answer, not merely a thin one.
+- A `CORE_IDEA` edge **into** a hit is the MoC that owns it: name the cluster
+  so the user can explore around the answer.
+- An `INVOLVES` edge is a tension involving the note — read it (`docs get`)
+  and report its status.
+- Selecting `related` costs the same two queries however many hits you select
+  it on, and nothing if you do not select it.
+
+### Going deeper (only when the single call leaves a specific gap)
+
+Aliases let one request fan out across several notes. Substitute ids from the
+search above:
 
 ```bash
 switchboard query '{
@@ -96,14 +126,21 @@ switchboard query '{
 }' --format json > /tmp/ctx.json
 ```
 
-What that gives you, and how to use it:
+Reach for this only when `related` did not answer the gap:
 
-- **`content` of the 6 hits** — quote the notes' own words; cite each by `documentId`.
-- **`out*` / `in*` edges** — `CONTRADICTS` edges are findings (say so and cite both sides); `BUILDS_ON` / `SUPERSEDES` tell you which claim is current. A `CORE_IDEA` **backlink** is the MoC that owns the note — resolve its title from `mocs` and tell the user which cluster the answer lives in, so they can explore around it. An `INVOLVES` **backlink** is a tension that involves the note: the claim is contested — read the tension (`docs get`) and report its status.
-- **`sim*`** — notes that say similar things without a link: candidates for a follow-up, or for `/connect`.
-- If a hit is a MoC (`status = "MOC"`), its `content` is the orientation — a ready-made summary of the whole cluster; mention it and its `CHILD_MOC` children rather than re-deriving.
+- **`sim*`** — notes that say similar things **without** a link. `related`
+  cannot surface these, because there is no edge to follow: they are
+  candidates for a follow-up question, or for `/connect`.
+- **`mocs`** — the MoC map, when you need a title for a cluster `related`
+  referenced by id.
+- If a hit is a MoC (`status = "MOC"`), its `content` is the orientation — a
+  ready-made summary of the whole cluster; mention it and its `CHILD_MOC`
+  children rather than re-deriving.
+- `knowledgeGraphNodeByDocumentId` on a neighbour for its full text, or
+  `knowledgeGraphConnections(depth: 2)` for a two-hop walk.
 
-Only go deeper (`knowledgeGraphNodeByDocumentId` on a neighbour, `knowledgeGraphConnections(depth: 2)`) when the first two calls leave a specific gap. `topics` is a per-node resolver (one server-side query per row): one whole-vault fetch per run is fine, but do not select it inside a per-hit loop.
+`topics` is a per-node resolver (one server-side query per row): one
+whole-vault fetch per run is fine, but do not select it inside a per-hit loop.
 
 ## Search tiers (try in order)
 
@@ -112,9 +149,10 @@ Only go deeper (`knowledgeGraphNodeByDocumentId` on a neighbour, `knowledgeGraph
 When the user asks a question or uses natural language (e.g., "how does storage work?", "notes about legal setup"), use `knowledgeGraphSemanticSearch` (package ≥ 1.0.50). Pass the question as-is — the server embeds it and ranks by meaning, and falls back to keyword search transparently if embeddings are unavailable:
 
 ```bash
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<natural language question>", mode: SEMANTIC, limit: 10) { similarity matchedBy node { documentId title description noteType status topics } } }'
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "<natural language question>", mode: SEMANTIC, limit: 10) { similarity matchedBy node { documentId title description noteType status } related(limit: 5) { title noteType hitCount via { linkType reason } } } }'
 ```
 
+- Add `related` whenever the user wants an answer rather than a list — see *Rich context in ONE call* above.
 - `similarity` is **always a 0–1 relevance**, monotonic with result order — safe to show as a percentage or threshold on in either mode (package ≥ 1.0.52).
 - `mode: SEMANTIC` — pure vector ranking; `similarity` is cosine (>0.8 strong match)
 - `score` is the RAW value (cosine, or an ordinal RRF weight topping out near 0.033) — **never display `score` as a percentage**.

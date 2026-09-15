@@ -96,9 +96,28 @@ Find note pairs (A, B) that both connect to C but not to each other. These are s
 Use `knowledgeGraphTriangles` query. For each triangle, suggest a link type and articulation.
 
 ### Bridges (Critical Nodes)
-Find notes whose removal would disconnect parts of the graph. These need extra verification and connection redundancy.
+Find notes whose removal would split the graph into more pieces — the ones
+holding two clusters together.
 
-Use `knowledgeGraphBridges` query. Recommend adding redundant links to reduce single-point-of-failure risk.
+Use `knowledgeGraphBridges`. **Needs write access** (it answers what
+structural work needs doing, which is a curation question). One DFS pass —
+Tarjan, O(V+E) — so it is an ordinary read to run, not something to avoid.
+
+Reading the result:
+
+- **A bridge is a weakness, not an asset.** The fix is a second, independent
+  link between the two regions so the note stops being the only path — not
+  protecting the bridge.
+- It is **not** "most connected". A note with 100 links inside one dense
+  cluster is not a bridge; a note with 2 links is, if those are the only path
+  between two halves.
+- **Check before archiving.** Retiring a bridge strands whatever sits behind
+  it. `SUPERSEDES` + `ARCHIVE_NOTE` on a bridge silently orphans a subgraph.
+- A MoC near the top of the list is expected — a hierarchy is bridges by
+  design. Notes near the top are the finding: each is a claim whose only
+  route into the vault runs through one other note, so it satisfies
+  "2+ connections" on paper but not independently. That is the `/connect`
+  backlog.
 
 ### Topic Landscape
 Use `knowledgeGraphTopics` to see the full topic distribution. Identify:

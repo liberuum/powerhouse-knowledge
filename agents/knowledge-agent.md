@@ -11,7 +11,7 @@ tools:
   - WebFetch
   - Agent
 ---
-<!-- GENERATED from AGENT.md (sha256:d820992be05509c7) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:8ed7ec5331f565f7) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -294,12 +294,28 @@ question in plain natural language — the Switchboard embeds the query
 server-side and ranks by meaning, falling back to keyword search
 transparently if embeddings are unavailable, so it is always safe to call.
 
-**To answer a question, fetch context in two calls, not twenty.** The node type carries `content`, so one search returns the full text of the best hits; a second aliased query pulls the neighbourhood of the top ones. The recipe is in [skills/search/SKILL.md](skills/search/SKILL.md) § *Rich context in two calls*.
+**Search returns the graph around its results.** Select `related` and one
+call gives you the best notes AND what they connect to — the neighbourhood
+that used to take a second aliased query. Most of what the vault knows about
+a question lives in the edges, not in the ranking: six hits typically sit
+next to a hundred directly connected notes.
 
 ```bash
-# DEFAULT: SEMANTIC. Select content when you need to answer, not just list.
-switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: SEMANTIC, limit: 6) { similarity node { documentId title description content noteType status } } }'
+# DEFAULT: SEMANTIC, with the neighbourhood. Select content when you need to
+# answer, not just list.
+switchboard query '{ knowledgeGraphSemanticSearch(driveId: "<UUID>", query: "how does the reactor store operations?", mode: SEMANTIC, limit: 6) { similarity node { documentId title description content noteType status } related(limit: 5) { title description noteType hitCount via { linkType reason } } } }'
 ```
+
+- `related` is ranked by `hit similarity x link-type weight`, summed over
+  every edge, so a note SEVERAL results point at outranks one only a single
+  result points at — `hitCount` tells you how many. `via` is written
+  source → target, so there is no direction to decode, and carries the
+  edge's `reason` when it has one.
+- **A `CONTRADICTS` or `SUPERSEDES` in `via` is a finding, not a footnote.**
+  It means a hit is disputed or stale; say so and cite both sides rather
+  than reporting the hit as settled.
+- Costs the same two queries no matter how many hits you selected it on, and
+  nothing if you do not select it.
 
 - `similarity` is **always a 0–1 relevance** and always decreases down the result list, so it is safe to render as a percentage or threshold on in either mode (package ≥ 1.0.52).
 - **Asking how two things relate? Search the narrower one alone.** Naming both pulls the
@@ -739,7 +755,7 @@ All queries take `driveId: "<UUID>"` (a slug is also accepted). Seven kinds are 
 | `knowledgeGraphConnections(documentId, depth)`                                                                                                              | BFS over outgoing edges                                                                                                                                                                                                                                                          |
 | `knowledgeGraphEdges` / `knowledgeGraphNodes`                                                                                                               | The whole graph in one call each — cheaper than N queries when scanning                                                                                                                                                                                                          |
 | `knowledgeGraphStats` / `knowledgeGraphDensity` / `knowledgeGraphOrphans`                                                                                   | Per-kind counts (`noteCount`, `mocCount`, `openTensionCount`, …; `nodeCount` is the total), density over knowledge nodes, zero-incoming notes/MoCs/claims                                                                                                                        |
-| `knowledgeGraphTriangles(limit)` / `knowledgeGraphBridges`                                                                                                  | Synthesis opportunities / articulation points (bridges is O(V·E) — avoid on large vaults)                                                                                                                                                                                        |
+| `knowledgeGraphTriangles(limit)` / `knowledgeGraphBridges`                                                                                                  | Synthesis opportunities / articulation points — the notes holding two clusters together, and what archiving one would strand. One DFS pass (Tarjan), O(V+E). **`bridges` needs write access**: it answers what structural work needs doing, which is a curation question |
 | `knowledgeGraphByAuthor(author)` / `knowledgeGraphByOrigin(origin)` / `knowledgeGraphRecent(limit, since)`                                                  | Provenance and recency                                                                                                                                                                                                                                                           |
 | `knowledgeGraphStale(since, limit)` / `knowledgeGraphHistory(documentId)` / `knowledgeGraphActivity(since)` / `knowledgeGraphActivityByType(operationType)` | Change tracking. Each `OperationRecord` carries `inputJson` (what changed), `signerAddress`, `signerApp`, `signerKey` (did:key) and `signature` — the stored tuple, verifiable by any reader (ECDSA P-256 over `"\x19Signed Operation:\n"+len+timestamp+did+hash+prevStateHash`) |
 | `knowledgeGraphMissingEmbeddings`                                                                                                                           | Should be `[]`; otherwise semantic search is degraded                                                                                                                                                                                                                            |

@@ -42,7 +42,7 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 |---|---|---|---|
 | `GET` | `ping` | — | `{ ok, subgraph, user }` |
 | `GET` | `drives` | — | `{ drives: [{ id, name, slug, nodes }] }`, knowledge-vault drives only |
-| `GET` | `search` | `drive`, `q`, `mode=semantic` (the only mode), `limit` (≤25), `content=1`, `includeArchived=1` | `{ query, mode, hits: [{ similarity, score, matchedBy, node }] }` |
+| `GET` | `search` | `drive`, `q`, `mode=semantic` (the only mode), `limit` (≤25), `related` (default 10, max 50, `0` off), `content=1`, `includeArchived=1` | `{ query, mode, hits: [{ similarity, score, matchedBy, node }], related, links, expansion }` — **expansion is ON by default**; see below |
 | `GET` | `notes/:id` | `drive` | `{ id, name, documentType, state, edges }` |
 | `GET` | `notes/:id.md` | `drive` | markdown with YAML frontmatter |
 | `GET` | `notes/:id/similar` | `drive`, `limit` | semantic neighbours |
@@ -78,7 +78,7 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 |---|---|---|---|
 | `GET` | `activity` | `canWrite` | audit log; `since`, `limit` |
 | `GET` | `notes/:id/history` | `canWrite` | that note's operations, with signer |
-| `GET` | `bridges` | `canManage` | articulation points (O(V·E)) |
+| `GET` | `bridges` | `canWrite` | articulation points — notes whose removal would split the graph (Tarjan, O(V+E)) |
 | `GET` | `access-map` | `canManage` | grants and protections |
 
 ### Write
@@ -94,11 +94,46 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 | `POST` | `tasks/:id/claim` | `drive`; `{ assignedTo? }` | `{ taskId, assignedTo }`; `409` if already assigned |
 | `POST` | `admin/reindex` | `drive`; needs `canManage` | `{ indexedNodes, indexedEdges, errors }` |
 
+## Search returns the graph around its results
+
+`GET search` expands its hits by one hop **by default**, so a single call
+tells you not just which notes match but what they connect to and how. Most
+of what the vault knows about a question is in the edges, not the ranking.
+
+```jsonc
+{
+  "hits":  [ { "similarity": 0.96, "node": { … } } ],
+  "related": [                      // ranked nodes ONE link from the hits
+    { "documentId": "…", "title": "…", "description": "…", "noteType": "concept",
+      "hitCount": 3,                // how many hits point at it — convergence is signal
+      "via": [ { "from": "<hit>", "to": "<this>", "linkType": "BUILDS_ON",
+                 "reason": "…", "confidence": "grounded" } ] }
+  ],
+  "links": [ … ],                   // edges BETWEEN the hits
+  "expansion": { "hops": 1, "relatedTotal": 105, "relatedShown": 10, "truncated": true }
+}
+```
+
+- `via` is written **source → target**, so there is no direction to decode.
+- **A `CONTRADICTS` or `SUPERSEDES` in `via` is a finding.** It means a hit is
+  disputed or stale — say so and cite both sides. The markdown rendering puts
+  a `**Caution:**` line above the list when any are present.
+- `related=0` turns expansion off; max 50.
+- `Accept: text/markdown` renders the whole thing — hits, how they connect to
+  each other, and the related notes with the edge that reached each one — as
+  a digest meant to be read directly.
+
 ## Examples
 
 ```bash
-# search, with note bodies
-curl -s -H "$AUTH" "$BASE/search?drive=$DRIVE&q=how+does+sync+work&mode=semantic&limit=6&content=1"
+# search: hits plus the connected notes, as JSON
+curl -s -H "$AUTH" "$BASE/search?drive=$DRIVE&q=how+does+sync+work&limit=6&related=8&content=1"
+
+# the same as a markdown digest — the most useful form if you are answering
+curl -s -H "$AUTH" -H 'accept: text/markdown' "$BASE/search?drive=$DRIVE&q=how+does+sync+work&limit=4"
+
+# ranking only, no expansion
+curl -s -H "$AUTH" "$BASE/search?drive=$DRIVE&q=how+does+sync+work&limit=6&related=0"
 
 # a note and its edges, one call
 curl -s -H "$AUTH" "$BASE/notes/$ID?drive=$DRIVE"
