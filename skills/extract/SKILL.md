@@ -124,13 +124,35 @@ switchboard docs apply <new-note-id> --file /tmp/note-content.json
 switchboard docs mutate <new-note-id> --op setProvenance --input '{"author": "<agent-name>", "sourceOrigin": "DERIVED", "createdAt": "<ISO>"}'
 ```
 
-**One batch is fine — but read it back.** Verified on the current stack: `docs apply` applies actions in order and isolates failures per action — an invalid `sourceOrigin` is recorded with its error and skipped while title, description, content and topics still land. So `SET_PROVENANCE` can ride in the same batch as the content (one round trip per note). The catch is that the job still reports success: after the apply, `docs get --state` and confirm `title`, `description` (≤ 200), lowercase `noteType`, `topics`, and `provenance.sourceOrigin` are all present. A missing field means that one action was rejected — fix and re-dispatch just that action.
+**One batch, then ask the job what happened.** `docs apply` runs actions in
+order and isolates failures per action: a rejected one is recorded with its
+error and skipped while the rest land. So `SET_PROVENANCE` rides in the same
+batch as the content — one round trip per note.
+
+The job now tells you which actions applied. `docs apply` prints a `jobId`;
+ask it (stack ≥ 6.2.3-dev.10):
+
+```bash
+switchboard query '{ jobStatus(jobId: "<id>") { status result } }'
+# result.allApplied is false when any action was rejected, and
+# result.actions names each one: {"kind":"reducer-error","message":"Description exceeds 200 characters"}
+```
+
+That replaces re-reading the whole document to infer what went wrong — it
+names the action and quotes the reducer. On an older stack, or to confirm the
+final shape anyway, `docs get --state` and check `title`, `description`,
+lowercase `noteType`, `topics` and `provenance.sourceOrigin`.
 
 **Lint the actions file before dispatching it — never estimate a length.** `node scripts/lint-actions.mjs /tmp/acts-<id>.json && switchboard docs apply <id> --file /tmp/acts-<id>.json`. It counts the description the way the reducer does (UTF-16 units; an emoji is 2, Python's `len()` undercounts), rejects a `noteType` outside the ten lowercase values, an invalid `sourceOrigin`, and double-encoded newlines — each with the JSON path — so a rejected action never costs a round trip. The description limit (≤ 200) is the **only** hard length limit in any model; titles are unlimited, and so is every field on other document types.
 
 **CRITICAL: the body must hold real line breaks before it is JSON-encoded — encode once, read back.** The bug is *double encoding*: a bash `"\n"` is two characters; a script that JSON-encodes that argument escapes the backslash again; the note is stored with the text `\n` between paragraphs and the write reports success. Write the body in a file or heredoc (or compose it inside Python), serialize once, `docs apply --file`, then `docs get --state` and confirm `content` has real newlines and no `\n`. Switchboard CLI ≥ 1.0.32 refuses such payloads and names the field; do not reach for `--allow-literal-escapes` to get past it.
 
-**CRITICAL: Every note MUST have a description.** Descriptions enable progressive disclosure (title -> description -> content). A note without a description fails health checks and is invisible to scanning workflows. The description should be ~150 chars and add information beyond the title. **Max 200 characters** — longer descriptions silently fail and the entire batch is rejected.
+**Every note MUST have a description.** It carries the middle layer of
+progressive disclosure (title → description → content); a note without one
+fails health checks and is invisible to scanning workflows. Aim for ~150
+characters and say something the title does not. A rejected `SET_DESCRIPTION`
+costs only itself — the note is created with every other field set and no
+description — which is why the limit is linted before dispatch, above.
 
 ### Step 4b: Populate the structured metadata — in the same batch
 
@@ -294,16 +316,16 @@ These ten lowercase values are the canonical set (the note editor's type select)
 - [ ] Metadata populated for what the source supports — at least `confidence`, plus the type-specific fields (a code-derived `bug-pattern` with `Metadata (0)` is under-extracted)
 - [ ] `noteType` is one of the ten lowercase values (never `CONCEPT`)
 - [ ] Content read back contains real line breaks (no literal `\n`) — the classic shell-interpolation bug
-- [ ] Description ≤ 200 UTF-16 units — assert it **where the note is written**, not after dispatch; em dashes and arrows push a description over the line invisibly. Also checked by `lint-actions.mjs`, not by eye (an over-long one is rejected and the note is left with no description while the batch reports success)
+- [ ] Description ≤ 200 UTF-16 units — assert it **where the note is written**, not after dispatch; em dashes and arrows push one over the line invisibly, and Python's `len()` undercounts what the reducer counts. `lint-actions.mjs` checks it
 - [ ] One `DERIVED_FROM` edge per note (`switchboard docs link <note> <source> -t DERIVED_FROM --reason "<where in the source>" --confidence grounded`) — this is how `/health` finds a note's source; the source's `extractedClaims` alone is not traversable from the note, and the reason is how anyone checks the claim against it
 - [ ] Provenance traces back to the source (sourceOrigin: DERIVED)
 - [ ] Skip rate < 10% for domain-relevant content — and a **high** rate is the finding on a source that is mostly not claims. Report it with the reasoning per file (`claims`, `skipped`, and one line of why), because a fabricated zero hides what the source actually was. A 57% rate across a corpus of tutorials, cloud-vendor walkthroughs and a chronological changelog is honest; the same number on a reference page means the reading was shallow
 - [ ] **Zero yield is a real outcome, and it is not INBOX.** A source read end to end that honestly yields nothing (a glossary, a click-by-click tutorial, an index stub) gets `RECORD_EXTRACTION_STATS` with `claimCount: 0` and the reasoning, then status `EXTRACTED`. Leaving it INBOX claims it was never processed
 - [ ] **Check the code before asserting what a document says.** Where a doc and the tree disagree, the disagreement is the most valuable note on that source — name which is authoritative and how you checked (`git grep` at the tag). Five such divergences came out of one repository pass; each is worth an upstream fix
 - [ ] **All created notes verified in drive tree** — read the drive after creation and confirm each note exists as a file node
-- [ ] **Every field read back after the batch** — title, description, noteType, topics, provenance; a rejected action leaves its field untouched while the job reports success
+- [ ] **`result.allApplied` checked after the batch** — `jobStatus(jobId:)` names any rejected action and quotes the reducer; a rejected action leaves its field untouched while the other actions land
 - [ ] Source closed out: `ADD_EXTRACTED_CLAIM` per note, `RECORD_EXTRACTION_STATS`, status `EXTRACTED`
-- [ ] **Re-running a close-out must not grow `extractedClaims`.** The operation is idempotent on `claimRef` in the Source model from `@powerhousedao/knowledge-note` 1.0.54-dev.6 onward, but an older deployment appends blindly, so a re-sync silently records the same note two, three or four times and the source then overstates its own yield. Guard with a read-back before adding, and repair an existing list with `REMOVE_EXTRACTED_CLAIM` (which strips *every* occurrence) followed by one `ADD_EXTRACTED_CLAIM`. Probe the fix on the smallest source first and read it back: on a deployment whose reducer removes only the first occurrence, one remove-then-add leaves the duplicates behind.
+- [ ] **Re-running a close-out must not grow `extractedClaims`.** `ADD_EXTRACTED_CLAIM` is idempotent on `claimRef` from `@powerhousedao/knowledge-note` 1.0.54-dev.6 onward. On anything older it appends blindly and the source overstates its own yield, so check the deployed version before a re-sync; repair a duplicated list with `REMOVE_EXTRACTED_CLAIM` then one `ADD_EXTRACTED_CLAIM`.
 - [ ] Handoff recorded with `ADVANCE_PHASE` (phase `create`); connecting, MoC attachment and the walk to `CANONICAL` happen in the reflect/reweave/verify phases — see AGENT.md § Definition of done for the full per-note list
 
 If "$ARGUMENTS" is provided, treat it as the source document ID to extract from.
