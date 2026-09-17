@@ -12,183 +12,139 @@ description: Run verification checks on knowledge notes — recite test, schema 
 > drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
 > drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
-Three-part verification combining cold-read prediction, schema compliance, and link health. **Automatically repairs fixable issues.**
+The quality gate. Verification is **simulated use, not static linting**: you
+test whether a note works as a claim, whether its description lets a reader
+find and filter it, and whether its edges carry reasoning — then repair what
+you can state the fix for, report what needs the source or a human, and walk
+the survivors to `CANONICAL`. Read every field back; a dispatch is not a fact.
 
-## Verification process
+## The checks
 
-### 1. Recite Test (Description Quality)
+Read the note (`GET notes/:id` — title, description, content, edges) and run,
+in order:
 
-Read ONLY the title and description of the note. Without reading the content, predict what the note contains. Then read the actual content and compare:
-- **PASS**: Your prediction closely matches the actual content
-- **WARN**: Prediction partially matches — description may need sharpening
-- **FAIL**: Prediction doesn't match — title or description is misleading
+**1. Claim test — is the title a claim?** Three tests: does it complete *"This
+note argues that …"*; does it work as a clause (*"Since [title], …"*); is it a
+positive assertion, not a question or topic label. A failure is not a weak
+note, it is not a note: rewrite the title if the content holds one claim,
+split if it holds several, propose archiving if it holds none (an excerpt, a
+heading, a caption). Never "repair" this by improving the description.
 
-### 2. Schema Validation
+**2. Recite test — does the description work as a filter?** Read **only** title
+and description, predict the content, then read the content and score:
 
-Check the note has all expected fields populated:
-- [ ] Title is a prose sentence making one claim
-- [ ] **Description exists and is ~150 chars** (adds info beyond title)
-- [ ] Note type is set and appropriate
-- [ ] Content is substantive (not empty or stub)
-- [ ] **Provenance is set** (author, sourceOrigin, createdAt)
-- [ ] At least one topic tag
-- [ ] Status is appropriate for the note's maturity
+| Score | Meaning | Action |
+|---|---|---|
+| 5 | Prediction matched — description excellent | — |
+| 4 | Core captured, details missed | — |
+| 3 | Right area, key aspect missed | sharpen if cheap |
+| 2 | Significant mismatch | **rewrite** |
+| 1 | Prediction wrong — description misleads | **rewrite** |
 
-### 3. Health Checks
+A description that paraphrases the title always scores low: it adds no
+mechanism, scope or implication to predict from. Name the missing layer — what
+holds / why / so what — and rewrite that. Titles and descriptions that could
+belong to several notes fail the distinctiveness half of the test.
 
-- [ ] **Link density**: Note has >= 2 links (read from `knowledgeGraphForwardLinks` / `knowledgeGraphBacklinks`, not the note's `links[]`)
-- [ ] **Not an orphan**: at least one **incoming** edge. An orphan is a node with zero incoming knowledge edges — this is what `knowledgeGraphOrphans` returns; outgoing links do not make a note non-orphan
-- [ ] **Real line breaks**: `content` contains no literal `\n` sequence (see repair below)
-- [ ] **Link resolution**: every `targetDocumentId` in the note's forward edges points to an existing document
-- [ ] **Link articulation**: every knowledge edge out of the note (`RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES`, `DERIVED_FROM`) carries a `reason` (`knowledgeGraphForwardLinks { targetDocumentId linkType reason confidence }`). A bare edge is a WARN on the note, not a FAIL — but it is never silently PASS
-- [ ] **Topic coverage**: Note belongs to at least one topic
-- [ ] **Description length**: Between 80-200 characters
-- [ ] **Content length**: At least 200 characters of substantive prose
-- [ ] **Methodology grounding**: Note content includes a "Methodology grounding" section referencing at least one research claim from the plugin's `data/methodology/` files
+**3. Schema.** Title; description present and 80–200 UTF-16 units; `noteType`
+set (the enum makes a wrong value impossible, so only *missing* is a finding); substantive content (≥ 200 chars of argument, not a
+stub); provenance (`author`, `sourceOrigin`, `createdAt`); ≥ 1 topic;
+`confidence` metadata; type-specific metadata where the source could have
+supplied it (extract § *Metadata by noteType*); status appropriate to maturity.
 
-## Auto-repair (fix before reporting)
+**4. Graph** — from `knowledgeGraphForwardLinks` / `Backlinks`, never the note's
+legacy `links[]`:
+- ≥ 2 knowledge edges, and ≥ 1 **incoming** (an orphan is a node with zero incoming edges; outgoing links do not fix it);
+- every knowledge edge (`RELATES_TO` `BUILDS_ON` `CONTRADICTS` `SUPERSEDES` `DERIVED_FROM`) has a `reason` that passes the specificity test — a sentence that could describe any pair is a bare edge in disguise — and a `confidence`;
+- every `targetDocumentId` resolves;
+- one `DERIVED_FROM` to a source whose reason names the locus;
+- a `CORE_IDEA` edge from at least one MoC;
+- `content` holds real line breaks, no literal `\n`.
 
-When verification finds fixable issues, **repair them immediately** instead of just reporting:
+**5. Grounding** — only for notes whose claim is about knowledge work, agent
+cognition or retrieval (connect § *Grounding*). An in-scope note without a
+`## Grounding` section is a WARN; an out-of-scope note without one is nothing.
 
-### Literal `\n` in content (double-encoded line breaks)
+## Repair — fix what you can state, report what you cannot
 
-Symptom: `content` contains the two characters `\n` (and no real newlines) — the note renders as one run-on line. Detect across the vault in one call, then repair with a real serializer:
+You are the judgment the methodology reserves for remediation, so fix when you
+have read the note and can state the correct value; report when the fix needs
+the source re-read, a human decision, or would change what the note claims.
+
+| Finding | Fix |
+|---|---|
+| Failed claim test | Rewrite the title (one claim), split (several), or report for archiving (none). Say which in the report |
+| Recite < 3 | Rewrite the description from the content, adding the missing layer; count in UTF-16 (`len(s.encode("utf-16-le"))//2`, or lint) |
+| Missing description | Usually an over-long attempt the reducer rejected. Write one ≤ 200 from title + content |
+| Missing provenance | Take `author` and `createdAt` from the document's operation history (who created it, when) — not "now", not a guessed origin. `sourceOrigin` = `DERIVED` only if a `DERIVED_FROM` edge or `extractedClaims` entry exists; else `IMPORT` or `MANUAL` as the history shows |
+| Missing `noteType` | Infer from the content, write the `NoteType` enum value (`CONCEPT`, `BUG_PATTERN`, …) |
+| Missing topics | From the content and the vault's existing vocabulary; read `topics[]` back first |
+| Bare edge | Read both notes; `docs annotate` with the sentence, or `docs unlink` if you cannot complete it. Count both (`articulated: N, unlinked: M, left bare: K`) |
+| Literal `\n` | Replace in Python (`s.replace(chr(92)+'n', chr(10))`), one `SET_CONTENT` via `--file`, read back. Never in bash — that is how the bug is made |
+| Fewer than 2 edges / orphan | Run `/connect` on the note |
+| No `CORE_IDEA` | Run `/synthesize` for its topic |
+
+Repair follows the creation contract (extract § *Field contract*), with four
+reducer behaviours that bite edits specifically:
+
+- `SET_PROVENANCE` may correct `author`/`sourceOrigin`, but `provenance.createdAt` is immutable — pass the existing value back or the action is rejected (`ProvenanceCreatedAtImmutableError`). The note's top-level `updatedAt` is stamped by every op, so batch order no longer matters.
+- `confidence` (`grounded|established|speculative`), `severity` (`critical|warning|info`) and `decisionStatus` (`proposed|accepted|rejected|superseded`) are closed vocabularies — `InvalidMetadataValueError` otherwise.
+- `ADD_TOPIC` throws `DuplicateTopicError` on an existing **name**; `REMOVE_TOPIC` matches **id**.
+- `SET_CONTENT` replaces the whole body — read it back first, edit, send the whole thing.
+- A description > 200 UTF-16 units is rejected and the field left as it was.
+
+Vault-wide detection is one graph call, not N reads:
 
 ```bash
-switchboard query '{ knowledgeGraphNodes(driveId: "<UUID>") { documentId status content } }' --format json \
+switchboard query '{ knowledgeGraphNodes(driveId: "<UUID>") { documentId status description content } }' --format json \
   | python3 -c "
 import json,sys; d=json.load(sys.stdin); d=d.get('data',d)['knowledgeGraphNodes']
-bad=[n['documentId'] for n in d if n['status']!='MOC' and (n['content'] or '').count(chr(92)+'n')>0]
-print(len(bad),'notes with literal backslash-n'); print(chr(10).join(bad))"
+notes=[n for n in d if n['status'] not in ('MOC','SCOPE','WBS')]
+print(len([n for n in notes if not n['description']]),'without description;',
+      len([n for n in notes if (n['content'] or '').count(chr(92)+'n')]),'with literal backslash-n')"
 ```
 
-Repair each: read the content, replace the two-character sequence with a newline **in Python** (`s.replace(chr(92)+'n', chr(10))`), `json.dump` a single `SET_CONTENT` action to a file, `docs apply --file`, and read back. Never do the replacement in bash — that is how the bug is made.
+## Record the verdict on the note
 
-### Over-long description (rejected on write)
-
-A description over 200 characters never reaches state — the reducer rejects it and the note is left with whatever description it had before (often none), while the batch reports success. So an "empty description" on a note whose extraction clearly produced one is usually this. When repairing, **count the way the reducer does**: JavaScript `.length` (UTF-16 units). In Python use `len(s.encode("utf-16-le")) // 2`, not `len(s)` — an emoji is 2 units, and `len()` undercounts it. Or run `node scripts/lint-actions.mjs` on the repair file before applying it.
-
-### Missing description
-Generate a description from the title and content, then dispatch:
-```bash
-switchboard docs mutate <note-id> --op setDescription --input '{"description": "<generated ~150 char summary>", "updatedAt": "<ISO>"}'
-```
-
-### Missing provenance
-```bash
-switchboard docs mutate <note-id> --op setProvenance --input '{"author": "knowledge-agent", "sourceOrigin": "DERIVED", "createdAt": "<ISO>"}'
-```
-
-### Missing note type
-Infer the type from content and set it:
-```bash
-switchboard docs mutate <note-id> --op setNoteType --input '{"noteType": "<inferred-type>", "updatedAt": "<ISO>"}'
-```
-
-### Missing methodology grounding
-Search the plugin's local methodology files (`data/methodology/*.md`) by keywords from the note's title and topics. Use the Grep tool to find matching claims by title, description, or topic overlap.
-
-If a relevant claim is found, append a "Methodology grounding" section to the note's content:
+- **Epistemic confidence**: set or correct `confidence` (`grounded` | `established`
+  | `speculative`) from what you found — a claim you checked against its source
+  or the code is `grounded`; one that rests on the author's word is `established`.
+- **Lifecycle**: a note that passes walks to `CANONICAL` — `SUBMIT_FOR_REVIEW`
+  (from `DRAFT`), then `APPROVE_NOTE` **as a different actor** from
+  `provenance.author` (`SelfApprovalError` otherwise; approval is legal only
+  from `IN_REVIEW`). A note that fails and cannot be repaired stays `DRAFT` with
+  the reason in the report. `ARCHIVE_NOTE` is legal only from `CANONICAL`.
 
 ```bash
-switchboard docs mutate <note-id> --op setContent --input '{
-  "content": "<existing content>\n\n## Methodology grounding\n- **[[claim title]]** — how this note relates to the claim (BUILDS_ON)",
-  "updatedAt": "<ISO>"
-}'
+switchboard docs apply <note-id> --actions '[
+  {"type":"SUBMIT_FOR_REVIEW","input":{"id":"<uuid>","actor":"<agent>","timestamp":"<ISO>"},"scope":"global"},
+  {"type":"APPROVE_NOTE","input":{"id":"<uuid>","actor":"<reviewer ≠ author>","timestamp":"<ISO>","comment":"recite 5/5; 3 reasoned edges; DERIVED_FROM checked against § 4"},"scope":"global"}
+]'
 ```
 
-### Missing topics
-Identify key topics from the content and add them:
-```bash
-switchboard docs mutate <note-id> --op addTopic --input '{"id": "<unique-id>", "name": "<topic>"}'
-```
-
-### Bare edges (a link with no reason)
-
-Read both notes; if the connection is real, write the sentence onto the edge —
-this is the one repair in this skill that needs judgment, so it is repaired
-only when you can actually state the reason:
-
-```bash
-switchboard docs annotate <note-id> <target-id> -t BUILDS_ON \
-  --reason "<note> extends <target>'s claim about X to Y" --confidence established
-```
-
-If, having read both, you cannot complete "A connects to B because …", the
-edge fails the articulation test: `docs unlink` it and say so in the report.
-Never write a reason that restates the type or the two titles to turn the
-WARN green — an unarticulated edge honestly reported beats a fake sentence.
-Count both outcomes in the summary (`articulated: N, unlinked: M, left bare: K`).
-
-## Batch verification
-
-When verifying all notes in the vault (no specific note targeted):
-
-1. Read all knowledge notes from the drive
-2. For each note, run the three checks
-3. **Auto-repair all fixable issues first**
-4. Report only issues that require human judgment (recite test failures, content quality)
-
-```bash
-# Use the subgraph to quickly find problem notes
-switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title } }'
-```
-
-## Output format
+## Report
 
 ```
-=== VERIFICATION REPORT ===
+=== VERIFICATION ===
+Verified: N notes | Repaired: N (M descriptions, P provenance, Q types, R topics)
+Edges: N articulated, M unlinked (failed articulation), K left bare
+Lifecycle: N → CANONICAL, M left DRAFT
 
-Verified: N notes
-Auto-repaired: N issues (M descriptions, P provenance, Q types)
-Edges: N articulated (docs annotate), M unlinked (failed the articulation test), K left bare
+"<title>"
+  Claim:   PASS | FAIL — <which test>
+  Recite:  5..1 — <missing layer>
+  Schema:  PASS | repaired: <what> | FAIL — <what>
+  Graph:   PASS | WARN — <what>
+  Action:  <what remains for a human>
 
-Note: "<title>"
-  Recite:   PASS | WARN | FAIL — <explanation>
-  Schema:   PASS (auto-repaired: added description) | FAIL — <issues>
-  Health:   PASS | WARN | FAIL — <issues>
-  Overall:  PASS | WARN | FAIL
-  Action:   <what to fix if not PASS>
-
-Summary:
-  PASS: N | WARN: N | FAIL: N
-  Remaining issues: <list of issues requiring human action>
+Remaining: <findings that need the source or a decision>
 ```
 
-## Recording verification
-
-After verification, update confidence based on results:
-```bash
-switchboard docs mutate <note-id> --op setMetadataField --input '{"field": "confidence", "value": "grounded|established|speculative", "updatedAt": "<ISO>"}'
-```
-
-## Pipeline integration
-
-When verify runs as part of the pipeline (phase 4), record a handoff. **Batch it with any other queue ops if you like — `docs apply` preserves order and isolates failures — then read the task back to confirm the phase advanced:**
-```bash
-switchboard docs mutate <pipeline-queue-id> --op advancePhase --input '{
-  "taskId": "<task-id>",
-  "handoff": {
-    "id": "<unique-id>",
-    "phase": "verify",
-    "workDone": "Verified N notes. Auto-repaired M issues. N PASS, N WARN, N FAIL.",
-    "filesModified": ["<note-ids>"],
-    "completedAt": "<ISO>",
-    "completedBy": "knowledge-agent"
-  },
-  "updatedAt": "<ISO>"
-}'
-```
+In a pipeline run, `ADVANCE_PHASE` with phase `verify` — the final advance
+completes the task by itself; do not follow it with `COMPLETE_TASK`. `workDone`
+is the closure packet: what passed, what was repaired, what is left and for
+whom. Then run `/powerhouse-knowledge:health` and rewrite the report: the
+dashboard shows the **last** report, and everything this skill repairs is
+something the report grades.
 
 If "$ARGUMENTS" is provided, verify that specific note (by title or document ID).
-
-## After auto-repair: refresh the health report
-
-`/verify --fix` changes exactly the things the health report grades
-(descriptions, provenance, note types, links). The dashboard reads the
-**last** `bai/health-report`, so skipping this step leaves the user
-looking at problems you already fixed.
-
-After any repair, re-run the health check and rewrite the report:
-`/powerhouse-knowledge:health` — see [skills/health/SKILL.md](../health/SKILL.md).
-Verify by reading the report back, not by trusting the dispatch.

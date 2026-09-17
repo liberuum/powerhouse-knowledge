@@ -12,362 +12,204 @@ description: Check remote vault health — orphan notes, dangling links, graph d
 > drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
 > drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
-Run diagnostics against the **remote knowledge vault** via the Switchboard CLI. All data comes from the live reactor — there are no local files to scan. Results are saved to the `bai/health-report` document for the app's HealthDashboard.
+Rethink: measure the vault's structure against what a healthy graph looks like,
+write the snapshot to the `bai/health-report` singleton the dashboard renders,
+and — with `--fix` or from the pipeline — repair what can be repaired, then
+measure again. Detection only reads and is always safe; every grade is derived
+from a measured number, never typed in; every PASS is read back, never assumed.
+**A truthful WARN is worth more than a fabricated PASS.**
 
-## Pre-flight
+## 1. Pre-flight
 
-1. Verify CLI connectivity:
 ```bash
-switchboard config show
-switchboard ping
-```
-
-2. Detect the vault drive (look for `bai/vault-config`):
-```bash
+switchboard config show && switchboard ping
 switchboard drives list --format json | python3 -c "
-import json, sys
-drives = json.load(sys.stdin)
-for d in drives:
-    nodes = d.get('nodes', d.get('state', {}).get('global', {}).get('nodes', []))
-    if any(n.get('documentType') == 'bai/vault-config' for n in nodes):
-        print(f'SLUG={d[\"slug\"]}')
-        print(f'ID={d[\"id\"]}')
-        print(f'NAME={d[\"name\"]}')
-"
+import json,sys
+for d in json.load(sys.stdin):
+    nodes = d.get('nodes', d.get('state',{}).get('global',{}).get('nodes',[]))
+    if any(n.get('documentType')=='bai/vault-config' for n in nodes): print(d['slug'], d['id'], d['name'])"
+switchboard docs tree <drive-slug> --format json      # note the bai/health-report id (/ops/health/) and bai/pipeline-queue id (/ops/queue/)
 ```
 
-3. Get the drive tree and index all documents by type:
-```bash
-switchboard docs tree <drive-slug> --format json | python3 -c "
-import json, sys
-tree = json.load(sys.stdin)
-nodes = tree.get('nodes', [])
-# Index by documentType
-by_type = {}
-for n in nodes:
-    dt = n.get('documentType', n.get('kind', 'unknown'))
-    by_type.setdefault(dt, []).append(n)
-for dt, items in sorted(by_type.items()):
-    print(f'{dt}: {len(items)}')
-"
-```
+## 2. Gather — one request, then compute
 
-Record: note count, MOC count, source count, research claim count, folder UUIDs.
-
-## Step 1: Gather metrics from the subgraph
-
-Run these queries **in parallel** (they are independent):
-
-```bash
-# Graph stats
-switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount noteCount mocCount claimCount tensionCount openTensionCount observationCount articulatedEdgeCount } }'
-
-# Density
-switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
-
-# Orphans
-switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title } }'
-```
-
-## Step 2: Gather everything from the graph in one request
-
-Do **not** read notes one by one with `docs get` — on a 500-note vault that is 500 CLI processes. The graph index carries every field the checks need, MoCs included, and one aliased request returns all of it:
+Do not read notes one by one; the index carries every field the checks need:
 
 ```bash
 switchboard query "{
-  stats:   knowledgeGraphStats(driveId:\"$D\"){ nodeCount edgeCount orphanCount noteCount mocCount claimCount tensionCount openTensionCount observationCount articulatedEdgeCount }
-  density: knowledgeGraphDensity(driveId:\"$D\")
-  orphans: knowledgeGraphOrphans(driveId:\"$D\"){ documentId title noteType status }
-  mocs:    knowledgeGraphNodesByStatus(driveId:\"$D\", status:\"MOC\"){ documentId title noteType }
-  drafts:  knowledgeGraphNodesByStatus(driveId:\"$D\", status:\"DRAFT\"){ documentId }
-  stale:   knowledgeGraphStale(driveId:\"$D\", since:\"<ISO 30 days ago>\", limit:500){ documentId status }
-  nodes:   knowledgeGraphNodes(driveId:\"$D\"){ documentId title description status noteType documentType topics content }
+  stats:    knowledgeGraphStats(driveId:\"$D\"){ nodeCount edgeCount orphanCount noteCount mocCount claimCount tensionCount openTensionCount observationCount articulatedEdgeCount }
+  density:  knowledgeGraphDensity(driveId:\"$D\")
+  orphans:  knowledgeGraphOrphans(driveId:\"$D\"){ documentId title noteType status }
+  mocs:     knowledgeGraphNodesByStatus(driveId:\"$D\", status:\"MOC\"){ documentId title noteType }
+  stale:    knowledgeGraphStale(driveId:\"$D\", since:\"<ISO 30 days ago>\", limit:500){ documentId status }
+  nodes:    knowledgeGraphNodes(driveId:\"$D\"){ documentId title description status noteType documentType topics content }
   tensions: knowledgeGraphNodesByType(driveId:\"$D\", documentType:\"bai/tension\"){ documentId title status }
-  edges:   knowledgeGraphEdges(driveId:\"$D\"){ sourceDocumentId targetDocumentId linkType reason confidence }
+  edges:    knowledgeGraphEdges(driveId:\"$D\"){ sourceDocumentId targetDocumentId linkType reason confidence }
 }" --format json > /tmp/health.json
 ```
 
-Then compute in Python from that one file. The rules that keep the numbers honest:
+Plus the queue and every `bai/source` by id (`docs get --state`) — neither is
+indexed.
 
-- **Count by kind, not by `nodeCount`.** The index holds seven kinds — `documentType` is one of `bai/knowledge-note`, `bai/moc`, `bai/research-claim`, `bai/tension`, `bai/observation`, `powerhouse/scopeofwork` and `bai/wbs` — and `stats` reports each: use `stats.noteCount` for every note metric, never `nodeCount` (the total). `orphans` already excludes tensions and observations (they have nothing pointing at them by design) but still includes MoCs; an orphan MoC is a hierarchy problem, not an orphan note. MoCs are still recognisable by `status = "MOC"` / `noteType = "MOC (<tier>)"` on older indexes that lack `documentType`.
-- **Open tensions** = `stats.openTensionCount` (or `tensions` filtered to `status = "OPEN"`). This is what THREE_SPACE_BOUNDARIES grades. A tension whose `observedBy` is `graph-indexer` was opened automatically from a CONTRADICTS edge — it still needs a human to resolve or dissolve it, so it counts.
-- **Orphan** = a note with zero incoming edges — exactly what `orphans` returns. Outgoing links do not change it.
-- **Links** come from `edges`, never from a note's `links[]` (empty since the relationship migration). `averageLinksPerNote` = outgoing edges per note; `connectionCount` = `stats.edgeCount`.
-- **Articulation coverage** = `stats.articulatedEdgeCount / stats.edgeCount` — the share of knowledge edges whose relationship metadata carries a `reason` (what `docs link --reason` writes). `edges[].reason` is null on the bare ones; list the notes with the most bare outgoing edges so `/connect` knows where to start. On a pre-1.0.36 Switchboard the field is absent — say so instead of reporting 0%.
-- **MoC coverage** = share of notes that are the target of a `CORE_IDEA` edge.
-- **MOC_COHERENCE** = notes whose `topics` is empty (the dashboard's definition): `PASS` at 0, `WARN` ≤ 3, `FAIL` above. Selecting `topics` on `knowledgeGraphNodes` costs one server-side query per node, which is fine once per run — just never do it inside a per-hit loop.
-- **Descriptions**: missing fails; < 80 is a quality warning. A description > 200 cannot exist in state — the reducer rejects it — so a missing description is often an over-long attempt that was silently dropped. Count length as UTF-16 units (JavaScript `.length`), the way the reducer does.
-- **STALE_NOTES**: `stale` entries with `status = "DRAFT"`.
-- **Lifecycle**: report the DRAFT share in `recommendations` — a vault where nearly every note is DRAFT has never been verified.
+Rules that keep the numbers honest:
 
-## Step 3: Check methodology grounding via note content
+- **Count by kind.** `nodeCount` is every indexed kind (notes, MoCs, claims,
+  tensions, observations, scopes, WBS). Every per-note ratio uses
+  `stats.noteCount` or `nodes` filtered by `documentType`.
+- **Orphan** = a live note with zero **incoming** edges — what `orphans` returns,
+  minus MoCs (an orphan MoC is a hierarchy defect, reported under the hierarchy)
+  and minus `ARCHIVED` notes (retiring a note *is* removing its citations; say
+  how many you excluded). Outgoing links change nothing.
+- **Edges** come from `edges`, never from a note's legacy `links[]`.
+  `averageLinksPerNote = stats.edgeCount / stats.noteCount`.
+- **Articulation coverage** = `stats.articulatedEdgeCount / stats.edgeCount`.
+  Absent on a pre-1.0.36 Switchboard — say so rather than reporting 0%.
+- **MoC coverage** = share of notes that are the target of a `CORE_IDEA` edge;
+  **context-phrase coverage** = share of `CORE_IDEA` edges with a `reason`.
+  **Hierarchy**: every MoC but one (the HUB) has exactly one incoming
+  `CHILD_MOC`.
+- **Open tensions** = `stats.openTensionCount`. One opened by `graph-indexer`
+  still needs a human to resolve or dissolve it, so it counts.
+- **Descriptions**: missing fails; < 80 UTF-16 units is terse; > 200 cannot
+  exist in state, so a missing one is often a rejected over-long attempt.
+  Restatement (> 70% of the title's words) is a quality WARN — a description
+  that paraphrases its title is not a retrieval filter.
+- **Stale** = `stale` entries with `status = "DRAFT"`; report the DRAFT share in
+  `recommendations` — a vault that is mostly DRAFT has never been verified.
+- **Stranded source** = a `bai/source` in `INBOX`/`EXTRACTING` with notes derived
+  from it (`extractedClaims` or `DERIVED_FROM` backlinks). Invisible to the task
+  check because its task may be DONE; repair with extract § *Close out*.
+- **Grounding**: a note is grounded if its content has a `## Grounding` section
+  citing a methodology claim. Size the **in-scope** set first — notes about
+  knowledge work, agent cognition, documentation or retrieval (a few
+  `knowledgeGraphSemanticSearch` probes; ≥ 0.80 similarity) — and report
+  `grounded / in-scope`, never `grounded / all notes`. A vault of software
+  internals will never legitimately reach 100%, and inventing groundings to
+  move the number is a fabricated link.
 
-`nodes[].content` from Step 2 is the full body — no extra reads. A note is **grounded** if its content contains a "Methodology grounding" section referencing at least one claim from the plugin's local `data/methodology/` files. Notes without it are "floating" — their design rationale isn't traceable to the research foundation. Report the count in `recommendations` (there is no `HealthCategory` for it).
-
-## Step 4: Check MOC coverage and the hierarchy
-
-From the Step 2 data: a note is covered when it is the target of a `CORE_IDEA` edge; a MoC is placed when it is the target of a `CHILD_MOC` edge. Report uncovered notes, and any MoC other than the single HUB with no parent — an unreachable MoC is a hierarchy defect (see `synthesize`).
-
-## Step 5: Compute diagnostic checks
+## 3. Grade — derive every status from the table
 
 | Category | PASS | WARN | FAIL |
 |---|---|---|---|
-| SCHEMA_COMPLIANCE | all notes have title, lowercase type, provenance | any missing (the dashboard never grades this FAIL) | — |
-| ORPHAN_DETECTION | 0 orphans | 1-3 orphans | 4+ orphans |
-| LINK_HEALTH | avg links >= 2.0 | avg >= 1.0 | avg < 1.0 |
-| DESCRIPTION_QUALITY | all present + informative | 1-2 missing or restated | 3+ missing |
-| MOC_COHERENCE | every note has ≥1 topic | 1-3 notes without topics | 4+ notes without topics |
-| THREE_SPACE_BOUNDARIES | 0 open tensions | 1-3 open tensions | 4+ open tensions |
-| PROCESSING_THROUGHPUT | 0 pending observations, 0 stuck tasks, 0 stranded sources | 1–5 pending observations, or 1–2 stuck tasks / stranded sources | >5 pending observations (the dashboard's own rule), or 3+ stuck/FAILED tasks or stranded sources |
-| STALE_NOTES | 0 DRAFT notes > 30 days | 1-3 stale | 4+ stale |
+| `SCHEMA_COMPLIANCE` | all notes: title, `noteType`, provenance | any missing (the dashboard never grades this FAIL) | — |
+| `ORPHAN_DETECTION` | 0 live orphans | 1–3 | 4+ |
+| `LINK_HEALTH` | avg ≥ 2.0 links/note | ≥ 1.0 | < 1.0 |
+| `DESCRIPTION_QUALITY` | all present and informative | 1–2 missing or restated | 3+ missing |
+| `MOC_COHERENCE` | every note has ≥ 1 topic | 1–3 without | 4+ without |
+| `THREE_SPACE_BOUNDARIES` | 0 open tensions | 1–3 | 4+ |
+| `PROCESSING_THROUGHPUT` | 0 pending observations, stuck tasks, stranded sources | 1–5 pending observations, or 1–2 stuck tasks / stranded sources | > 5 pending observations, or 3+ stuck/FAILED tasks or stranded sources |
+| `STALE_NOTES` | 0 DRAFT notes > 30 days | 1–3 | 4+ |
 
-**LINK_HEALTH message carries articulation coverage.** The grade stays on average links per note (the dashboard's rule — grading it differently would make `/health` and the in-app check disagree on the same vault), but the check's `message` states both numbers — `Avg 2.4 links/note; 1,180 of 2,257 knowledge edges (52%) carry a reason` — and `recommendations` names the backlog: how many bare edges, which notes hold most of them, and that `/connect` articulates them with `docs annotate` (or unlinks the ones nobody can explain). A vault at 100% average links and 0% reasons is an address book; the report must say so even while LINK_HEALTH shows PASS.
+`overallStatus` = the worst check. The grades match the in-app dashboard's own
+rules — `MOC_COHERENCE` is *notes without topics*, not clusters without a MoC;
+grading differently would make `/health` and the app disagree on the same
+vault — so what the dashboard cannot grade goes in the **message** and in
+`recommendations`: articulation coverage and the notes holding most bare edges
+(`LINK_HEALTH` message: `Avg 2.4 links/note; 1,180 of 2,257 edges (52%) carry a
+reason`), MoC coverage, context-phrase coverage, unreachable MoCs, grounding
+`grounded / in-scope`, DRAFT share. A vault with 100% link density and 0%
+reasons is an address book; the report must say so while `LINK_HEALTH` shows
+PASS.
 
-**Description quality check (not just presence):**
-- Length: 80-200 chars (aim ~150). < 30 = too terse, > 200 = `SET_DESCRIPTION` is rejected and skipped; the note ends up with no description while the rest of the batch lands
-- Restatement: if description uses >70% same words as title = WARN
-- Must add scope, mechanism, or implication beyond the title
+The tell that grading went wrong: metrics and grades disagreeing in one
+document — `orphanCount: 1` beside a green `ORPHAN_DETECTION`.
 
-**Methodology-grounding check (report in `recommendations`, NOT as a check):** For each knowledge note, check if its content includes a "Methodology grounding" section referencing at least one claim from the plugin's local `data/methodology/` files. Notes without methodology grounding are "floating" — their design rationale isn't traceable to the research foundation. The verify skill auto-repairs this by searching local methodology files and appending grounding references to the note's content.
+## 4. Write the report
 
-**Compute every status; never hardcode one.** A report script with
-`status: "PASS"` written inline reports what its author expected, and it will
-keep reporting it through a real regression. Derive each grade from the
-measured number against the table above, and derive `overallStatus` as the
-worst check rather than typing it. The tell that this went wrong: metrics and
-grades disagree in the same document — `orphanCount: 1` sitting beside a green
-ORPHAN_DETECTION.
+Two operations, one contract. `GENERATE_REPORT` **first** — it resets `checks`
+to `[]`, so an `ADD_CHECK` sent before it is wiped — then eight `ADD_CHECK`s.
+Write both to files and `docs apply --file`.
 
-**An archived note with no incoming edges is not an orphan.** Retiring a note
-*is* removing the citations that pointed at it, so `knowledgeGraphOrphans`
-reports it forever after. Grade live notes only, and say in the message how
-many archived ones were excluded and why — otherwise every properly retired
-note permanently costs the vault a WARN.
+**`GENERATE_REPORT`** — every field required except `generatedBy` (write it anyway):
+`generatedAt` (this run's clock — a copied timestamp makes a fresh run look
+stale), `generatedBy`, `mode` (`full` | `quick` — the app keys on those two),
+`overallStatus` (derived), `graphMetrics` (all eight `Int!`/`Float!` below),
+`recommendations` (`[String!]!`, `[]` when nothing is open).
 
-**CRITICAL: Verify, don't assume.** After auto-fixing any health recommendation, **re-read the drive tree and re-query the subgraph** to confirm. Don't report PASS based on what you dispatched — report PASS based on what you verified. Silent failures are common with remote reactors (race conditions, CLI bugs, network latency).
-
-**Two counting traps.** `knowledgeGraphStats.nodeCount` counts every indexed kind — MoCs, tensions, observations, research claims — so read `stats.noteCount` for notes (or filter `nodes` by `documentType`); dividing by `nodeCount` under-reports every per-note ratio. And MOC_COHERENCE above is defined the way the shipped dashboard defines it — **notes without topics** — not "topics without a MoC"; grading it differently makes `/health` and the in-app check contradict each other on the same vault. For STALE_NOTES prefer `knowledgeGraphStale(driveId, since, limit)` and `knowledgeGraphNodesByStatus(driveId, status: "DRAFT")` over reading every note.
-
-## Step 6: Save to bai/health-report document
-
-Find the existing `bai/health-report` in `/ops/health/` from the drive tree. If it doesn't exist, create it:
-
-```bash
-switchboard docs create --type bai/health-report --name "Health Report" --drive <drive-slug> --parent-folder <ops-health-folder-uuid> --format json
-```
-
-**Write report (overwrites previous):**
-```bash
-switchboard docs apply <health-report-id> --file /tmp/health-report.json
-```
-
-Where `/tmp/health-report.json` contains:
-```json
-[{
-  "type": "GENERATE_REPORT",
-  "input": {
-    "generatedAt": "<ISO>",
-    "generatedBy": "knowledge-agent",
-    "mode": "full",
-    "overallStatus": "PASS|WARN|FAIL",
-    "graphMetrics": {
-      "noteCount": 0,
-      "mocCount": 0,
-      "connectionCount": 0,
-      "density": 0.0,
-      "orphanCount": 0,
-      "danglingLinkCount": 0,
-      "mocCoverage": 0.0,
-      "averageLinksPerNote": 0.0
-    },
-    "recommendations": ["..."]
-  },
-  "scope": "global"
-}]
-```
-
-**Then add individual checks:**
-```json
-[
-  {"type":"ADD_CHECK","input":{"id":"<uid>","category":"SCHEMA_COMPLIANCE","status":"PASS","message":"...","affectedItems":[]},"scope":"global"},
-  {"type":"ADD_CHECK","input":{"id":"<uid>","category":"ORPHAN_DETECTION","status":"PASS","message":"...","affectedItems":[]},"scope":"global"}
-]
-```
-
-Write to `/tmp/health-checks.json` and apply via `--file` to avoid shell escaping issues.
-
-**Valid categories** — these are the ONLY values `bai/health-report`'s
-`HealthCategory` enum accepts; ADD_CHECK with anything else is silently
-dropped (the batch reports success, the check never lands):
-SCHEMA_COMPLIANCE, ORPHAN_DETECTION, LINK_HEALTH, DESCRIPTION_QUALITY,
-THREE_SPACE_BOUNDARIES, PROCESSING_THROUGHPUT, STALE_NOTES, MOC_COHERENCE.
-
-⚠️ There is no `METHODOLOGY_GROUNDING` category — report that finding in
-`recommendations` instead. Do **not** borrow `THREE_SPACE_BOUNDARIES`:
-the app reserves it for **open tensions**, and both editors render
-tension-specific remediation copy for it ("Open each tension and either
-resolve it…"), so a methodology finding filed there shows the user
-instructions that don't match the problem. Adding a dedicated enum value
-to `bai/health-report` is the proper fix when the model is next edited.
-
-⚠️ ADD_CHECK with an invalid category is **silently dropped** — the
-mutation reports success and the check never lands. Always re-read the
-report afterwards and confirm every check you dispatched is present.
-
-⚠️ **An `undefined` field is dropped from the JSON, and the reducer then
-rejects the whole action** — same silent success. This bites hardest on
-`GENERATE_REPORT`, whose `graphMetrics` needs all eight `Int!`/`Float!`
-fields: one mistyped source name (`m.kedges` where the object holds
-`knowledgeEdges`) leaves `connectionCount` absent, the report never
-updates, and the dashboard keeps serving the previous snapshot while
-every `ADD_CHECK` around it lands — so the document ends up with the old
-metrics and two runs' worth of checks. Assert the payload before
-dispatching:
-
-```js
-function required(obj, name) {
-  for (const [k, v] of Object.entries(obj))
-    if (v === undefined || v === null || Number.isNaN(v))
-      throw new Error(`${name}.${k} is ${v} — JSON drops it and the reducer rejects the action`);
-  return obj;
-}
-```
-
-and verify the reset by re-reading: `generatedAt` must be your run's
-timestamp and the check count must equal what you dispatched, not the sum
-of two runs.
-
-**Valid statuses:** PASS, WARN, FAIL
-
-## Step 7: Auto-repair (if `--fix` or user requests)
-
-| Issue | Auto-fix |
+| `graphMetrics` | Source |
 |---|---|
-| Missing descriptions | Generate from title + content, `docs mutate --op setDescription` (**max 200 chars!**) |
-| Missing provenance | `docs mutate --op setProvenance` with sourceOrigin: DERIVED |
-| Missing note types | Infer from content, `docs mutate --op setNoteType` |
-| Missing topics | Identify from content, `docs mutate --op addTopic` |
-| Ungrounded notes | Search local methodology files, add grounding references to note content via `docs mutate --op setContent` |
-| Missing MOCs | **Auto-create**: find topic clusters with 3+ notes and no MOC. Create `bai/moc` via `docs create` + `--op createMoc`, then attach each cluster note as a core idea via `switchboard docs link moc-id note-id -t CORE_IDEA` GraphQL mutation. (The legacy `--op addCoreIdea` writes to a state array the graph subgraph no longer indexes.) Verify in drive tree. |
-| Stale DRAFT notes | Submit for review via `docs mutate --op submitForReview` |
+| `noteCount` | `stats.noteCount` — never `nodeCount` |
+| `mocCount` | `stats.mocCount` |
+| `connectionCount` | `stats.edgeCount` |
+| `density` | `knowledgeGraphDensity`, 0–1 |
+| `orphanCount` | live orphans, as computed above |
+| `danglingLinkCount` | `edges` whose `targetDocumentId` matches no node — measured, never a placeholder 0 |
+| `mocCoverage` | share of notes with a `CORE_IDEA` incoming, 0–1 |
+| `averageLinksPerNote` | `stats.edgeCount / stats.noteCount` |
 
-**After each auto-fix, verify it applied** by re-reading the document state. Then re-run the health check to confirm the fix improved the score.
+**`ADD_CHECK`** × 8 — `id` fresh UUID per check per run (no duplicate guard;
+a reused id renders twice), `category` from the eight above (there is no
+ninth), `status` `PASS` | `WARN` | `FAIL`, `message` carrying the **measured
+number** (`"Link health OK" tells the reader nothing the colour did not`),
+`affectedItems` the document ids to open (`[]` on PASS, never omitted).
 
-## Step 8: Report to user
+Two silent-failure traps: an `undefined` field is dropped from the JSON and the
+reducer then rejects the **whole action** — one mistyped source name leaves
+`GENERATE_REPORT` unapplied while every `ADD_CHECK` lands, so the document holds
+old metrics and two runs' worth of checks; and a typo'd `category` is rejected
+by the generated validator before the reducer runs, so the check is simply
+absent. Assert every value is defined before dispatch, then re-read:
+`generatedAt` is this run's and the check count is exactly eight.
+
+There is no `METHODOLOGY_GROUNDING` category. Do **not** file grounding under
+`THREE_SPACE_BOUNDARIES` — the app renders tension-specific remediation copy
+for it. Grounding goes in `recommendations`.
+
+### `recommendations` — open actions only
+
+Each names the action and where to do it, and is dropped once done (the next
+run replaces the list wholesale). Not status, not a changelog (the operation
+history is the changelog), not design rationale, not anything already fixed.
+
+## 5. Repair (`--fix`, or always from the pipeline), then measure again
+
+Two drifts have a dedicated, auditable repair — use these, never a database edit:
+
+| Finding | Repair |
+|---|---|
+| Queue `completedCount` > DONE tasks, or `activeCount` ≠ live tasks (history predates the status guards) | `RECONCILE_COUNTERS { updatedAt }` on the queue — recomputes both from the tasks |
+| Source `extractionStats.claimCount` ≠ `len(extractedClaims)` (stats recorded before the invariant) | `node scripts/repair-source-stats.mjs --drive <uuid>` in the model repo: dry run lists every mismatch, `--apply` re-records with `claimCount = len(extractedClaims)`, `skippedCount` kept, `skipRate` recomputed |
+| `noteType` outside the `NoteType` enum (drive predates the enum) | `node scripts/migrate-note-type.mjs --drive <uuid>` — see its runbook |
+
+Sources that are `EXTRACTED` with **no** stats are reported, not repaired: inventing a
+`skippedCount` would be a lie. Duplicate singletons (two pipeline queues, two health
+reports, two vault configs in one drive) are a finding for a human — deleting a queue
+deletes its handoff history.
+
+| Finding | Fix |
+|---|---|
+| Notes without description / type / topics / provenance | `/verify` on them — it writes from the content and the operation history, counting UTF-16 |
+| Bare edges | `/connect` — `docs annotate` with a real reason, or `docs unlink` |
+| Topic clusters (3+ notes) without a MoC; notes without `CORE_IDEA`; unreachable MoCs | `/synthesize` — with a written orientation and a context phrase per member. A MoC created as a bare list to move the coverage number is the hollow map the methodology warns about |
+| Stranded sources | extract § *Close out* — `ADD_EXTRACTED_CLAIM` per note, `RECORD_EXTRACTION_STATS`, `EXTRACTED` |
+| Stranded `PENDING` task whose work is done | `ADVANCE_PHASE` through the remaining phases; the final advance completes it (never `COMPLETE_TASK` after it) |
+| Stale DRAFT notes | `/verify` walks the passing ones to `CANONICAL` as a different actor |
+| Open tensions | Read, then resolve or dissolve with the reasoning written into both notes (`/connect` § *Tensions*). A defect filed as a tension is dissolved, not left open |
+
+Repair is judgment; detection is not. Fix what you can read and state; report
+what needs the source or a human. After fixing, **re-run the whole check and
+rewrite the report** — the dashboard shows the last snapshot, and a repair after
+a run leaves the user looking at problems already fixed. Report before/after.
+
+## 6. Report to the user
 
 ```
-=== VAULT HEALTH REPORT ===
-Server: <profile-name> (<url>)
-Drive: <drive-name> (<drive-slug>)
-Saved to: bai/health-report (<doc-id>)
+=== VAULT HEALTH ===
+Server: <profile> (<url>) | Drive: <name> (<slug>) | Saved to: bai/health-report <id>
+Notes N | MoCs N (1 HUB, N unreachable) | Edges N | Density N | Avg links/note N | Reasons N/N (N%) | MoC coverage N% | Grounded N/N in scope
 
-Notes: N | Links: N | Density: N%
-Orphans: N | MOCs: N (hierarchy: 1 HUB, N unreachable)
-Avg links/note: N | Methodology grounding: N/N
-
-PASS  SCHEMA_COMPLIANCE      All N notes have title, type, provenance
-PASS  ORPHAN_DETECTION       0 orphan notes
-PASS  LINK_HEALTH            Avg 2.4 links/note, density 0.6; 1,180/2,257 edges (52%) carry a reason
-PASS  DESCRIPTION_QUALITY    All descriptions present and informative
-WARN  MOC_COHERENCE          2 note(s) without topics
-WARN  THREE_SPACE_BOUNDARIES 2 open tensions awaiting resolution
-PASS  PROCESSING_THROUGHPUT  0 pending pipeline tasks
-PASS  STALE_NOTES            No stale notes detected
-
+PASS  SCHEMA_COMPLIANCE       All N notes have title, type, provenance
+WARN  ORPHAN_DETECTION        2 live orphans (3 archived excluded): <titles>
+PASS  LINK_HEALTH             Avg 2.4 links/note; 1,180 of 2,257 edges (52%) carry a reason
+…
 Overall: WARN
 Recommendations:
-  1. Create MOC for 'document-toolbar' topic (5 notes)
-  2. Ground 2 notes in methodology via /connect
+  1. Articulate 1,077 bare edges — start with <note> (41) and <note> (37), via /connect
+  2. Create a MoC for 'document-toolbar' (5 notes) via /synthesize
 ```
 
-## Stranded sources
-
-A **stranded source** is a `bai/source` still in `INBOX` or `EXTRACTING`
-that already has notes derived from it — extraction happened but nobody
-closed the document out. It renders as unprocessed in the app's Sources
-tab indefinitely, and it is invisible to the pipeline-task check because
-its task may well be DONE.
-
-Fold this into PROCESSING_THROUGHPUT:
-
-```bash
-# For each bai/source: read state, compare status against derived notes
-switchboard docs get <source-id> --state --format json | python3 -c "
-import json,sys; g=json.load(sys.stdin)['state']['global']
-print(g.get('status'), len(g.get('extractedClaims') or []))"
-# stranded if status in (INBOX, EXTRACTING) and notes exist (via
-# knowledgeGraphBacklinks ... linkType DERIVED_FROM, or extractedClaims)
-```
-
-Repair with the Step 6 sequence in
-[skills/extract/SKILL.md](../extract/SKILL.md): ADD_EXTRACTED_CLAIM per
-note, RECORD_EXTRACTION_STATS, SET_SOURCE_STATUS EXTRACTED.
-
-## What belongs in `recommendations`
-
-**Open actions only** — things a human or agent should still do, each naming
-the action and where to do it. The field renders as a to-do list in the app,
-so anything else is noise:
-
-- ❌ Status ("MoC membership complete: 100%") — that belongs in the relevant
-  check's message, where it is already visible.
-- ❌ Changelog ("Repaired this session: 144 note types…") — the document's
-  operation history is the changelog.
-- ❌ Design rationale ("Membership edges use RELATES_TO") — belongs in a note
-  or the skill docs.
-- ❌ Anything already fixed. Re-running the report replaces recommendations
-  wholesale, so a fixed item must not survive into the next snapshot — and
-  watch for self-contradicting leftovers like "0 notes at minimum degree 1 —
-  candidates for the next pass".
-
-## Scope methodology grounding honestly
-
-`data/methodology/` is knowledge-systems research (PKM, agent cognition,
-retrieval). A vault whose notes are mostly software internals will never
-legitimately reach 100% grounding — "the reactor persists sync state in four
-PGlite tables" has no methodology counterpart, and inventing one is a
-fabricated link that fails the articulation test.
-
-Before reporting a grounding gap, **size the addressable subset**: run a
-couple of `knowledgeGraphSemanticSearch` probes for knowledge-management,
-documentation-practice and agent-workflow themes, and treat notes scoring
->= 0.80 as the real denominator. Report `grounded / in-scope`, not
-`grounded / all notes`.
-
-## Re-run after every fix
-
-A health report is a snapshot, and the dashboard shows the **last** one —
-so any repair made after a run leaves the UI reporting stale problems.
-Whenever you fix something the report flagged (here, in `/verify --fix`,
-or during a pipeline), **re-run the full check and rewrite the report**
-before telling the user it's fixed. GENERATE_REPORT resets metrics,
-recommendations and checks, so a re-run cleanly replaces the previous
-snapshot; the old one stays in the document's operation history.
-
-## Reading health history
-
-The HealthDashboard in the app reads from the `bai/health-report` document. Each `/health` run overwrites with current data (GENERATE_REPORT resets, then ADD_CHECK adds). Previous states are preserved in the document's operation history (revision history in Connect).
-
-## Fallback (no subgraph)
-
-If subgraph queries fail, compute metrics from individual document reads:
-
-```bash
-# List all documents in the drive
-switchboard docs tree <drive-slug> --format json
-# For each bai/knowledge-note, read state and compute metrics manually
-switchboard docs get <note-id> --state --format json
-# Count links, check descriptions, etc. from state data
-```
-
-One call per document; use it when the subgraph indexer is behind.
-
-## Automation
-
-**When called from the pipeline (Step 6 — post-verify):** Always run with auto-fix enabled. The pipeline's health check phase should leave the vault in PASS state if possible — don't just report issues, fix them.
-
-**When called standalone:** If `$ARGUMENTS` contains `--fix`, run auto-repair. Otherwise, report only.
-
-**MOC creation is the most common auto-fix.** After every extraction, new topic clusters form. The pipeline REFLECT phase should create MOCs, but if it missed any, the health auto-fix catches them. This means no human intervention is needed for MOC creation — it's fully automated between pipeline + health.
+Standalone: `--fix` repairs, otherwise report only; `quick` / `full` set `mode`.
+From the pipeline: always fix, then re-run. Previous snapshots live in the
+document's operation history.
 
 If "$ARGUMENTS" is provided, treat it as mode (`--fix`, `quick`, `full`) or a specific note ID to check.

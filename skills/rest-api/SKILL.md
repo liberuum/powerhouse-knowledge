@@ -43,7 +43,7 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 | `GET` | `ping` | — | `{ ok, subgraph, user }` |
 | `GET` | `drives` | — | `{ drives: [{ id, name, slug, nodes }] }`, knowledge-vault drives only |
 | `GET` | `search` | `drive`, `q`, `mode=semantic` (the only mode), `limit` (≤25), `related` (default 10, max 50, `0` off), `content=1`, `includeArchived=1` | `{ query, mode, hits: [{ similarity, score, matchedBy, node }], related, links, expansion }` — **expansion is ON by default**; see below |
-| `GET` | `notes/:id` | `drive` | `{ id, name, documentType, state, edges }` |
+| `GET` | `notes/:id` | `drive` | `{ id, name, documentType, state, edges }` — **serves any document type**, not just notes: sources, the pipeline queue, the health report and the vault config all come back with full state |
 | `GET` | `notes/:id.md` | `drive` | markdown with YAML frontmatter |
 | `GET` | `notes/:id/similar` | `drive`, `limit` | semantic neighbours |
 | `GET` | `notes/:id/links` | `drive` | forward edges, with reasons |
@@ -87,7 +87,8 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 |---|---|---|---|
 | `POST` | `actions` | `{ documentId, actions[], wait?, allowLiteralEscapes? }` | `{ revision, operations, readBack, jobId }`; `202 { jobId }` when `wait:false` |
 | `POST` | `notes` | `{ drive, documentType?, notes: [{ name, actions? }] }` (≤25) | `201 { drive, parentFolder, notes[] }` |
-| `POST` | `sources` | `{ drive, title, content, sourceType?, description?, author?, url?, publishedAt?, method?, tool?, queue? }` | `201 { id, parentFolder, path, status, readBack, task? }` |
+| `POST` | `sources` | `{ drive, title, content, sourceType?, description?, author?, url?, publishedAt?, method?, tool?, queue?, parentFolder? }` | `201 { id, parentFolder, path, status, readBack, task? }` |
+| `POST` | `sources/folders` | `{ drive, name }` — one folder, no `/` in the name | `{ id, name, path, created }`; idempotent on name within `/sources` |
 | `POST` | `relationships` | `{ source, target, type, reason?, confidence? }` | `{ revision, operations, readBack, jobId }` |
 | `PATCH` | `relationships` | same — replaces `reason`/`confidence` | same |
 | `DELETE` | `relationships` | `{ source, target, type }` | same |
@@ -104,7 +105,7 @@ of what the vault knows about a question is in the edges, not the ranking.
 {
   "hits":  [ { "similarity": 0.96, "node": { … } } ],
   "related": [                      // ranked nodes ONE link from the hits
-    { "documentId": "…", "title": "…", "description": "…", "noteType": "concept",
+    { "documentId": "…", "title": "…", "description": "…", "noteType": "CONCEPT",
       "hitCount": 3,                // how many hits point at it — convergence is signal
       "via": [ { "from": "<hit>", "to": "<this>", "linkType": "BUILDS_ON",
                  "reason": "…", "confidence": "grounded" } ] }
@@ -194,8 +195,12 @@ path — but knowing them saves a round trip.
   within the batch, `timestampUtcMs` an ISO instant, `scope` one of `global`,
   `local`, `document`, `auth`.
 - **Unknown body fields are rejected**, listing the allowed ones.
-- **Placement is the API's job.** `POST notes` and `POST sources` reject
-  `parentFolder`; documents go to the folder their type belongs in.
+- **Placement is the API's job.** `POST notes` rejects `parentFolder`;
+  documents go to the folder their type belongs in. `POST sources` is the one
+  exception — its `parentFolder` may name a folder **within `/sources`**, so a
+  book's chapters stay one book. Mint it with `POST sources/folders` and pass
+  the id it returns; anything outside `/sources` is rejected with
+  `FOLDER_OUTSIDE_VAULT_PATH`.
 - **Knowledge edges need a reason.** `RELATES_TO`, `BUILDS_ON`, `CONTRADICTS`,
   `SUPERSEDES` and `DERIVED_FROM` require a specific `reason`; `CORE_IDEA` and
   `CHILD_MOC` may be bare.
@@ -208,3 +213,13 @@ path — but knowing them saves a round trip.
 
 Deleting a document, reading the drive tree, and profiles/sign-in are CLI only
 — see **cli-reference**. Raw GraphQL is read-only for vault work.
+
+**The one gap that blocks a pure-REST pipeline: document id discovery.** Every
+write route addresses a document by id, and nothing over REST lists a drive's
+contents — `GET drives` returns a node **count**, not a node list, and
+`stats` / `graph.json` cover only the seven indexed types, which exclude the
+pipeline queue and the health report. So the singleton ids must be learned once
+per drive with `switchboard docs tree`. After that the whole pipeline is REST:
+`GET notes/<queue-id>` reads the queue, and `POST actions` drives `ADVANCE_PHASE`,
+`GENERATE_REPORT` and `ADD_CHECK` — all twelve vault document types are in the
+REST lint registry, so none of them is rejected as unknown.

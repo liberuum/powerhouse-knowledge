@@ -12,7 +12,7 @@
  *     Counted the way the reducer counts: JavaScript string length, i.e.
  *     UTF-16 code units. An emoji is 2. Python's len() says 1 — which is how
  *     an agent "checks" 200 and still fails.
- *   - noteType not one of the ten lowercase values   (accepted, never matches the UI)
+ *   - noteType outside the NoteType enum               (rejected by the reducer since the enum)
  *   - sourceOrigin / SourceStatus / HealthCategory / HealthStatus / taskType /
  *     sourceType / MocTier / ObservationCategory / DeliverableStatus / GoalStatus /
  *     ScopeOfWorkStatus / DeliverableSetStatus / Unit / BudgetType / PMCurrency outside the enum  (rejected or unreachable)
@@ -31,7 +31,7 @@ import { readFileSync } from "node:fs";
 export const LIMITS = { "SET_DESCRIPTION.description": 200 };
 
 export const ENUMS = {
-  "SET_NOTE_TYPE.noteType": ["concept", "decision", "pattern", "observation", "procedure", "architecture", "bug-pattern", "integration", "workflow", "reference"],
+  "SET_NOTE_TYPE.noteType": ["CONCEPT", "DECISION", "PATTERN", "OBSERVATION", "PROCEDURE", "ARCHITECTURE", "BUG_PATTERN", "INTEGRATION", "WORKFLOW", "REFERENCE"],
   "SET_PROVENANCE.sourceOrigin": ["DERIVED", "IMPORT", "MANUAL", "SESSION_MINE"],
   "SET_SOURCE_STATUS.status": ["INBOX", "EXTRACTING", "EXTRACTED", "ARCHIVED"],
   // scope of work (powerhouse/scopeofwork) and WBS (bai/wbs)
@@ -100,8 +100,8 @@ function selfTest() {
   ok("200 plain chars pass", lintActions([{ type: "SET_DESCRIPTION", input: { description: "x".repeat(200), updatedAt: "t" }, scope: "global" }]).length === 0);
   ok("201 plain chars fail", lintActions([{ type: "SET_DESCRIPTION", input: { description: "x".repeat(201), updatedAt: "t" }, scope: "global" }]).length === 1);
   ok("199 chars + one emoji = 201 UTF-16 units, fails (Python len would say 200)", lintActions([{ type: "SET_DESCRIPTION", input: { description: desc199 + emoji, updatedAt: "t" }, scope: "global" }]).length === 1);
-  ok("uppercase noteType fails", lintActions([{ type: "SET_NOTE_TYPE", input: { noteType: "CONCEPT", updatedAt: "t" }, scope: "global" }]).length === 1);
-  ok("lowercase noteType passes", lintActions([{ type: "SET_NOTE_TYPE", input: { noteType: "bug-pattern", updatedAt: "t" }, scope: "global" }]).length === 0);
+  ok("lowercase noteType fails", lintActions([{ type: "SET_NOTE_TYPE", input: { noteType: "concept", updatedAt: "t" }, scope: "global" }]).length === 1);
+  ok("enum noteType passes", lintActions([{ type: "SET_NOTE_TYPE", input: { noteType: "BUG_PATTERN", updatedAt: "t" }, scope: "global" }]).length === 0);
   ok("bad sourceOrigin fails", lintActions([{ type: "SET_PROVENANCE", input: { author: "a", sourceOrigin: "BOGUS", createdAt: "t" }, scope: "global" }]).length === 1);
   ok("CANCELLED (two Ls) on a deliverable fails", lintActions([{ type: "EDIT_DELIVERABLE", input: { id: "d", status: "CANCELLED" }, scope: "global" }]).length === 1);
   ok("CANCELED on a deliverable passes", lintActions([{ type: "EDIT_DELIVERABLE", input: { id: "d", status: "CANCELED" }, scope: "global" }]).length === 0);

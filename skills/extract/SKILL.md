@@ -12,320 +12,282 @@ description: Extract atomic knowledge claims from source material. Creates bai/k
 > drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
 > drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
-Extract individual knowledge claims from a source document and create `bai/knowledge-note` documents for each.
+Read a source, work out what is **true** in it, and write each truth as an
+independent `bai/knowledge-note` that stands without the source and can meet
+claims from other sources.
 
-## Writing many notes at once
+This is the vault's most important operation. Everything downstream — connect,
+synthesize, verify, health — operates on what it produces, and noise written
+here is never cleaned up: it is linked to, counted and surfaced in search
+forever. **Transform, do not harvest.** The source document is already the
+archive. A note that could have been produced by copying from it is a
+duplicate with worse provenance.
 
-Create the notes and their content in one call, up to 25 at a time:
+## Method — read, then write; never read-and-write
 
-```bash
-curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/notes" -d '{
-  "drive": "<drive-uuid>",
-  "notes": [
-    {"name": "note-slug", "actions": [
-      {"type":"SET_TITLE","input":{"title":"<claim as a sentence>","updatedAt":"<ISO>"}},
-      {"type":"SET_DESCRIPTION","input":{"description":"<= 200 chars","updatedAt":"<ISO>"}},
-      {"type":"SET_NOTE_TYPE","input":{"noteType":"concept","updatedAt":"<ISO>"}},
-      {"type":"SET_CONTENT","input":{"content":"<body>","updatedAt":"<ISO>"}},
-      {"type":"ADD_TOPIC","input":{"id":"<uuid>","name":"<topic>"}}
-    ]}
-  ]
-}'
-```
+1. **Read the whole source first — the `bai/source`, not the original file.**
+   A claim in §1 is often qualified in §4, so read all of it before writing.
+   And read it *from the vault*: the source document is what every
+   `DERIVED_FROM` edge points at and what a reader will check the claim
+   against, so it is the object of record even when the file it came from is
+   on your disk. The two can differ silently — content truncated at ingest, a
+   failed re-ingest leaving an older revision, an encoding fault, a file edited
+   afterwards — and extracting from the file then writes claims the source
+   cannot support behind an edge asserting it can. If they differ, fix the
+   source first.
+2. **List candidate claims** as sentences in your own words, source closed.
+3. **Run the six gates** over each candidate. Strike the failures.
+4. **Search the vault before writing each survivor**
+   (`GET search?q=<the claim>&mode=semantic`). If it already exists, do not
+   duplicate it: strengthen the existing note's content with this source's
+   evidence and add a second `DERIVED_FROM` edge. Two sources arguing the same
+   thing meet at **one** node — that convergence is the point of
+   concept-orientation; duplicate nodes are how graphs rot.
+5. **Write the survivors** — one batch per note, every field (below).
+6. **Count honestly.** `claimCount` = notes written; `skippedCount` = candidates
+   struck at step 3 plus material you judged out of scope.
+7. **Close out the source**, then record the handoff.
 
-Notes go to `/knowledge/notes` automatically; `parentFolder` is rejected. Every
-action is linted before anything is created, so a `400` means no note was made.
-Check each note's `readBack` in the response.
+## The six gates — a claim passes all six or it is not written
 
-Then link each note to its source:
+Run them in order; the first failure stops the note.
 
-```bash
-curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/relationships" \
-  -d '{"source":"<note>","target":"<source>","type":"DERIVED_FROM","reason":"<where in the source>","confidence":"grounded"}'
-```
+| # | Gate | The test | Fails when |
+|---|---|---|---|
+| 1 | **Sentence** | Does the title complete *"This note argues that …"*? | `Emotion` · `Attraction Offers` · `FIGURE 14-2` — labels and captions |
+| 2 | **Transclusion** | Does the title work as a clause: *"Since [title], it follows that …"*? | A question, a fragment, a noun phrase |
+| 3 | **Falsifiability** | Could a competent practitioner **disagree** with this specific assertion? | "Quality matters" — true, empty, nothing can build on it |
+| 4 | **Coherence** | Can you state it in 1–3 sentences without an "and also"? | Bundled claims: "how X works, why Y matters, when to Z" is three notes |
+| 5 | **Independence** | Does it hold for a reader who has never seen the source? | It needs the chapter's running example to parse |
+| 6 | **Non-attribution** | Does the title assert what is **true**, not what the **author said**? | "Hormozi says you should …" — attribution lives in provenance, never in the claim |
 
-### Generating a large batch
+Gate 3 does the most work: a claim nobody could disagree with is a claim nobody
+can engage with. Gate 6 is the one agents fail most on books — extract the
+knowledge, not the reading.
 
+**Not a claim, however quotable:** an excerpt or quotation (cite it in a body as
+evidence); a chapter summary (about the source, not the world); a heading or
+topic label (a MoC at best); a caption, table title or structural artefact; a
+story or anecdote (evidence — the claim is the mechanism it demonstrates); a
+bare number (the claim is what moves it, and when); a restatement of the
+source's structure ("there are four types of X" is a claim only if the cut is
+the insight, and then the title says what the cut is); a definition with no
+stake.
 
-Extracting a batch by hand-editing JS template literals fails on backtick and
-`${` escaping, repeatedly. Generate the batch instead: a small script that
-builds a list of note objects and emits `export const notes = <json>` plus a
-`perFile` record of `{ path, claims, skipped, note }`. Two properties earn
-their keep — content is JSON-escaped so no character needs thought, and a
-`assert len(description) <= 200` in the note constructor fails at generation
-time instead of leaving a note with no description in the vault.
+**Conditions travel inside the claim.** Atomicity strips argumentative context,
+and the claims most at risk are heuristics and trade-offs whose truth depends
+on *when* they apply. Put the condition in the claim, do not skip the claim:
 
-Then publish with one driver that, per note, creates or updates by key, writes
-content and provenance in separate dispatches, walks the lifecycle to
-CANONICAL, links every edge with its reason, and finally records the real
-per-file claim and skip counts on each source. Keep a key → document-id map on
-disk so a re-run updates in place rather than duplicating.
+- ❌ "Discounting the first month increases retention"
+- ✅ "Discounting the first month increases retention only when the product's value is felt before the second charge; otherwise it buys churn"
 
-## Extraction process
+A claim that cannot carry its own conditions is not yet understood or not yet
+atomic. Either way: do not write it yet.
 
-### Step 1: Read the source document
+**When decomposition resists**, try the split twice. If each piece passes all six
+gates, write them. If they only make sense together, write **one** note whose
+title carries the joint claim. Never three fragments that each fail gate 5.
 
-```bash
-switchboard docs get <source-doc-id> --state --format json
-```
+**Zero is a valid yield.** There is no coverage target; `skipRate` is a
+measurement, not a goal. A section introduction, a recap, a foreword, a glossary
+can honestly yield nothing, and writing a note anyway to avoid an empty result
+is the most damaging thing an agent can do here — noise never announces itself,
+it just dilutes every query that touches its topic. A high skip rate is a
+finding about the source; the failure to watch for is the opposite: a
+*suspiciously complete* extraction (every chapter at `skipRate: 0`) means
+excerpts were filed as claims.
 
-Read the source's `state.global.content` to get the raw text. Also note the title and sourceType for provenance.
+## What a note holds — the claim and its basis
 
-### Step 2: Find the notes folder
+A note records the claim **and why the vault holds it**. Progressive disclosure:
+title → description → content, each layer adding what the previous lacks.
 
-```bash
-switchboard docs tree <drive-slug> --format json
-# Find: /knowledge/notes/ folder UUID
-```
+- **Title** — the claim, as a declarative sentence (gates 1–2).
+- **Description** — a retrieval filter, not a summary. It answers "should I open
+  this?" and "which of the similar notes is this one?" Never paraphrase the
+  title. Layer it: what holds (heuristic) → why (mechanism) → so what
+  (implication). If the sentence could describe several notes in the vault, it
+  is not distinctive enough. ≤ 200 UTF-16 units; aim ~150.
+- **Content** — the argument, not the assertion again:
+  the mechanism; the evidence from the source (quotation or anecdote, *cited as
+  evidence*); the conditions under which the claim holds and when it does not;
+  what it qualifies, extends or disputes in the vault, by note title; and what
+  extracting it lets a reader do or predict. This is what makes the note
+  self-supporting once the source has left context.
+- **Topics** — at least one. Reuse the vault's vocabulary
+  (`knowledgeGraphTopics`) before minting a new name.
+- **Metadata** — the typed layer that makes claims comparable (below). At
+  minimum `confidence`.
+- **Provenance — two layers, both required.**
+  *Documentary* (where it came from): `SET_PROVENANCE` with `author` = your
+  agent id, `sourceOrigin: DERIVED`, `createdAt` = now; plus one `DERIVED_FROM`
+  edge to the source whose `--reason` names the **locus** ("§ 'Storage', para 3
+  …") so a reader can check the claim against the text.
+  *Epistemic* (how well it is known): the `confidence` metadata field —
+  `grounded` (the source demonstrates it, or you verified it in code or data),
+  `established` (documented and widely agreed), `speculative` (your inference).
+  The edge's own `--confidence` rates the *extraction*: `grounded` for a claim
+  the source makes, `speculative` for one you inferred from it.
 
-### Step 3: Identify atomic claims
+### Field contract — `bai/knowledge-note`
 
-Read the source content and identify distinct claims. Each claim should:
-- Make **exactly one point** (atomic)
-- Have a **declarative title** that reads as a complete sentence
-- Be **independently understandable** without the source context
-- Contain **arguments and evidence** in the body, not just the assertion
+| Field (op) | Rule |
+|---|---|
+| `title` (`SET_TITLE`) | Required. No length limit |
+| `description` (`SET_DESCRIPTION`) | Required. ≤ 200 UTF-16 units — the only hard length limit in any model. Over the limit → `DescriptionTooLongError`; the note lands **without** a description while the rest of the batch applies |
+| `noteType` (`SET_NOTE_TYPE`) | One of the ten `NoteType` enum values (below). Anything else is rejected by the reducer — the action is recorded with its error and the note is left typeless |
+| `content` (`SET_CONTENT`) | Real line breaks, encoded once |
+| `topics[]` (`ADD_TOPIC`) | ≥ 1. Fresh OID per topic. Throws `DuplicateTopicError` on a repeated **name** (`REMOVE_TOPIC` matches **id**) — a re-run fails its topic actions, which is expected |
+| `provenance` (`SET_PROVENANCE`) | `{author, sourceOrigin, sessionId?, createdAt}`. `updatedAt` is not an input; the reducer sets it to `createdAt` |
+| 18 string fields (`SET_METADATA_FIELD`) | Whitelist: `scope confidence severity editor modelId version filePath computes context decisionStatus model sourceType targetType relationType cardinality errorMessage rootCause correctPattern`. `""` writes null — omit the action to say "not applicable". Unknown name → `InvalidMetadataFieldError` |
+| 9 list fields (`SET_METADATA_LIST_FIELD`) | Whitelist: `models hooksUsed dispatchTargets modules inputs outputs consumedBy alternatives consequences`. The scalar op rejects these names |
+| `status` | Starts `DRAFT`; extract does not move it |
+| `links[]` | Legacy. Nothing writes it; edges live in the relationship table (`docs link`) |
 
-**Extraction criteria:**
-- Skip rate < 10% (extract most domain-relevant claims)
-- No duplicates (check existing notes first via search)
-- Skip trivial/obvious statements
-- Split compound claims into separate notes
+**`noteType`** — `CONCEPT` (idea or principle) · `PATTERN` (recurring solution) ·
+`ARCHITECTURE` (design structure) · `DECISION` (choice with rationale) ·
+`OBSERVATION` (empirical finding) · `PROCEDURE` (how-to) · `REFERENCE`
+(lookup fact) · `BUG_PATTERN` (failure and cause) · `INTEGRATION` (how two
+things connect) · `WORKFLOW` (end-to-end process).
 
-### Step 4: Create note documents
+### Metadata by `noteType` — fill what the source supports, leave the rest empty
 
-For each claim, create a document and populate it:
-
-```bash
-switchboard docs create --type bai/knowledge-note --name "<declarative claim title>" --drive <drive-slug> --parent-folder <notes-folder-uuid> --format json
-```
-
-Then populate the note. One batch is fine: actions run in order and a rejected action is skipped while the rest land.
-
-**Batch 1 — Content (must succeed):**
-```bash
-switchboard docs apply <new-note-id> --actions '[
-  { "type": "SET_TITLE", "input": { "title": "<claim title>", "updatedAt": "<ISO>" }, "scope": "global" },
-  { "type": "SET_DESCRIPTION", "input": { "description": "<~150 char summary>", "updatedAt": "<ISO>" }, "scope": "global" },
-  { "type": "SET_NOTE_TYPE", "input": { "noteType": "<concept|pattern|architecture|decision|...>", "updatedAt": "<ISO>" }, "scope": "global" },
-  { "type": "SET_CONTENT", "input": { "content": "<full markdown body>", "updatedAt": "<ISO>" }, "scope": "global" },
-  { "type": "ADD_TOPIC", "input": { "id": "<unique-id>", "name": "<topic>" }, "scope": "global" }
-]'
-```
-
-For long content, write the actions to a temp file and use `--file`:
-```bash
-switchboard docs apply <new-note-id> --file /tmp/note-content.json
-```
-
-**Batch 2 — Provenance (separate so failures don't lose content):**
-```bash
-# Provenance may be a fifth action in the same batch; shown separately only for clarity
-switchboard docs mutate <new-note-id> --op setProvenance --input '{"author": "<agent-name>", "sourceOrigin": "DERIVED", "createdAt": "<ISO>"}'
-```
-
-**One batch, then ask the job what happened.** `docs apply` runs actions in
-order and isolates failures per action: a rejected one is recorded with its
-error and skipped while the rest land. So `SET_PROVENANCE` rides in the same
-batch as the content — one round trip per note.
-
-The job now tells you which actions applied. `docs apply` prints a `jobId`;
-ask it (stack ≥ 6.2.3-dev.10):
-
-```bash
-switchboard query '{ jobStatus(jobId: "<id>") { status result } }'
-# result.allApplied is false when any action was rejected, and
-# result.actions names each one: {"kind":"reducer-error","message":"Description exceeds 200 characters"}
-```
-
-That replaces re-reading the whole document to infer what went wrong — it
-names the action and quotes the reducer. On an older stack, or to confirm the
-final shape anyway, `docs get --state` and check `title`, `description`,
-lowercase `noteType`, `topics` and `provenance.sourceOrigin`.
-
-**Lint the actions file before dispatching it — never estimate a length.** `node scripts/lint-actions.mjs /tmp/acts-<id>.json && switchboard docs apply <id> --file /tmp/acts-<id>.json`. It counts the description the way the reducer does (UTF-16 units; an emoji is 2, Python's `len()` undercounts), rejects a `noteType` outside the ten lowercase values, an invalid `sourceOrigin`, and double-encoded newlines — each with the JSON path — so a rejected action never costs a round trip. The description limit (≤ 200) is the **only** hard length limit in any model; titles are unlimited, and so is every field on other document types.
-
-**CRITICAL: the body must hold real line breaks before it is JSON-encoded — encode once, read back.** The bug is *double encoding*: a bash `"\n"` is two characters; a script that JSON-encodes that argument escapes the backslash again; the note is stored with the text `\n` between paragraphs and the write reports success. Write the body in a file or heredoc (or compose it inside Python), serialize once, `docs apply --file`, then `docs get --state` and confirm `content` has real newlines and no `\n`. Switchboard CLI ≥ 1.0.32 refuses such payloads and names the field; do not reach for `--allow-literal-escapes` to get past it.
-
-**Every note MUST have a description.** It carries the middle layer of
-progressive disclosure (title → description → content); a note without one
-fails health checks and is invisible to scanning workflows. Aim for ~150
-characters and say something the title does not. A rejected `SET_DESCRIPTION`
-costs only itself — the note is created with every other field set and no
-description — which is why the limit is linted before dispatch, above.
-
-### Step 4b: Populate the structured metadata — in the same batch
-
-A knowledge note is a **typed document**, not a markdown file: it has 18 string fields and 9 list fields that make claims filterable and comparable across the vault, and every write to them is in the operation history. Notes extracted without them are prose with a title. Fill the fields the source **actually supports**; leave the rest empty — an empty field is honest, an invented `severity` is not.
-
-**On every note where the source says so:**
-
-| Field | Put here | Vocabulary |
-|---|---|---|
-| `scope` | how widely the claim holds | `global` (true of the stack), `team`, `personal` |
-| `confidence` | how the claim is known | `grounded` (verified in code or data), `established` (documented, widely agreed), `speculative` (inferred) |
-| `version` | the stack/package version the claim was observed on | e.g. `6.2.2-dev.71` — only when the source states it |
-| `filePath` | the file or module the claim is about | e.g. `document-models/pipeline-queue/v1/src/reducers/queue-management.ts` |
-| `model` | the kind of artifact | `reducer`, `hook`, `component`, `processor`, `subgraph`, `editor`, `cli`, `document-model` |
-| `modelId` | the document type, when the claim is about one | e.g. `bai/pipeline-queue` |
-| `editor` | who wrote this version of the note | your agent id, e.g. `knowledge-agent` |
-
-**Then by `noteType` — the fields that carry that type's signal:**
+On every note where the source says so: `confidence` (above), `scope`
+(`global` | `team` | `personal`), `version` (the stack version observed, only
+when stated), `filePath`, `model` (`reducer` `hook` `component` `processor`
+`subgraph` `editor` `cli` `document-model`), `modelId` (the document type),
+`editor` (your agent id).
 
 | noteType | Populate |
 |---|---|
-| `bug-pattern` | `severity` (`critical` / `warning` / `info`), `errorMessage` (the exact error class or text), `rootCause`, `correctPattern` |
-| `decision` | `decisionStatus` (`proposed` / `accepted` / `rejected` / `superseded`), `context` (what forced the decision), `alternatives[]`, `consequences[]` |
-| `architecture` | `models[]` (document types involved), `modules[]`, `computes` (what the design derives), `inputs[]`, `outputs[]`, `consumedBy[]`, `dispatchTargets[]` |
-| `integration` | `sourceType`, `targetType` (e.g. `API` → `component`), `relationType` (`depends-on`, `extends`, `emits`), `cardinality` (`one-to-many`…), `inputs[]`, `outputs[]` |
-| `pattern` | `correctPattern`, `context` (when it applies), `hooksUsed[]`, `alternatives[]` |
-| `procedure` | `context`, `inputs[]` (prerequisites), `outputs[]` (results), `filePath`, `version` |
-| `workflow` | `inputs[]`, `outputs[]`, `consumedBy[]`, `dispatchTargets[]` |
-| `reference` | `modelId`, `version`, `filePath`, `model` |
-| `concept` | `scope`, `confidence` — the rest is prose |
-| `observation` | `confidence`, `severity`, `context` |
+| `BUG_PATTERN` | `severity` (`critical`/`warning`/`info`), `errorMessage`, `rootCause`, `correctPattern` |
+| `DECISION` | `decisionStatus` (`proposed`/`accepted`/`rejected`/`superseded`), `context`, `alternatives[]`, `consequences[]` |
+| `ARCHITECTURE` | `models[]`, `modules[]`, `computes`, `inputs[]`, `outputs[]`, `consumedBy[]`, `dispatchTargets[]` |
+| `INTEGRATION` | `sourceType`, `targetType`, `relationType`, `cardinality`, `inputs[]`, `outputs[]` |
+| `PATTERN` | `correctPattern`, `context`, `hooksUsed[]`, `alternatives[]` |
+| `PROCEDURE` | `context`, `inputs[]`, `outputs[]`, `filePath`, `version` |
+| `WORKFLOW` | `inputs[]`, `outputs[]`, `consumedBy[]`, `dispatchTargets[]` |
+| `REFERENCE` | `modelId`, `version`, `filePath`, `model` |
+| `CONCEPT` | `scope`, `confidence` |
+| `OBSERVATION` | `confidence`, `severity`, `context` |
 
-Strings go through `SET_METADATA_FIELD { field, value, updatedAt }`; lists **only** through `SET_METADATA_LIST_FIELD { field, values[], updatedAt }` (the scalar op rejects a list field name). Both ride in the same `docs apply` batch as the content — no extra round trip — and both field names are whitelisted by the reducer, so a typo is rejected silently; `lint-actions.mjs` checks them. Example, for a `bug-pattern`:
+An invented `severity` is a lie; an empty one is honest. A code-derived
+`BUG_PATTERN` whose editor panel reads `Metadata (0)` is under-extracted.
 
-```json
-[
-  { "type": "SET_METADATA_FIELD", "input": { "field": "severity", "value": "critical", "updatedAt": "<ISO>" }, "scope": "global" },
-  { "type": "SET_METADATA_FIELD", "input": { "field": "errorMessage", "value": "completedCount incremented twice; no operation decrements it", "updatedAt": "<ISO>" }, "scope": "global" },
-  { "type": "SET_METADATA_FIELD", "input": { "field": "rootCause", "value": "completeTaskOperation repeats the bookkeeping the final advancePhaseOperation already did", "updatedAt": "<ISO>" }, "scope": "global" },
-  { "type": "SET_METADATA_FIELD", "input": { "field": "correctPattern", "value": "Advance through every phase and stop; use COMPLETE_TASK only to end a task early", "updatedAt": "<ISO>" }, "scope": "global" },
-  { "type": "SET_METADATA_FIELD", "input": { "field": "filePath", "value": "document-models/pipeline-queue/v1/src/reducers/queue-management.ts", "updatedAt": "<ISO>" }, "scope": "global" },
-  { "type": "SET_METADATA_FIELD", "input": { "field": "model", "value": "reducer", "updatedAt": "<ISO>" }, "scope": "global" },
-  { "type": "SET_METADATA_FIELD", "input": { "field": "modelId", "value": "bai/pipeline-queue", "updatedAt": "<ISO>" }, "scope": "global" },
-  { "type": "SET_METADATA_FIELD", "input": { "field": "confidence", "value": "grounded", "updatedAt": "<ISO>" }, "scope": "global" }
-]
-```
+## Writing the batch
 
-Read back afterwards: the editor's Metadata panel shows a count — `Metadata (8)` — and a note whose panel reads `Metadata (0)` after extraction from a code or documentation source is under-extracted.
+One batch per note; actions run in order and a rejected action is skipped while
+the rest land. Lint first, then read `jobStatus(jobId).result.allApplied`.
 
-### Step 5: Verify drive nodes
-
-After creating all notes, verify they all appear as file nodes in the drive:
-
-```bash
-switchboard docs tree <drive-slug> --format json
-# Check: each created note ID exists as a file node
-# If missing: re-create the containment by re-running the namespaced create, or use
-# `switchboard docs mutate <drive-id> --op addFile` ONLY as a last resort (CLI stamps the
-# envelope; note containment edges since the drive-override migration live in
-# DocumentRelationship — verify with docs tree afterward). CLI-stamped ADD_FILE is sync-safe;
-# the caveat is containment completeness, not action safety.
-```
-
-### Step 6: Close out the source document — MANDATORY
-
-**Extraction is not finished until the source says so.** A source left in
-`EXTRACTING` shows as unprocessed in the app's Sources tab forever, even
-though its notes exist — the notes carry no signal back to the document
-they came from. Every extraction run MUST end with all three writes below,
-and a read-back that confirms them.
-
-Provenance lives in **two** places and both are required:
-- `extractedClaims[]` on the source (document state — what the app renders)
-- a `DERIVED_FROM` relationship per note (graph edges — what the subgraph
-  traverses), with the place in the source the claim comes from as its
-  reason — that is the articulation of a derivation, and it is what lets a
-  reader (or `/verify`) check the claim against the source:
-
-  ```bash
-  switchboard docs link <note-id> <source-id> -t DERIVED_FROM \
-    --reason "§ 'Storage', para 3: the author states the cache is invalidated per read model" \
-    --confidence grounded
-  ```
-
-  `grounded` is the right confidence for a faithful extraction; use
-  `speculative` when the note is your inference from the source rather than
-  a claim the source makes.
-
-Track what was extracted:
-```bash
-switchboard docs apply <source-doc-id> --actions '[
-  { "type": "SET_SOURCE_STATUS", "input": { "status": "EXTRACTED" }, "scope": "global" },
-  { "type": "ADD_EXTRACTED_CLAIM", "input": { "claimRef": "<note-id-1>" }, "scope": "global" },
-  { "type": "ADD_EXTRACTED_CLAIM", "input": { "claimRef": "<note-id-2>" }, "scope": "global" },
-  { "type": "RECORD_EXTRACTION_STATS", "input": {
-    "claimCount": 5, "skippedCount": 0, "skipRate": 0.0,
-    "extractedAt": "<ISO>", "extractedBy": "knowledge-agent"
-  }, "scope": "global" }
-]'
-```
-
-**Verify before moving on** — `SET_SOURCE_STATUS` accepts only INBOX,
-EXTRACTING, EXTRACTED, ARCHIVED, and an invalid value fails silently:
+1. **`SET_PROVENANCE` anywhere in the batch.** Every content, metadata and
+   lifecycle reducer stamps the note's top-level `updatedAt`, so order no longer
+   loses timestamps. `provenance.createdAt` is immutable once set — a later
+   correction of `author`/`sourceOrigin` must pass the same `createdAt` back.
+2. **Lint before dispatch**: `node scripts/lint-actions.mjs <actions.json>` —
+   it counts the description the way the reducer does (UTF-16 units; an emoji
+   is 2, Python's `len()` says 1), rejects a `noteType` outside the ten, a bad
+   `sourceOrigin`, an unknown metadata field, and double-encoded newlines.
+3. **Real newlines, encoded once.** Build the body in a file or in Python,
+   serialize once, `docs apply --file`, read `content` back: no literal `\n`.
+4. **Generate large batches** with a script that asserts the description
+   length where the note is written and keeps a key → document-id map on disk,
+   so a re-run updates in place instead of duplicating.
 
 ```bash
-switchboard docs get <source-doc-id> --state --format json | python3 -c "
-import json,sys; g=json.load(sys.stdin)['state']['global']
-print('status:', g.get('status'), '| claims:', len(g.get('extractedClaims') or []), '| stats:', bool(g.get('extractionStats')))"
-# expect: status: EXTRACTED | claims: <N> | stats: True
-```
-
-Report `skipRate` honestly. A thin vendor blog legitimately scores high;
-massaging the number to clear the <10% target hides the real signal, which
-is that the source was low-yield.
-
-### Step 7: Record pipeline handoff
-
-If this extraction is part of a pipeline task, advance the phase. **This can share a batch with other queue ops (`docs apply` preserves order and isolates failures) — read the task back to confirm the phase advanced:**
-```bash
-switchboard docs mutate <pipeline-queue-id> --op advancePhase --input '{
-  "taskId": "<task-id>",
-  "handoff": {
-    "id": "<unique-id>",
-    "phase": "create",
-    "workDone": "Extracted N claims: <brief list>. X% skip rate.",
-    "filesModified": ["<note-id-1>", "<note-id-2>"],
-    "completedAt": "<ISO>",
-    "completedBy": "knowledge-agent"
-  },
-  "updatedAt": "<ISO>"
+# REST — up to 25 notes per call; filed in /knowledge/notes; parentFolder is rejected
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/notes" -d '{
+  "drive": "<drive-uuid>",
+  "notes": [{"name": "<slug>", "actions": [
+    {"type":"SET_PROVENANCE","input":{"author":"<agent>","sourceOrigin":"DERIVED","createdAt":"<ISO>"}},
+    {"type":"SET_TITLE","input":{"title":"<claim as a sentence>","updatedAt":"<ISO>"}},
+    {"type":"SET_DESCRIPTION","input":{"description":"<≤ 200, not the title again>","updatedAt":"<ISO>"}},
+    {"type":"SET_NOTE_TYPE","input":{"noteType":"CONCEPT","updatedAt":"<ISO>"}},
+    {"type":"SET_CONTENT","input":{"content":"<argument, evidence, conditions>","updatedAt":"<ISO>"}},
+    {"type":"ADD_TOPIC","input":{"id":"<uuid>","name":"<topic>"}},
+    {"type":"SET_METADATA_FIELD","input":{"field":"confidence","value":"grounded","updatedAt":"<ISO>"}}
+  ]}]
 }'
+# then the provenance edge, per note
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/relationships" \
+  -d '{"source":"<note>","target":"<source>","type":"DERIVED_FROM","reason":"§ <where in the source>: <what the text says>","confidence":"grounded"}'
 ```
 
-### After extraction: the notes are not done
+```bash
+# CLI — same actions, one document at a time, signed as you
+switchboard docs create --type bai/knowledge-note --name "<slug>" --drive <drive-slug> --parent-folder <notes-folder-uuid> --format json
+node scripts/lint-actions.mjs /tmp/acts-<id>.json && switchboard docs apply <note-id> --file /tmp/acts-<id>.json   # actions carry "scope":"global"
+switchboard docs link <note-id> <source-id> -t DERIVED_FROM --reason "§ <where>: <what>" --confidence grounded
+switchboard docs tree <drive-slug> --format json | grep <note-id>       # exists — never assume from a dispatch
+```
 
-Extraction produces DRAFT notes with provenance and a `DERIVED_FROM` edge. They still need the reflect and reweave phases — typed links, and a place in the MoC hierarchy (`CORE_IDEA` from a TOPIC or DOMAIN MoC, itself a `CHILD_MOC` of the HUB) — before they are explorable and pass health. Run `/powerhouse-knowledge:pipeline` to carry them through, or `/connect` then `/synthesize` by hand. Once several topic MoCs exist, `synthesize` groups them under DOMAIN MoCs and a single HUB so clusters can be walked from the top.
+**You cannot approve your own note.** `APPROVE_NOTE` throws `SelfApprovalError`
+when `actor` equals `provenance.author`. Extract leaves notes in `DRAFT`; the
+walk to `CANONICAL` happens in verify, as a different actor.
 
-## Note types
+## Close out the source — mandatory
 
-Choose the most specific type for each claim:
-- **concept** — a theoretical idea or principle
-- **pattern** — a recurring solution or approach
-- **architecture** — system design decision or structure
-- **decision** — a choice made with rationale
-- **observation** — an empirical finding
-- **procedure** — a how-to or workflow step
-- **reference** — factual information for lookup
-- **bug-pattern** — a recurring failure and its cause
-- **integration** — how two systems or components connect
-- **workflow** — an end-to-end process across steps or roles
+A source left in `INBOX` or `EXTRACTING` reads as unprocessed forever; its
+notes carry no signal back to it. Provenance lives in two places and both are
+required: `extractedClaims[]` on the source (what the app renders) and the
+`DERIVED_FROM` edge per note (what the graph traverses).
 
-These ten lowercase values are the canonical set (the note editor's type select). `noteType` is a free string in the schema, so `CONCEPT` is accepted on write but never matches the editor or the health dashboard's filters — always write lowercase.
+**The invariant: `claimCount == len(extractedClaims) == notes written.`**
+Nothing in the stack checks it — `RECORD_EXTRACTION_STATS` copies its inputs
+and replaces the whole object, `ADD_EXTRACTED_CLAIM.claimRef` is unvalidated
+(a typo is a permanent phantom the app counts), and `SET_SOURCE_STATUS` has no
+transition guard. A real run left 24 sources asserting nine claims each with
+`extractedClaims: []` — the vault reported itself processed and held nothing.
+So: build the stats from the list of ids you actually created, dispatch them in
+the **same batch** as the `ADD_EXTRACTED_CLAIM`s, and read the source back.
 
-## Quality gates
+`skipRate = skippedCount / (claimCount + skippedCount)` — a fraction 0–1 (the
+editor renders ×100; `57` where `0.57` was meant shows `5700%`), `0` when both
+counts are 0.
 
-- [ ] Each note makes exactly ONE point
-- [ ] Titles are declarative sentences (not questions or fragments)
-- [ ] Descriptions add information beyond the title (~150 chars)
-- [ ] Content includes arguments/evidence, not just assertions
-- [ ] All notes have at least one topic tag
-- [ ] Metadata populated for what the source supports — at least `confidence`, plus the type-specific fields (a code-derived `bug-pattern` with `Metadata (0)` is under-extracted)
-- [ ] `noteType` is one of the ten lowercase values (never `CONCEPT`)
-- [ ] Content read back contains real line breaks (no literal `\n`) — the classic shell-interpolation bug
-- [ ] Description ≤ 200 UTF-16 units — assert it **where the note is written**, not after dispatch; em dashes and arrows push one over the line invisibly, and Python's `len()` undercounts what the reducer counts. `lint-actions.mjs` checks it
-- [ ] One `DERIVED_FROM` edge per note (`switchboard docs link <note> <source> -t DERIVED_FROM --reason "<where in the source>" --confidence grounded`) — this is how `/health` finds a note's source; the source's `extractedClaims` alone is not traversable from the note, and the reason is how anyone checks the claim against it
-- [ ] Provenance traces back to the source (sourceOrigin: DERIVED)
-- [ ] Skip rate < 10% for domain-relevant content — and a **high** rate is the finding on a source that is mostly not claims. Report it with the reasoning per file (`claims`, `skipped`, and one line of why), because a fabricated zero hides what the source actually was. A 57% rate across a corpus of tutorials, cloud-vendor walkthroughs and a chronological changelog is honest; the same number on a reference page means the reading was shallow
-- [ ] **Zero yield is a real outcome, and it is not INBOX.** A source read end to end that honestly yields nothing (a glossary, a click-by-click tutorial, an index stub) gets `RECORD_EXTRACTION_STATS` with `claimCount: 0` and the reasoning, then status `EXTRACTED`. Leaving it INBOX claims it was never processed
-- [ ] **Check the code before asserting what a document says.** Where a doc and the tree disagree, the disagreement is the most valuable note on that source — name which is authoritative and how you checked (`git grep` at the tag). Five such divergences came out of one repository pass; each is worth an upstream fix
-- [ ] **All created notes verified in drive tree** — read the drive after creation and confirm each note exists as a file node
-- [ ] **`result.allApplied` checked after the batch** — `jobStatus(jobId:)` names any rejected action and quotes the reducer; a rejected action leaves its field untouched while the other actions land
-- [ ] Source closed out: `ADD_EXTRACTED_CLAIM` per note, `RECORD_EXTRACTION_STATS`, status `EXTRACTED`
-- [ ] **Re-running a close-out must not grow `extractedClaims`.** `ADD_EXTRACTED_CLAIM` is idempotent on `claimRef` from `@powerhousedao/knowledge-note` 1.0.54-dev.6 onward. On anything older it appends blindly and the source overstates its own yield, so check the deployed version before a re-sync; repair a duplicated list with `REMOVE_EXTRACTED_CLAIM` then one `ADD_EXTRACTED_CLAIM`.
-- [ ] Handoff recorded with `ADVANCE_PHASE` (phase `create`); connecting, MoC attachment and the walk to `CANONICAL` happen in the reflect/reweave/verify phases — see AGENT.md § Definition of done for the full per-note list
+| Zero yield lands as | When |
+|---|---|
+| `EXTRACTED`, `claimCount: 0` | in-domain but thin, or every claim already in the vault — processed, nothing to take this time |
+| `ARCHIVED` | structurally not knowledge: front matter, table of contents, index, a recap that only restates |
+
+```bash
+switchboard docs apply <source-id> --actions '[
+  {"type":"ADD_EXTRACTED_CLAIM","input":{"claimRef":"<note-1>"},"scope":"global"},
+  {"type":"ADD_EXTRACTED_CLAIM","input":{"claimRef":"<note-2>"},"scope":"global"},
+  {"type":"RECORD_EXTRACTION_STATS","input":{"claimCount":2,"skippedCount":3,"skipRate":0.6,"extractedAt":"<ISO>","extractedBy":"<agent>"},"scope":"global"},
+  {"type":"SET_SOURCE_STATUS","input":{"status":"EXTRACTED"},"scope":"global"}
+]'
+switchboard docs get <source-id> --state --format json | python3 -c "
+import json,sys; g=json.load(sys.stdin)['state']['global']; s=g.get('extractionStats') or {}
+print('status:',g.get('status'),'| refs:',len(g.get('extractedClaims') or []),'| claimCount:',s.get('claimCount'),'| skipRate:',s.get('skipRate'))"
+```
+
+`ADD_EXTRACTED_CLAIM` is idempotent on `claimRef` (package ≥ 1.0.54-dev.6);
+older deployments append blindly — repair a duplicated list with
+`REMOVE_EXTRACTED_CLAIM` then one `ADD_EXTRACTED_CLAIM`.
+
+## Handoff
+
+If this run is a pipeline task, `ADVANCE_PHASE` with phase `create`. The handoff
+is a packet for the next phase, not a timestamp: in `workDone` give the counts
+per source with one line of reasoning each, what was struck and why, and what
+reflect should look at first — the contradictions and supersessions you noticed
+while reading. `filesModified` = the note ids and the source id.
+
+Extraction produces `DRAFT` notes with provenance and a `DERIVED_FROM` edge.
+They still need reflect (typed edges), reweave (a `CORE_IDEA` from a MoC, the
+backward pass on older notes) and verify (quality gate, walk to `CANONICAL`).
+Run `/powerhouse-knowledge:pipeline` to carry them through.
+
+## Before you advance
+
+- [ ] Every note passes all six gates; nothing is an excerpt, summary, heading or caption
+- [ ] The vault was searched first — an existing claim got evidence and a second `DERIVED_FROM`, not a twin
+- [ ] Title is a declarative sentence; description adds mechanism/scope/implication and is distinctive; content carries argument, evidence and conditions
+- [ ] `noteType` from the enum; ≥ 1 topic; `SET_PROVENANCE` set; `confidence` ∈ `grounded|established|speculative` (the reducer rejects anything else); type-specific metadata where the source supports it
+- [ ] Description ≤ 200 UTF-16 units, linted before dispatch; content read back has real line breaks
+- [ ] `result.allApplied` checked; every note present in the drive tree
+- [ ] One `DERIVED_FROM` edge per note with the locus as its reason
+- [ ] Source closed out and read back: `claimCount == len(extractedClaims) == notes written`; `skipRate` computed as a fraction; status `EXTRACTED` or `ARCHIVED`, never `INBOX`/`EXTRACTING`
+- [ ] Handoff recorded with phase `create`
 
 If "$ARGUMENTS" is provided, treat it as the source document ID to extract from.

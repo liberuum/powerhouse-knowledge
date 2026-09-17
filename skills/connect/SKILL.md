@@ -12,204 +12,178 @@ description: Find connections between knowledge notes and create links. Use afte
 > drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
 > drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
-Find genuine connections between notes and create typed links. This is the "reflect" phase — the step that transforms isolated claims into a knowledge graph.
+The reflect phase: turn isolated claims into a graph. A link is itself a claim —
+*A relates to B in this specific way* — and it is only worth as much as the
+sentence that justifies it. Connecting is where a new claim gets encoded into
+what the vault already knows; a note without articulated connections is
+structurally present and cognitively orphaned.
 
-## Connection discovery process
+## Process
 
-1. **Identify the target note** — which note are we connecting?
-2. **Search for candidates** using multiple strategies:
-   - `knowledgeGraphSimilar(documentId)` — AI-powered semantic similarity (finds conceptually related notes even without keyword overlap)
-   - `knowledgeGraphSemanticSearch(query, mode: SEMANTIC)` — semantic search from the note's core claim phrased as a question (pkg ≥ 1.0.50; falls back to keyword transparently)
-   - `knowledgeGraphRelatedByTopic(documentId)` — notes sharing the most topics
-   - `knowledgeGraphSearch(query)` — keyword search on title + description
-   - `knowledgeGraphFullSearch(query)` — full-text search; ANDs terms, so use 1-2 keywords
-3. **Apply the articulation test** — for each candidate, answer: "[[A]] connects to [[B]] because [specific reason]". The sentence you write here IS the edge's `--reason` in the next step; if you cannot write it, there is no link.
-4. **If the connection is genuine**, create the edge with its reason.
+1. **Identify the target note** and read it — title, description, content.
+2. **Find candidates**, several ways:
+   - `knowledgeGraphSimilar(documentId)` — semantic neighbours, no keyword overlap needed
+   - `knowledgeGraphSemanticSearch(query, mode: SEMANTIC)` with the note's claim phrased as a question. Asking how two things relate? Search the **narrower** one alone
+   - `knowledgeGraphRelatedByTopic(documentId)` — shared topics
+   - `knowledgeGraphFullSearch(query)` — a literal substring; give it **one** distinctive term
+   - **The batch itself**: the other notes from this source and from sources in the same `/sources` folder. Cross-source juxtaposition surfaces relationships that source-by-source processing misses
+3. **Articulate.** For each candidate complete *"[A] connects to [B] because …"*
+   in one sentence a reader can check. That sentence **is** the edge's `reason`.
+   If you cannot write it, there is no link — waiting for a genuine fit builds
+   a better graph than linking for activity's sake.
+4. **Create the edge** with its type, reason and confidence.
 
 ```bash
 curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/relationships" \
   -d '{"source":"<a>","target":"<b>","type":"BUILDS_ON","reason":"<why>","confidence":"grounded"}'
+# PATCH the same body to change a reason; DELETE {source,target,type} to remove
+
+switchboard docs link <a> <b> -t BUILDS_ON --reason "<why>" --confidence established
+switchboard docs annotate <a> <b> -t BUILDS_ON --reason "<new why>"     # a repeated `docs link` is a no-op, metadata included
+switchboard docs unlink <a> <b> -t BUILDS_ON
 ```
 
-`PATCH` the same body to change a reason; `DELETE` `{source,target,type}` to remove.
-A bare knowledge edge is refused. The CLI equivalent is `docs link --reason`. Since the drive-override migration, edges live in the reactor's `DocumentRelationship` table (one row per ADD_RELATIONSHIP system action) — not in the source note's `links[]` array. The legacy `--op addLink` writes to the old per-doc array and is **not** indexed by the graph subgraph.
+## The edge contract
+
+An edge is five fields wide. `source`, `target`, `type` record *that* two notes
+connect; `reason` and `confidence` are the two a reader can use — and the two a
+hurried run leaves null.
+
+| Field | Rule |
+|---|---|
+| `source` → `target` | **Direction is a claim.** `A BUILDS_ON B` says A extends B; never add the reverse "for symmetry". The note whose content should mention the relationship is the source |
+| `type` | One of the seven indexed types (below). Any other string is stored by the reactor and reaches nothing |
+| `reason` | Required on the five knowledge types. A sentence ≥ 20 chars; rejected if it is the type restated or a placeholder (`because`, `todo`, `tbd`, `related`, `n/a`, `none`). **Specificity test:** if the sentence could describe any pair of notes, it has not processed *this* pair. "extends B by adding detail" ✗ · "extends B's per-read-model claim to every read model, by naming the shared cache" ✓. Name the claims, not the titles |
+| `confidence` | `grounded` (evidence or a source backs the link) · `established` (well accepted, not evidenced here) · `speculative` (a lead worth recording). Exactly those three, lowercase. **Nothing rejects an edge for lacking one** — set it every time |
+
+**Two surfaces validate, and they disagree.** `POST /relationships` checks reason
+*and* confidence and returns `400 LINT_CONVENTION` on either (including on
+`CORE_IDEA`, where the confidence check runs before the bare-type exemption).
+`docs link` is checked only by the plugin's pre-write hook, which enforces the
+reason but **not** the confidence value — `Grounded`, `high`, `strong` are
+dropped silently and the edge lands articulated but unrated. Spell it from the
+three, or use REST and let the 400 catch you. Reasons starting with a dash need
+the attached form (`--reason=--base is …`).
+
+The reason lives on the edge (CLI ≥ 1.0.36) and comes back on every edge read;
+`/health` reports the share of knowledge edges that carry one. Edges live in
+the reactor's `DocumentRelationship` table; the legacy `addLink` op writes a
+per-document array the graph does not index. `docs link` is signed as you when
+the profile has a signing identity — the raw `addRelationship` GraphQL mutation
+is server-signed and cannot carry a reason, which is why the hook refuses it.
+
+## Choosing the type
+
+| Type | Use when | Note |
+|---|---|---|
+| `BUILDS_ON` | A extends, specifies, supports or provides the mechanism for B | The default for a genuine relationship |
+| `CONTRADICTS` | A and B cannot both hold as stated | The indexer opens a `bai/tension` — see below. Scope them first: a claim true in a narrower scope is unbounded, not wrong |
+| `SUPERSEDES` | A replaces B | Then `ARCHIVE_NOTE` B with a comment — legal only from `CANONICAL`, so walk B there first if it is still `DRAFT`. Knowledge is retired, not deleted |
+| `RELATES_TO` | A thematic connection that is none of the above | Last resort. If you reach for it, ask whether the link is real |
+| `DERIVED_FROM` | note → source, written by extract | Reason = the locus in the source |
+| `CORE_IDEA`, `CHILD_MOC` | MoC → note, MoC → MoC | Navigation; written by synthesize. May be bare for the hook — synthesize says why they should not be |
+
+**Density.** Every note ends reflect with ≥ 2 knowledge edges and ≥ 1
+**incoming** edge — an orphan is a node nobody points at, and outgoing links do
+not fix it. Atomic notes carry 3–6 links in a healthy graph; a note past ~15 is
+bundling claims or wants to be a MoC.
+
+**Write it into the body when the link changes what the note means.** The edge
+carries the reason; the content carries the argument. A contradiction, a
+condition another note adds, a supersession — say it in the note in a sentence
+that names the other note. Do not append lists of titles.
+
+**Articulate the backlog.** Edges created before 1.0.36 or by an import come back
+with `reason: null` from `knowledgeGraphForwardLinks`. Read both notes; if the
+connection is real, `docs annotate` it with the sentence. If, having read both,
+you cannot complete the sentence, `docs unlink` it and say so — never invent a
+reason to turn a WARN green.
+
+## Tensions
+
+**The indexer opens them.** On a Switchboard with vault package ≥ 1.0.55, a
+`CONTRADICTS` edge makes the graph-indexer create a `bai/tension` in the drive's
+`/ops` (title `Contradiction on <shared topics or words>`, both claims quoted in
+the description, `involvedRefs [a, b]`, `observedBy: graph-indexer`) and add an
+`ADD_TENSION` entry to every MoC holding either note as a `CORE_IDEA`. One
+tension per unordered pair, ever. Two gates: it acts only on operations stamped
+**live** (an edge imported, backfilled or replayed at boot opens nothing) and
+only when **both** notes belong to its drive.
+
+After a `CONTRADICTS` edge, read the tension back — it is the `INVOLVES`
+backlink on either note:
 
 ```bash
-switchboard docs link <source-uuid> <target-uuid> -t BUILDS_ON \
-  --reason "<A> extends <B>'s claim that X holds for one read model to every read model" \
-  --confidence established
-```
-
-**The reason lives on the edge.** `--reason` (CLI ≥ 1.0.36) is stored as
-relationship metadata and comes back on every edge read
-(`knowledgeGraphEdges { reason confidence }`, the Links panel, the sidebar's
-Connections list, the chat's `linked_notes`); `/health` reports the share of
-knowledge edges that carry one. The pre-write hook **blocks** a `RELATES_TO`,
-`BUILDS_ON`, `CONTRADICTS`, `SUPERSEDES` or `DERIVED_FROM` link without a
-real one (≥ 20 chars; not the type name, not "because"). Write it as the
-specific sentence you would give a reader — name the claim, not the titles.
-`--confidence` says how well-founded the link is: `grounded` (evidence or a
-source backs it), `established` (well accepted, not evidenced here),
-`speculative` (a lead worth recording). `CORE_IDEA` / `CHILD_MOC` edges have
-no reason to give — their meaning is the type.
-
-**Existing bare edges** (created before 1.0.36, or by an import) are the
-backlog this skill works through: `knowledgeGraphForwardLinks` returns
-`reason: null` for them. Articulate each one in place — a repeated
-`docs link` is a no-op, metadata included:
-
-```bash
-switchboard docs annotate <source-uuid> <target-uuid> -t RELATES_TO \
-  --reason "…" --confidence grounded
-```
-
-If you cannot articulate an existing edge after reading both notes, that is
-the finding: `docs unlink` it rather than invent a sentence.
-
-`docs link` sends the `ADD_RELATIONSHIP` action **signed as you**
-when the profile has a signing identity (`switchboard auth login --renown` —
-the plugin's pre-write hook requires it), so the edge is attributable like any
-other agent write: the vault shows `powerhouse-knowledge` acting for your
-address. The raw `addRelationship` GraphQL mutation builds the action
-server-side, cannot carry a reason and is always signed by the Switchboard's
-own identity; the hook steers you away from it. Idempotent on
-`(source, target, type)`.
-
-To remove an edge: `switchboard docs unlink <source-uuid> <target-uuid> -t RELATES_TO`.
-
-**Quote a reason that starts with a dash.** `--reason "--base is baked into the
-bundle"` is parsed as an unknown flag and the command fails. Use the attached
-form — `--reason=--base is baked into the bundle` — or reword the sentence so it
-does not open with a dash.
-
-## Link types
-
-- **RELATES_TO** — general thematic connection
-- **BUILDS_ON** — this note extends or strengthens the target
-- **CONTRADICTS** — this note challenges or conflicts with the target
-- **SUPERSEDES** — this note replaces the target (newer/better understanding)
-- **DERIVED_FROM** — this note was extracted or derived from the target
-
-## Methodology cross-reference
-
-After connecting notes to each other, **search the local methodology files** for research backing. The 249 Ars Contexta research claims are bundled with the plugin in `data/methodology/*.md` — they are **not** stored in the remote vault.
-
-1. For each new note, search the local methodology files by topic and keywords:
-```bash
-# Search methodology files by keyword (from the plugin directory)
-grep -rl "<keyword from note>" data/methodology/*.md
-```
-
-Or use the Grep tool to search file contents and the Glob tool to list all `data/methodology/*.md` files. Each file has YAML frontmatter with `description`, `topics`, and `methodology` fields that help match against the note.
-
-2. For each matching claim, **record the methodology reference in the note's content** rather than creating a document link (since the claim has no remote document ID):
-
-Add a "Methodology grounding" section to the note's content via `SET_CONTENT`:
-```markdown
-## Methodology grounding
-- **[[claim title]]** — how this note relates to the claim (BUILDS_ON / CONTRADICTS / RELATES_TO)
-```
-
-```bash
-switchboard docs mutate <note-id> --op setContent --input '{
-  "content": "<existing content + methodology grounding section>",
-  "updatedAt": "<ISO>"
-}'
-```
-
-**Relationship types for methodology:**
-- `BUILDS_ON` — note implements or validates the research claim
-- `CONTRADICTS` — note's findings challenge the methodology claim
-- `RELATES_TO` — thematic connection without direct support/conflict
-
-**Why this matters:** Cross-referencing grounds working knowledge in the methodology foundation. The claims live locally as plugin reference data — the agent reads them directly from disk — no remote import step.
-
-## Tension detection
-
-**The indexer opens tensions for you.** Since the graph-indexer automation
-(vault package ≥ 1.0.55), every `CONTRADICTS` edge that lands on the
-Switchboard makes the server create a `bai/tension` in `/ops` — a short
-title (`Contradiction on <shared topics or words>`), both claims in full in
-the description, `involvedRefs [a, b]`, `observedBy: graph-indexer` — and add an
-`ADD_TENSION` entry (id = the tension's document id) to every MoC that holds
-either note as a `CORE_IDEA`. One tension per unordered pair, ever: a pair
-that already has a tension (any status) is left alone.
-
-So after creating a CONTRADICTS link, **do not create a tension by hand**.
-Instead, within a couple of seconds:
-
-```bash
-# The tension the indexer opened for this pair (INVOLVES edges point at both notes)
 switchboard query '{ knowledgeGraphBacklinks(driveId:"<UUID>", documentId:"<note-a>") { sourceDocumentId linkType } }'
-# → the INVOLVES source is the tension id. Read it:
 switchboard docs get <tension-id> --state --format json
 ```
 
-Then **articulate it** — this is the part only you can do. The automation
-knows the two titles; you know why they conflict. The tension model has no
-content-update operation after `CREATE_TENSION`, so the articulation goes
-where readers meet it: append a short **"Contradicts"** paragraph to each
-note's content naming the other note and the specific point of conflict
-(`SET_CONTENT` on each note, whole body, real newlines). If more notes are
-party to the same disagreement, add them to the tension:
+Then **articulate it** — the automation knows the two titles, you know why they
+conflict. `CREATE_TENSION` is write-once for `title`, `description` and
+`content` (no update op exists; re-dispatching it overwrites everything and
+forces `OPEN` while leaving the old `resolution` in place), so the articulation
+goes where readers meet it: a short "Contradicts" paragraph in each note's
+content naming the other note and the point of conflict. Add further parties
+with `ADD_INVOLVED_REF` (deduped). Then close it when you can — both closers
+throw `TensionAlreadyResolvedError` if the tension is not `OPEN`:
 
-```bash
-switchboard docs mutate <tension-id> --op addInvolvedRef --input '{"ref":"<note-id-3>"}'
+- **Resolve** (`RESOLVE_TENSION {resolution, resolvedAt}`) when one side is right; consider `SUPERSEDES` on the winner.
+- **Dissolve** (`DISSOLVE_TENSION`) when both hold in different scopes — and write the boundary into both notes.
+
+Three patterns that look unresolvable and are not:
+
+- **A defect filed as a tension.** A design note describes the intended path, a bug note the failure path — both true. Dissolve, write the boundary, keep the defect as a note plus a `/health` recommendation. The tension list answers "what does the vault not know yet"; a documented bug with an owner is something it knows well.
+- **A claim true in a narrower scope.** Scope it in place (this edition, this version, this jurisdiction), link the evidence with reasons, resolve in favour of the sources. Deleting it throws away the part that still holds.
+- **A decision that is not yours.** Correct the notes, then move the call to `ADD_OPEN_QUESTION` on the MoC that holds the cluster.
+
+Create a tension by hand only when the automation could not have fired — an
+older Switchboard, an imported or replayed edge, a cross-drive pair — filling
+every field in the one `CREATE_TENSION` you get (`title`, `description` quoting
+both claims, `content` saying what A holds, what B holds, why it matters and
+what would settle it, `involvedRefs`, `observedAt`, `observedBy`), then
+`ADD_TENSION` on the MoC with the tension's **document id**.
+
+## Grounding in the methodology — only where it is genuine
+
+The 249 Ars Contexta claims live on disk (`data/methodology/*.md`, unpacked by
+`node scripts/methodology.mjs`), not in the vault, so grounding is written into a
+note's content, not as an edge. It applies **only** to notes whose claim is
+about knowledge work, agent cognition, documentation or retrieval — the
+methodology's own territory. A note about PGlite tables has no methodology
+counterpart; grounding it is a fabricated link that fails the articulation
+test, and its absence is not a defect.
+
+When a note is in scope: find the claim by title (`grep -ril "<term>"
+data/methodology/*.md`, then read it), and append a `## Grounding` section that
+cites the exact claim title in prose with the specific relationship — *builds
+on*, *contradicts* or *relates to* — and one sentence saying how. Read the
+current content first: `SET_CONTENT` replaces the whole body.
+
+```markdown
+## Grounding
+Builds on **"claims must be specific enough to be wrong"** — the six-gate falsifiability test is that claim applied at extraction time.
 ```
 
-If the contradiction turns out NOT to be substantive (different wording, or
-both true in different scopes), **dissolve** the tension with the reason:
+`/health` reports grounded ÷ in-scope in `recommendations`, never grounded ÷ all
+notes. Do not write a grounding section to move that number.
 
-```bash
-switchboard docs mutate <tension-id> --op dissolveTension --input '{"resolution":"<why both hold>","resolvedAt":"<ISO>"}'
-```
+## Handoff
 
-**A tension is for an unresolved knowledge conflict, not for a known bug.**
-The commonest reason a vault sits at FAIL on THREE_SPACE_BOUNDARIES is that
-defects were filed as tensions. When a design document describes the intended
-path and a defect note describes the failure path, *both claims are true* — the
-missing thing is the boundary, so **dissolve** it, write the boundary into both
-notes, and keep the defect as a note plus a `/health` recommendation naming
-where to file it. The tension list should answer "what does the vault not know
-yet", and a documented bug with an owner is something the vault knows very
-well.
-
-Two more patterns worth naming, because each looks unresolvable and is not:
-
-- **A claim that is true in a narrower scope.** A premise refuted by later
-  primary sources is usually not wrong, it is *unbounded*. Scope it in place
-  (the OSS edition, this version, this jurisdiction), link the evidence notes
-  with reasons, and resolve in favour of the sources. Deleting the claim throws
-  away the part that still holds.
-- **A decision that is not yours.** Where closing needs a commercial or product
-  call, do the knowledge half — correct the notes — and move the call to an
-  `ADD_OPEN_QUESTION` on the MoC that holds the cluster, where whoever browses
-  it will meet it. An open question is the right home for a pending decision; a
-  tension is not.
-
-If one side is right, **resolve** it and consider `SUPERSEDES` on the winner:
-
-```bash
-switchboard docs mutate <tension-id> --op resolveTension --input '{"resolution":"<which side and why>","resolvedAt":"<ISO>"}'
-```
-
-Only when the Switchboard predates the automation (no tension appears after
-a few seconds and `knowledgeGraphNodesByType(driveId, documentType:"bai/tension")`
-is unsupported) fall back to creating it yourself:
-
-```bash
-switchboard docs create --type bai/tension --name "<what contradicts what>" --drive <drive-slug> --parent-folder <ops-folder-uuid> --format json
-switchboard docs apply <tension-id> --actions '[{"type":"CREATE_TENSION","input":{"title":"<title>","description":"<summary>","content":"<Side A says… Side B says… This matters because…>","involvedRefs":["<note-id-1>","<note-id-2>"],"observedAt":"<ISO>","observedBy":"knowledge-agent"},"scope":"global"}]'
-switchboard docs mutate <moc-id> --op addTension --input '{"id":"<tension-id>","description":"<summary>","involvedRefs":["<note-id-1>","<note-id-2>"],"addedAt":"<ISO>"}'
-```
+In a pipeline run, `ADVANCE_PHASE` with phase `reflect`. `workDone` is the
+packet for reweave: edges created by type, tensions opened and how they were
+left, notes still under 2 edges and why, older notes you noticed that the new
+claims qualify or supersede. `filesModified` = every note whose edges or
+content changed.
 
 ## Quality rules
 
-- Every connection must pass the **articulation test** — and the sentence goes on the edge (`--reason`). Bare links without reasons are address books, not knowledge graphs; a reason that only restates the type or the titles is a bare link in disguise
-- Prefer specific link types over generic RELATES_TO when the relationship is clear
-- Create bidirectional links when appropriate (if A builds on B, B may also relate to A)
-- Minimum 2 connections per note. Separately, an **orphan** is a note with zero *incoming* edges (what `knowledgeGraphOrphans` returns) — adding outgoing links from it does not fix that; a link *to* it does
-- Update the target note's content if the connection reveals new context
-- After a CONTRADICTS link, read back the tension the indexer opened and enrich or dissolve it — never open a duplicate by hand
+- Every knowledge edge carries a reason that passes the articulation **and**
+  specificity tests, and a confidence from the three.
+- Prefer the specific type; `RELATES_TO` is a last resort; direction is a claim.
+- ≥ 2 knowledge edges and ≥ 1 incoming edge per note before advancing.
+- Update a note's content when a link changes what it means.
+- After `CONTRADICTS`, read the indexer's tension back, articulate it in both
+  notes, resolve or dissolve when you can; never open a duplicate by hand.
+- Ground only in-scope notes; never invent a grounding.
 
 If "$ARGUMENTS" is provided, find connections for that specific note.

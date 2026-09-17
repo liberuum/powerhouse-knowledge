@@ -46,8 +46,29 @@ const hash = createHash("sha256").update(body).digest("hex").slice(0, 16);
 const marker = (file) =>
   `<!-- GENERATED from AGENT.md (sha256:${hash}) by scripts/build-agent.mjs — edit AGENT.md, not ${file} -->\n\n`;
 
+// AGENT.md describes itself as the canonical file. Copied verbatim that
+// sentence becomes false in both artifacts — an agent reading AGENTS.md was
+// told it held the canonical instructions and could edit them, and the next
+// build would silently overwrite the edit. The marker above says otherwise but
+// is an HTML comment, invisible once rendered. So each target gets a sentence
+// that is true of itself. Exact-match, and a hard failure if AGENT.md's
+// wording changes: a silently-skipped rewrite would restore the lie.
+const CANONICAL_LINE =
+  "This file is the single canonical instruction set. `AGENTS.md` and `agents/knowledge-agent.md` are **generated from it** (`node scripts/build-agent.mjs`) — never edit either by hand.";
+const GENERATED_LINE =
+  "This file is **generated** from `AGENT.md` by `node scripts/build-agent.mjs` and is a verbatim copy of it — edit `AGENT.md`, never this file.";
+
+if (!body.includes(CANONICAL_LINE)) {
+  console.error(
+    "build-agent: AGENT.md no longer contains the self-description line.\n" +
+      "Update CANONICAL_LINE in scripts/build-agent.mjs to match.",
+  );
+  process.exit(1);
+}
+const generated = body.replace(CANONICAL_LINE, GENERATED_LINE);
+
 // Claude Code: needs YAML frontmatter AGENT.md must not carry.
-const renderedAgent = FRONTMATTER + marker("this file") + body;
+const renderedAgent = FRONTMATTER + marker("this file") + generated;
 
 // Everyone else: plain markdown, no frontmatter, plus a line saying what this
 // repository is — an AGENTS.md reader arrives with no other context.
@@ -59,7 +80,7 @@ build or test here. Read the instructions below, then read the skill you need
 from \`skills/<name>/SKILL.md\`.
 
 `;
-const renderedAgents = AGENTS_PREFIX + marker("this file") + body;
+const renderedAgents = AGENTS_PREFIX + marker("this file") + generated;
 
 const targets = [
   [out, renderedAgent],

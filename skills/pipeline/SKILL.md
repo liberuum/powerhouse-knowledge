@@ -12,258 +12,166 @@ description: Run the knowledge processing pipeline on a source or batch of notes
 > drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
 > drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
-Carry a source through to connected, verified notes in the MoC hierarchy. The six R names (Record, Reduce, Reflect, Reweave, Verify, Rethink) are the vocabulary; the pipeline-queue task underneath has **four phases**, and this skill drives them:
-
-## Pipeline Phases
+Carry a source through to connected, verified notes in the MoC hierarchy. The
+six R names (Record, Reduce, Reflect, Reweave, Verify, Rethink) are the
+vocabulary; the `bai/pipeline-queue` task underneath has **four phases**:
 
 ```
-Source -> CREATE (extract claims) -> REFLECT (connect) -> REWEAVE (MoC membership + hierarchy, update old notes) -> VERIFY (quality gate + auto-repair)
+CREATE (extract claims) → REFLECT (typed edges) → REWEAVE (MoC placement + backward pass) → VERIFY (quality gate, lifecycle)
 ```
 
-Record (`/seed`) happens before the task exists; Rethink (`/health`, `/graph`) after it completes.
+Record (`/seed`) happens before the task exists; Rethink (`/health`, `/graph`)
+after it completes. Each phase is one skill; this skill drives them and keeps
+the queue honest.
 
-Each phase is tracked in the `bai/pipeline-queue` singleton document.
+## Pre-flight
 
-## CRITICAL: Pipeline tracking is MANDATORY
-
-**Every pipeline run MUST update the `bai/pipeline-queue` document.** After completing each phase (create, reflect, reweave, verify), immediately record the handoff via ASSIGN_TASK + ADVANCE_PHASE. The task must reach DONE status by the end of the pipeline. Never skip pipeline tracking — the app's Pipeline view reads from this document.
-
-Pipeline operations (ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE, COMPLETE_TASK, FAIL_TASK) are **dependent** — each requires the previous one to have created state. **Batch them.** `docs apply` applies actions in order and isolates failures per action (verified on CLI 1.0.32): `[ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE]` in one call works, and so does a batch of chained advances. The cost moves to the read-back: after each batch, `docs get` the queue and confirm the task's `status`, `currentPhase` and `handoffs.length` — a rejected action (wrong `taskId`, unknown `taskType`) is skipped while the job reports success.
-
-The CLI auto-injects `timestampUtcMs` and `action.id` on all actions — no need to generate them manually.
-
-## Pre-flight: Verify methodology files are available locally
-
-The 249 Ars Contexta research claims are bundled with the plugin in `data/methodology/*.md`. They are **not** stored in the remote vault — the agent reads them directly from disk during the cross-reference step.
-
-Before running the pipeline, confirm the files exist:
-```bash
-ls data/methodology/*.md | wc -l
-# Should be 249
-```
-
-If the `data/methodology/` directory is missing (e.g., marketplace install without data), clone it from GitHub:
-```bash
-git clone --depth 1 --filter=blob:none --sparse https://github.com/liberuum/powerhouse-knowledge.git /tmp/pk-methodology
-cd /tmp/pk-methodology && git sparse-checkout set data/methodology
-cp -r /tmp/pk-methodology/data/methodology/ <plugin-dir>/data/methodology/
-```
-
-## Full Pipeline Run
-
-### Step 1: Find pending tasks
+- **Methodology on disk.** The 249 claims ship as `data/methodology.tar.gz`; the
+  unpacked directory is gitignored. `ls data/methodology/*.md | wc -l` should
+  print 249; if not, `node scripts/methodology.mjs`.
+- **Queue and target.** From `switchboard docs tree <drive-slug> --format json`
+  find the `bai/pipeline-queue` singleton (`/ops/queue/`), then read it:
 
 ```bash
-switchboard docs tree <drive-slug> --format json
-# Find the bai/pipeline-queue document (singleton in /ops/queue/)
-
-switchboard docs get <pipeline-queue-id> --state --format json
-# Check state.global.tasks for PENDING or IN_PROGRESS tasks
+switchboard docs get <pipeline-queue-id> --state --format json | python3 -c "
+import json,sys; g=json.load(sys.stdin)['state']['global']
+print([(t['id'][:8], t['status'], t.get('currentPhase'), t.get('documentRef')) for t in g['tasks'] if t['status'] in ('PENDING','IN_PROGRESS','BLOCKED')])"
 ```
 
-If there are PENDING tasks with a `documentRef`, process them. The source document always has the latest content regardless of how many edits the user made.
+Process `PENDING` tasks that carry a `documentRef`; the source document always
+has the latest content. Before adding a task for a document, check no
+non-DONE/FAILED task already references it.
 
-### ⚠️ Never reuse a task id — the model cannot recover from it
+## Working discipline
 
-`ADD_TASK` appends to `state.tasks` with **no duplicate-id guard**, but
-every other queue operation resolves its target with
-`state.tasks.find(t => t.id === taskId)`, which always returns the
-**first** match. Dispatching `ADD_TASK` twice with the same id therefore
-creates a permanently unreachable ghost task: it can never be assigned,
-advanced, completed, failed or unblocked, and it inflates `activeCount`
-for the life of the document. There is no `REMOVE_TASK` operation, so
-the only way to clear one is to recreate the queue document.
+- **One source per run, phases in order.** Extraction needs the sharpest
+  attention; run it first, verification last. Do not chain unrelated sources
+  through one context — batch by topic similarity, three to five per session
+  at most, and prefer a fresh session per source when you can.
+- **No phase exits without its artifact.** Advancing is a claim that the work
+  exists; the gates below say what must be true, verified by read-back.
+- **Handoffs are packets and closures.** `workDone` tells the next phase what
+  was done, what was learned, what is definitively finished and what remains.
+  A handoff that is a timestamp forces the next session to reconstruct.
 
-**Generate a fresh UUID for every `ADD_TASK`.** Never reuse an id across
-retries — if a dispatch times out, read the queue back and check whether
-the task landed before re-sending. A 502 whose commit arrives after the
-client gives up looks exactly like a failure.
+| Phase | Skill | Exit gate (all true, read back) |
+|---|---|---|
+| `create` | extract | every note has title, description, `noteType`, content, ≥ 1 topic, provenance, `confidence`, a `DERIVED_FROM` edge with its locus; source read back with `claimCount == len(extractedClaims) == notes written` and status `EXTRACTED`/`ARCHIVED` |
+| `reflect` | connect | every new note has ≥ 2 knowledge edges with specific reasons and confidence, ≥ 1 incoming; every `CONTRADICTS` has its tension read back and articulated in both notes |
+| `reweave` | synthesize + backward pass | every new note is a `CORE_IDEA` (with context phrase) of a TOPIC or DOMAIN MoC; every MoC touched has its orientation re-read and updated if it would read differently today; every MoC reachable from the HUB; older notes the new claims qualify, supersede or contradict have been rewritten, linked or archived |
+| `verify` | verify | every note graded; repairs applied and read back; passing notes at `CANONICAL`; health report rewritten |
+
+## Tracking — mandatory
+
+**Every run updates the queue.** The app's Pipeline view reads this document and
+`/health` grades stuck tasks. Per phase: `ASSIGN_TASK` then `ADVANCE_PHASE`,
+batched in one `docs apply` — actions run in order and a rejected one is
+skipped while the rest land — then read the task back and confirm `status`,
+`currentPhase` and `handoffs.length`. The CLI stamps `timestampUtcMs` and
+`action.id`; never generate them.
 
 ```bash
-# Read back before retrying, and before adding work for a document
-switchboard docs get <pipeline-queue-id> --state --format json \
-  | python3 -c "import json,sys; g=json.load(sys.stdin)['state']['global']; \
-      print([(t['id'], t['status'], t.get('documentRef')) for t in g['tasks']])"
+switchboard docs apply <pipeline-queue-id> --actions '[
+  {"type":"ASSIGN_TASK","input":{"taskId":"<task>","assignedTo":"<agent>","updatedAt":"<ISO>"},"scope":"global"},
+  {"type":"ADVANCE_PHASE","input":{"taskId":"<task>","handoff":{
+     "id":"<fresh uuid>","phase":"create",
+     "workDone":"Extracted 7 claims from 11 candidates (skipRate 0.36): 3 struck as excerpts, 1 as a bare number. Source closed EXTRACTED and read back. Reflect: note 3 looks like it contradicts <title>; notes 5–6 extend the read-model cluster.",
+     "filesModified":["<note-ids>","<source-id>"],"completedAt":"<ISO>","completedBy":"<agent>"},
+   "updatedAt":"<ISO>"},"scope":"global"}
+]'
 ```
 
-Also don't create a second task for the same `documentRef` — check the
-existing task list first.
+### The queue contract
 
-### Step 2: Phase 1 — CREATE (Extract)
+**`ADD_TASK`** — once per source, at `/seed` time (REST `POST sources` does it).
 
-Use `/powerhouse-knowledge:extract` on the source document:
-- Read the source content
-- Extract atomic claims as `bai/knowledge-note` documents
-- **Verify all notes appear in the drive tree** after creation
-- **Close out the source (mandatory, verify by read-back):** `ADD_EXTRACTED_CLAIM`
-  per note, `RECORD_EXTRACTION_STATS`, then `SET_SOURCE_STATUS` to `EXTRACTED`,
-  plus a `switchboard docs link <note> <source> -t DERIVED_FROM --reason "<where in the source>" --confidence grounded` edge per note.
-  A source left in `EXTRACTING` reads as unprocessed in the app forever —
-  this is the single most-missed step when driving the pipeline by script
-  instead of by skill.
-- **One batch is fine**: content, topics and provenance together. A rejected action is skipped and the rest land — then read back to confirm
-
-Record handoff with sequential `docs mutate` calls:
-```bash
-switchboard docs mutate <pipeline-queue-id> --op assignTask --input '{
-  "taskId": "<task-id>",
-  "assignedTo": "knowledge-agent",
-  "updatedAt": "<ISO>"
-}'
-
-switchboard docs mutate <pipeline-queue-id> --op advancePhase --input '{
-  "taskId": "<task-id>",
-  "handoff": {
-    "id": "<uid>",
-    "phase": "create",
-    "workDone": "Extracted N claims. 0% skip rate.",
-    "filesModified": ["<note-ids>"],
-    "completedAt": "<ISO>",
-    "completedBy": "knowledge-agent"
-  },
-  "updatedAt": "<ISO>"
-}'
-```
-
-### Step 3: Phase 2 — REFLECT (Connect + Synthesize)
-
-Use `/powerhouse-knowledge:connect` on each extracted note:
-- Find related notes (both new and existing) via search and graph queries
-- Apply the articulation test: the WHY of each link goes on the edge as `--reason` (the hook blocks a bare knowledge edge); add `--confidence` where you can say
-- Create typed links (RELATES_TO, BUILDS_ON, CONTRADICTS, SUPERSEDES, DERIVED_FROM) with `docs link … --reason "…"`; articulate pre-existing bare edges on the note with `docs annotate`
-- Target: >= 2 links per note, no orphans
-
-Then **cross-reference with local methodology files** in the plugin's `data/methodology/`:
-- For each extracted note, search the 249 research claim files by topic and keywords (using Grep on `data/methodology/*.md`)
-- Append a "Methodology grounding" section to the note's content referencing matching claims
-- Use BUILDS_ON when a note implements or validates a research claim, CONTRADICTS when it challenges one
-- This grounds working knowledge in the theoretical foundation without requiring remote import
-
-**MANDATORY: Create MOCs via `/powerhouse-knowledge:synthesize`:**
-- Group notes by shared topics (aggregate `topics[]` from all note states)
-- Create `bai/moc` documents in `/knowledge/` for any topic with 3+ notes that doesn't already have a MOC
-- Add core ideas with `switchboard docs link <moc> <note> -t CORE_IDEA`; the edge carries no context phrase any more — put WHY the note matters to the topic in the note's own body
-- Set tier: TOPIC for a focused cluster (3–9 notes), DOMAIN for a broad area (10+ notes or 2+ topic MoCs), HUB for the vault's single entry point
-- **Place every new MoC in the tree:** `switchboard docs link <parent-moc> <new-moc> -t CHILD_MOC` from its DOMAIN, or from the HUB. If the vault has 3+ MoCs and no HUB yet, create the HUB and attach every parentless MoC to it. A MoC unreachable from the HUB is a defect — the synthesize skill has the full rules and thresholds
-- **Verify each MOC appears in the drive tree after creation** — don't skip this
-- This is NOT optional — the health check will flag missing MOCs as WARN
-
-Then **detect tensions**. The graph-indexer opens a `bai/tension` itself when a
-`CONTRADICTS` edge lands, one per pair, and adds it to every MoC holding either
-note. Do not create one by hand — read the indexer's tension back (it is the
-`INVOLVES` backlink on either note), articulate the conflict in both notes, then
-resolve or dissolve it. See **connect** § Tension detection.
-
-### Step 4: Phase 3 — REWEAVE (Update older notes)
-
-Check if existing notes need updating given the new claims:
-- Search for notes that reference similar topics
-- If a new claim supersedes, contradicts, or extends an old one, add links
-- Update old note content if needed (add "See also" references)
-
-Record handoff with sequential `docs mutate` calls for `ADVANCE_PHASE`.
-
-### Step 5: Phase 4 — VERIFY (Quality gate + auto-repair)
-
-Use `/powerhouse-knowledge:verify` on all notes from this pipeline run:
-- Run recite test on each note
-- **Auto-repair missing descriptions** (generate from title + content)
-- **Auto-repair missing provenance** (set sourceOrigin: DERIVED)
-- **Auto-repair missing note types** (infer from content)
-- **Auto-repair missing topics** (identify from content)
-- Check link density (>= 2 per note)
-- Report remaining issues that need human judgment
-
-Record final handoff — task auto-completes on the last phase.
-
-### Step 6: HEALTH CHECK + AUTO-FIX (automatic after verify)
-
-After the pipeline task completes, **automatically run /health and act on recommendations:**
-
-1. **Run health check** — gather metrics from subgraph, check all notes
-2. **Write report** to `bai/health-report` document
-3. **Auto-fix actionable recommendations:**
-
-| Recommendation | Auto-fix action |
+| Field | Rule |
 |---|---|
-| "Create MOC for X topic (N notes)" | Run `/synthesize` — create `bai/moc` with core ideas |
-| "N notes missing descriptions" | Generate descriptions from title + content, dispatch SET_DESCRIPTION |
-| "N notes not grounded in methodology" | Search local methodology files, add grounding references to note content |
-| "N notes missing types" | Infer from content, dispatch SET_NOTE_TYPE |
-| "Stranded PENDING pipeline task → if its work is actually done, `ADVANCE_PHASE` it through the remaining phases (the final advance auto-completes it); use `COMPLETE_TASK` only to end a task early — never after a final advance, which would double-count `completedCount`
+| `id` | Fresh UUID per task. A repeated id throws `DuplicateTaskIdError` (since 2026-09-14) |
+| `taskType` | `claim` (`create → reflect → reweave → verify`) or `enrichment` (`enrich → …`). Anything else → `UnknownTaskTypeError` |
+| `target` | The source's title — the only human-readable label the Pipeline view has |
+| `documentRef` | The source id. Optional in the schema, **always set it** — it is how a document's task is found, how duplicates are avoided, how `/health` tells a stranded source from a queued one |
+| `batchId` | Set when one origin (a book, a docs sweep) yields several tasks |
+| `currentPhase` | **Omit.** The reducer takes the first phase of `taskType`; a value outside its phases → `InvalidPhaseError` |
+| `createdAt` | ISO UTC `Z` |
 
-4. **Re-run health** after fixes to confirm improvement
-5. **Report final status:**
+**Transitions** — all take `taskId` (unknown → `TaskNotFoundError`) and `updatedAt` (real clock; written to `task.updatedAt`, and to `lastProcessedAt` by every op except BLOCK/UNBLOCK).
 
-```
-=== POST-PIPELINE HEALTH ===
-Before: WARN (3 issues)
-Fixed: Created MOC, added 2 methodology grounding references
-After: PASS (0 issues)
-```
+| Op | Rule |
+|---|---|
+| `ASSIGN_TASK { assignedTo }` | Sets `IN_PROGRESS`. Throws `TaskAlreadyAssignedError` if already assigned — once per phase; `ADVANCE_PHASE` clears it, `FAIL_TASK` does **not** |
+| `ADVANCE_PHASE { handoff }` | `handoff.id` fresh UUID; `phase` the one you finished (must equal `currentPhase` → `PhaseMismatchError`); `workDone` the packet; `filesModified` the ids touched (`[]` only if truly none); `completedAt`; `completedBy`. `learnings` is unwritable — put learnings in `workDone` |
+| `COMPLETE_TASK` | Only to end a task **early**. Rejected on a `DONE`/`FAILED` task (`InvalidTaskStatusError`) |
+| `RECONCILE_COUNTERS { updatedAt }` | Recomputes `completedCount` (DONE tasks) and `activeCount` (PENDING/IN_PROGRESS/BLOCKED) from the tasks. Idempotent; the only legitimate repair for drifted counters |
+| `FAIL_TASK { reason }` / `BLOCK_TASK { reason }` | `reason` is **not written to state** — it survives only in the operation log; put what the next agent needs in the previous handoff. `UNBLOCK_TASK` throws `InvalidTaskStatusError` unless `BLOCKED` |
 
-**Only escalate to human:** Recite test failures (description doesn't predict content), genuine tensions between notes, methodology conflicts.
+### Traps
 
-### Step 7: Handle failures
+1. **A rejected `ADD_TASK` in a batch redirects the rest.** `docs apply` isolates
+   failures, so `[ADD_TASK, ASSIGN_TASK, ADVANCE_PHASE]` with a duplicate id
+   skips the add and the next two act on the **pre-existing** task. Mint a fresh
+   UUID, check `documentRef` first, read back.
+2. **Terminal is terminal.** Since 2026-09-17 the reducer refuses to advance,
+   complete, fail or block a `DONE`/`FAILED` task (`InvalidTaskStatusError`), so
+   `completedCount`/`activeCount` cannot be double-counted and a `DONE` task is
+   no longer resurrected at phase 0. A `FAILED` task is retried with a **new**
+   task. A queue whose `completedCount` exceeds its task count was damaged
+   before the guard; dispatch `RECONCILE_COUNTERS` to recompute both counters
+   from the tasks (`switchboard docs mutate <queue-id> --op reconcileCounters --input '{"updatedAt":"<ISO>"}'`).
+3. **`ADVANCE_PHASE` checks the handoff.** `handoff.phase` must equal the task's
+   `currentPhase` (`PhaseMismatchError`); a handoff for the wrong phase used to
+   be recorded and the task advanced anyway.
 
-```bash
-switchboard docs mutate <pipeline-queue-id> --op failTask --input '{"taskId": "<task-id>", "reason": "<what went wrong>", "updatedAt": "<ISO>"}'
+## The run
 
-switchboard docs mutate <pipeline-queue-id> --op blockTask --input '{"taskId": "<task-id>", "reason": "<needs human input>", "updatedAt": "<ISO>"}'
+**1 — CREATE.** `/powerhouse-knowledge:extract` on the `documentRef`. The gate
+above is extract's *Before you advance*; the source close-out is the step most
+often missed when a pipeline is driven by script instead of by skill.
 
-switchboard docs mutate <pipeline-queue-id> --op unblockTask --input '{"taskId": "<task-id>", "updatedAt": "<ISO>"}'
-```
+**2 — REFLECT.** `/powerhouse-knowledge:connect` on every new note: candidates
+from the graph and from the batch itself, one specific reason per edge,
+confidence on every edge, tensions read back and articulated, in-scope notes
+grounded. Nothing else — MoC work is the next phase.
 
-## Subgraph Queries
+**3 — REWEAVE.** Two halves, both required:
+- *Forward*: `/powerhouse-knowledge:synthesize` — `CORE_IDEA` with a context
+  phrase for every new note, new MoCs attached to a parent in the same run,
+  touched MoCs' orientation re-read.
+- *Backward*: for each older note the new claims touch (the reflect handoff
+  names them; `knowledgeGraphSimilar` on each new note finds the rest), ask
+  **what would be different if it were written today** — and act: rewrite or
+  sharpen the claim, add the condition the new note supplies, split a bundled
+  note, `SUPERSEDES` + archive when it is now wrong, `CONTRADICTS` when it
+  still holds against the new one. Adding a "See also" line is not reweaving.
 
-Use the subgraph for graph analysis during pipeline phases:
+**4 — VERIFY.** `/powerhouse-knowledge:verify` on every note from this run:
+claim test, recite, schema, graph, repairs, walk to `CANONICAL` as a different
+actor. Its `ADVANCE_PHASE` completes the task.
 
-```bash
-# Graph stats
-switchboard query '{ knowledgeGraphStats(driveId: "<UUID>") { nodeCount edgeCount orphanCount } }'
+**5 — Rethink.** `/powerhouse-knowledge:health` with auto-fix, then re-run it and
+rewrite the report; the dashboard shows the last one. Fix from the
+recommendations (MoC gaps via `/synthesize` with an orientation — never a bare
+list; descriptions; types; topics; a stranded `PENDING` task whose work is done
+→ advance it through its remaining phases). Escalate only recite failures,
+genuine tensions and decisions that are not yours.
 
-# Search for related notes
-switchboard query '{ knowledgeGraphSearch(driveId: "<UUID>", query: "<keyword>", limit: 20) { documentId title noteType } }'
+**Failures.** `FAIL_TASK` when the run cannot finish (the reason goes in the log
+and the previous handoff), `BLOCK_TASK` when it needs a human, `UNBLOCK_TASK`
+to resume. A source that yields zero claims is **not** a failure — close it out
+and advance.
 
-# Find orphans
-switchboard query '{ knowledgeGraphOrphans(driveId: "<UUID>") { documentId title } }'
+## Batch of sources
 
-# Density
-switchboard query '{ knowledgeGraphDensity(driveId: "<UUID>") }'
-```
+Check the queue for every `PENDING` task; process each through all four phases;
+verify drive nodes after each; report once:
 
-## Quick Pipeline (Single Note)
-
-For processing a single note (not from a source):
-
-```
-1. Run /powerhouse-knowledge:connect on the note (reflect phase)
-2. Run /powerhouse-knowledge:verify on the note (auto-repairs + quality gate)
-3. If all pass: note is ready for IN_REVIEW status
-```
-
-## Batch Pipeline
-
-For processing multiple sources:
-
-```
-1. Check pipeline queue for all PENDING tasks
-2. Process each task through all 4 phases
-3. After each source: verify drive nodes, repair if needed
-4. Report: N sources processed, N claims extracted, N links created, N issues auto-repaired
-```
-
-## Quality summary after pipeline
-
-After completing all phases, report:
 ```
 === PIPELINE COMPLETE ===
-Source: "<title>"
-Claims extracted: N (skip rate: X%)
-Links created: N (N BUILDS_ON, N RELATES_TO) | Methodology references: N
-Auto-repaired: N issues (descriptions, provenance, types)
-Health: N PASS, N WARN, N FAIL
-Drive verified: all N notes have file nodes
+Sources: N | Claims: N (skipRate per source: …) | Struck: N (why, in one line each)
+Edges: N (N BUILDS_ON, N CONTRADICTS → N tensions, N SUPERSEDES, N RELATES_TO) | Grounded: N of N in scope
+MoCs: N created, N updated, unreachable 0 | Older notes reworked: N
+Verify: N CANONICAL, N left DRAFT (why) | Health: before WARN (3) → after PASS (0)
+Queue: task <id> DONE via final advance; activeCount N, completedCount N
 ```
 
 If "$ARGUMENTS" is provided, treat it as the source or note to process.

@@ -189,6 +189,160 @@ switchboard docs mutate $SOW --op setProjectReferences   --input '{"projectId":"
 `knowledgeRefs` are plain PHIDs on the envelope — not `docs link` edges. Cite the notes
 and MOCs the work actually builds on. `SET_PROJECT_REFERENCES` **replaces** the list.
 
+## Populate every field — the work contract
+
+A scope of work is the plan of record: what the editor renders, what `lookup.py
+search` matches, and what the graph indexer turns into the searchable outline.
+**The `ADD_*` operations write defaults, not nulls** — an envelope created without
+a `budgetType` is not "undecided", it is `CAPEX`, and a deliverable created through
+an envelope is `DRAFT`, unowned, uncoded and quoted at 0 `Hours`. Nothing fills any
+of it in later. Create *and* complete in the same run.
+
+The document's own name (`docs create --name`) is none of these fields. A scope
+carries its own `title` / `description` / `status` (`EDIT_SCOPE_OF_WORK` — all three
+optional, an explicit null ignored, so you can overwrite but never blank). A WBS
+carries **no title at all**, only `owner`, so its `--name` is the only place a human
+reads what it is. Write both.
+
+### The envelope — `ADD_PROJECT` unless noted
+
+| Field | What it means | Rule |
+|---|---|---|
+| `id` **OID** | the envelope's id *inside* the scope document | You mint it. Every `projectId` input, `sowProjectId` and `budgetAnchor.project` means **this** — never a document id |
+| `code` | short stable handle (`PKV`) | Required; deliverable codes build on it (`PKV-01`) |
+| `title` | the project's name | Required |
+| `slug` | url handle | Defaults to `""`. Write it |
+| `projectOwner` | the accountable person — an `ADD_AGENT` id (a PHID) | Add the agent first: the id is stored unvalidated, so a typo renders as a raw string. `UPDATE_PROJECT` cannot change it — `UPDATE_PROJECT_OWNER` does |
+| `abstract` | one paragraph: what this project delivers, and why | Null unless you write it. It is the first thing a reader sees |
+| `imageUrl` | optional cover image | — |
+| `budgetType` | `BudgetType` | **Omitted ⇒ `CAPEX`**, not null. State the real one |
+| `currency` | `PMCurrency` | **Omitted ⇒ `USD`**, not null |
+| `budget` | fixes the envelope (`targetBudget`) | Omit for an envelope derived from its quotes; negative is `INVALID_INITIAL_BUDGET`. `UPDATE_PROJECT {budget: null}` releases it |
+| `expenditure` | actual spend — `SET_PROJECT_EXPENDITURE {actuals, cap}` | `percentage` is derived: against `cap` when `cap > 0`, otherwise against `budget` |
+| `scope` | the envelope's `DeliverablesSet` | Created empty at `DRAFT`. Only `status` is yours (`EDIT_DELIVERABLES_SET`); progress and counts are derived |
+| `wbsRef` **PHID** | the WBS **document** that delivers this envelope | `LINK_PROJECT_WBS` — Step 3 |
+| `knowledgeRefs` **[PHID]** | the vault notes / MOCs the work builds on | `ADD_PROJECT_KNOWLEDGE_REF`, one call each |
+| `references` **[URL]** | external links | `SET_PROJECT_REFERENCES` **replaces** the list |
+
+### The deliverable
+
+`ADD_PROJECT_DELIVERABLE` carries exactly one field of its own — `title`. Everything
+below it comes from a follow-up op, and what it writes instead are not blanks you can
+spot later: `code`, `description`, `owner`, `icon` are `""`, not null.
+
+| Field | What it means | Rule |
+|---|---|---|
+| `id` **OID** | the deliverable's id in the scope document | You mint it; it is `deliverableId` in every other op |
+| `title` | what gets delivered — normally the top-level goal's description | The only field `ADD_PROJECT_DELIVERABLE` takes |
+| `code` | `PKV-01` | `""` until `EDIT_DELIVERABLE` |
+| `description` | what "done" means | `""` until `EDIT_DELIVERABLE`. `String!` in state, so it never reads as null — it reads as empty |
+| `owner` | an agent id (PHID), the same ids as `projectOwner` | `""` on creation (null via `ADD_DELIVERABLE`) |
+| `icon` | optional glyph | `""` on creation (null via `ADD_DELIVERABLE`) |
+| `status` | `DeliverableStatus` | **Starts `DRAFT`.** `EDIT_DELIVERABLE {status}` is the only direct setter — move it to `TODO` when it is real, committed work |
+| `goalRef` **OID** | the goal in the envelope's WBS whose subtree delivers this | `LINK_DELIVERABLE_GOAL`. Unvalidated — a wrong id is stored verbatim and nothing ever completes it |
+| `budgetAnchor.project` **OID** | which envelope pays | Set for you by `ADD_PROJECT_DELIVERABLE`; `""` when created by `ADD_DELIVERABLE` |
+| `budgetAnchor.unit` | `StoryPoints` or `Hours` | **Omitted ⇒ `Hours`**. Pass `StoryPoints` explicitly when that is the currency of the estimate |
+| `unitCost`, `quantity` | the quote | `0` until set. Line budget = `unitCost × quantity × (1 + margin/100)`, 2 dp |
+| `margin` | percent on top | Passing it **pins** it (Key semantics 4); negative values → `INVALID_BUDGET_ANCHOR` |
+| `workProgress` | `SET_DELIVERABLE_PROGRESS` only | Percentage-0 from `ADD_PROJECT_DELIVERABLE`, null from `ADD_DELIVERABLE`. Never set it before work starts |
+| `keyResults` | shipped artifacts — `{id!, deliverableId!, title!, link}` | `link` defaults to `""` |
+
+Roadmaps and milestones default the same way: `slug`, `description`, `sequenceCode`
+and `deliveryTarget` are all `""` when omitted, and `deliveryTarget` is a plain
+`String!` — write an ISO `YYYY-MM-DD` so it sorts.
+
+### The WBS goal
+
+| Field | What it means | Rule |
+|---|---|---|
+| `id` **OID** | the goal's id inside the WBS document | You mint it; this is what a deliverable's `goalRef` carries |
+| `description` | the goal's only text | Required. The deliverable title is normally taken from it |
+| `status` | `GoalStatus` | **Always starts `TODO`** — `CREATE_GOAL` has no status input; use `SET_GOAL_STATUS` after |
+| `parentId` **OID** | null = top level | Top-level goals are the ones that become deliverables. Create parents before children |
+| `assignee` | free text — **not** an agent id | Spell it identically every time (Key semantics 7) |
+| `dependencies` **[OID]** | other goal ids in the same WBS | `ADD_DEPENDENCIES`; self-dependency and unknown ids are rejected |
+| `blockReason` | why it is stuck | Required for `BLOCKED`; cleared automatically on any other status |
+| `outcome` | the artifact the goal produced | Send it with the `COMPLETED` status, or `SET_OUTCOME`. `SET_GOAL_STATUS` writes `outcome` only when truthy, so it can set one but never clear one |
+| `notes` | `ADD_NOTE {goalId!, noteId!, note!, author, timestamp}` | `author` and `timestamp` default to **null** and nothing backfills them. Send both; timestamp full ISO-8601 `Z` |
+
+The WBS document itself holds `owner` (free text), `references` (`SET_REFERENCES`
+**replaces**), `sowRef` + `sowProjectId`, and the legacy `projectRef` (leave null).
+
+### Which id goes where
+
+Getting this wrong is the common failure, because **a project is an envelope inside a
+document, not a document of its own**. `PHID` = another document. `OID` = something
+inside this one.
+
+| Field | Lives on | Kind | The value is |
+|---|---|---|---|
+| `wbsRef` | the envelope, in the scope doc | PHID | the **WBS document** id |
+| `sowRef` | the WBS doc | PHID | the **scope document** id |
+| `sowProjectId` | the WBS doc | OID | the **envelope's `id`** inside that scope — *not* the scope document id |
+| `goalRef` | the deliverable, in the scope doc | OID | a **goal id** inside the WBS — *not* the WBS document id |
+| `budgetAnchor.project` | the deliverable | OID | the envelope's `id` |
+| `knowledgeRefs[]` | the envelope | PHID | note / MOC **document** ids |
+| `projectOwner`, `Deliverable.owner`, `coordinators[]` | scope doc | agent id (PHID) | a `contributors[].id` created by `ADD_AGENT` |
+| `assignee` | a WBS goal | String | free text, no id at all |
+
+The two that get swapped are `sowProjectId` (envelope OID, the partner of `sowRef`)
+and `goalRef` (goal OID, the partner of `wbsRef`). A few inputs type these as `ID`
+rather than `OID`/`PHID` — `ADD_PROJECT_DELIVERABLE.deliverableId`,
+`REMOVE_PROJECT.projectId`, the `*_DELIVERABLE_IN_SET` ids, `ADD_COORDINATOR.id` — a
+schema wart, not a different kind of id.
+
+### Reducer behaviours that quietly eat your input
+
+- **`EDIT_DELIVERABLE` with an explicit `null` blanks a field, it does not skip it.**
+  `title` / `code` / `description` become `""`, `owner` / `icon` clear, and only
+  `status: null` is ignored. Omit what you do not mean to change.
+  (`deliverables.ts:88-103`)
+- **`UPDATE_PROJECT` is the opposite:** null on `title` / `code` / `slug` is ignored,
+  null on `abstract` / `imageUrl` / `budgetType` / `currency` clears the field, and
+  `budget: null` releases the fixed envelope. (`projects.ts:74-84`)
+- **`SET_DELIVERABLE_PROGRESS` forces the status even with no progress in it.** An
+  omitted or empty `workProgress` leaves progress untouched and still writes
+  `IN_PROGRESS` (or `DELIVERED`). Sending more than one representation is not an
+  error: `percentage` wins over `storyPoints` over `done`, silently.
+  (`deliverables.ts:129-154`)
+- **`EDIT_DELIVERABLES_SET.deliverablesCompleted` is discarded.** The same operation
+  ends in `applyInvariants`, which recomputes both `progress` and
+  `deliverablesCompleted` from the deliverables. Only `status` survives the write.
+  (`deliverables-set.ts:28,59` → `projects.ts:448-457`)
+- **Pass both `milestoneId` and `projectId` and nothing happens.**
+  `EDIT_DELIVERABLES_SET` and `ADD_DELIVERABLE_IN_SET` need exactly one; with both,
+  the action is recorded with no error and no change.
+  `REMOVE_DELIVERABLE_IN_SET` instead acts on the milestone and ignores the project.
+  (`deliverables-set.ts:15,40,91,126,181,204`)
+- **`ADD_DELIVERABLE_IN_SET {projectId}` moves the payer:** it rewrites
+  `budgetAnchor.project` to that envelope, and the remove rewrites it to `""`. The
+  milestone forms leave the anchor alone. (`deliverables-set.ts:161-175,232-246`)
+- **Deleting a container deletes its deliverables.** `REMOVE_MILESTONE` and
+  `REMOVE_ROADMAP` delete every deliverable in scope — including ones an envelope
+  funds and a goal delivers — wherever else they were listed.
+  (`milestones.ts:152-155`, `roadmaps.ts:54-60`)
+- **`REMOVE_AGENT` nulls what the agent held:** every `Deliverable.owner` and
+  `Project.projectOwner` carrying that id, and every `coordinators` entry. Re-own
+  first. (`contributors.ts:42-59`)
+- **`SET_SOW_PROJECT_REF` writes both fields every time.** Sending only `sowRef`
+  sets `sowProjectId` to null, leaving a WBS that points at a scope but at no
+  envelope. Always send the pair. (`documentation.ts:41-42`)
+- **`ADD_PROJECT_DELIVERABLE` collides across the whole document** — the id must be
+  unused in `deliverables[]`, not just in this envelope. (`projects.ts:161-169`)
+- **No reference is validated anywhere.** `wbsRef`, `sowRef`, `sowProjectId`,
+  `goalRef`, `knowledgeRefs`, `projectOwner`, `owner` and `assignee` are stored as
+  given; a reducer cannot see another document. A wrong id fails silently and is
+  found months later. Read the target back after linking (Step 6).
+  (`projects.ts:239,249`, `deliverables.ts:283`)
+
+**The mistake to avoid: creating with one operation and moving on.**
+`ADD_PROJECT_DELIVERABLE` reports success on `{projectId, deliverableId, title}`
+alone, and leaves a deliverable with no code, no description, no owner, status
+`DRAFT` and a quote of `0 Hours` — indistinguishable from work nobody planned, and
+unfindable by code. The same run must follow with `EDIT_DELIVERABLE`
+(code, description, owner, `status: "TODO"`), `LINK_DELIVERABLE_GOAL` and
+`SET_DELIVERABLE_BUDGET_ANCHOR_PROJECT` — Step 4 is four operations for a reason.
+
 ## Step 6: Read an envelope and its WBS
 
 **REQUIRED SUB-SKILL:** use scope-of-work (`lookup.py get` / `outline`).
@@ -343,6 +497,13 @@ Note the spelling: `CANCELED` (one L) everywhere in the scope. `WONT_DO` is excl
 from goal-progress denominators. The pre-dispatch linter (`scripts/lint-actions.mjs`)
 checks every one of these and blocks the write if a value is off.
 
+The input side mirrors the first five under separate type names
+(`ScopeOfWorkStatusInput`, `PMDeliverableStatusInput`, `DeliverableSetStatusInput`,
+`PMBudgetTypeInput`, `PMCurrencyInput`) with identical values; `Unit` and `GoalStatus`
+are referenced directly. **Omitting an enum is not the same as sending null** —
+`ADD_PROJECT` stores `CAPEX` and `USD`, both deliverable-creating ops store `Hours` and
+`DRAFT`, and `CREATE_GOAL` stores `TODO`. See § *Populate every field*.
+
 ## Key semantics
 
 1. **A project is an envelope inside a scope document, not a document.** It has no
@@ -413,3 +574,6 @@ checks every one of these and blocks the write if a value is off.
   documents go directly under `/projects/` — no per-project subfolder.
 - **Link both ways in the same run** (Step 3). A WBS without `sowRef` cannot show
   which envelope it delivers; an envelope without `wbsRef` cannot import goals.
+- **Fill every field in the run that creates it.** `ADD_*` writes defaults, not nulls,
+  so an unfinished envelope, deliverable or goal is indistinguishable from a deliberate
+  one. See § *Populate every field — the work contract*.

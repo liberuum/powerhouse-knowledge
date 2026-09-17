@@ -12,115 +12,123 @@ description: Ingest source material into the Knowledge Vault for processing. Use
 > drive detection in AGENT.md § *Find the vault drive*. REST calls take the same
 > drive as `?drive=<UUID>`; see AGENT.md § *Which surface to use*.
 
-Add source material to the Knowledge Vault and queue it for the extraction pipeline.
+Record: put source material into the vault as a `bai/source` and queue it for
+extraction. A source is the archive and the provenance record for every note
+extracted from it — capture is fast, but a field left null now cannot be
+recovered later without the original.
 
-## Seeding process
+## Ingest — one call
 
-1. **Receive the source** — text content, URL, file path, or pasted content from the user
-
-2. **Ingest it.** One call. The API files it in `/sources` and queues it.
 ```bash
 curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/sources" -d '{
   "drive": "<drive-uuid>",
-  "title": "<source title>",
-  "content": "<full text>",
-  "sourceType": "ARTICLE"
-}'
-```
-`sourceType`: `ARTICLE`, `PAPER`, `BOOK_CHAPTER`, `TRANSCRIPT`, `DOCUMENTATION`,
-`CONVERSATION`, `WEB_PAGE`, `MANUAL_ENTRY`. Add `"queue": false` to skip the
-pipeline task. Do not send `parentFolder` — it is rejected.
-
-The response gives `id`, `path` (must be `/sources`) and `readBack`.
-
-<details><summary>Without the REST surface (CLI)</summary>
-
-```bash
-switchboard docs tree <drive-slug> --format json   # find the sources folder
-switchboard docs create --type bai/source --name "<source title>" --drive <drive-slug> --parent-folder <sources-folder-uuid> --format json
-```
-
-2. **Set the source metadata via INGEST_SOURCE** (single operation that initializes all fields):
-```bash
-switchboard docs mutate <doc-id> --op ingestSource --input '{
-  "title": "<source title>",
-  "content": "<full source content>",
-  "sourceType": "<ARTICLE|PAPER|TRANSCRIPT|DOCUMENTATION|CONVERSATION|WEB_PAGE|BOOK_CHAPTER|MANUAL_ENTRY>",
-  "description": "<brief summary>",
-  "author": "<source author>",
-  "url": "<source URL if available>",
-  "createdAt": "<ISO timestamp>",
-  "createdBy": "<user or agent name>"
+  "title": "<Parent work — Ch. 05: Title>",
+  "content": "<full text, real newlines>",
+  "sourceType": "BOOK_CHAPTER",
+  "description": "<what it covers, and why it was brought in>",
+  "author": "<who wrote it>",
+  "url": "<canonical URL or local path>",
+  "publishedAt": "<ISO UTC Z>",
+  "method": "pdf-extract",
+  "tool": "<script or agent>"
 }'
 ```
 
-For long content, write the action to a temp file and use `--file`:
+That request creates the document in `/sources`, dispatches `INGEST_SOURCE`,
+sets the status to `EXTRACTING` and adds the `claim` task to the pipeline queue
+(checking first that no task already references this document). Add
+`"queue": false` to skip the task. The response gives `id`, `path` and
+`readBack`. The CLI path below needs six commands for the same state.
+
+### The ingest contract
+
+| Field | Rule |
+|---|---|
+| `title` | The source's own title; name the parent work for a part: `Design for How People Think — Ch. 05: Language` |
+| `content` | The full text, never truncated. Real newlines, encoded once |
+| `sourceType` | `ARTICLE` `PAPER` `BOOK_CHAPTER` `TRANSCRIPT` `DOCUMENTATION` `CONVERSATION` `WEB_PAGE` `MANUAL_ENTRY` |
+| `description` | One or two sentences: what the source covers **and why it is in the vault** — the reaction that made it worth ingesting is what seeds synthesis later; the content alone only seeds reference. Never null: a source without one is unbrowsable |
+| `author` | The person or organisation — not you |
+| `url` | Canonical URL, or the file path for a local import |
+| `publishedAt` | When the source was **written** |
+| `createdAt` | When you **ingested** it — now. REST sets it; on the CLI pass it |
+| `method`, `tool` | How the text was obtained (`pdf-extract`, `sha256:<hash> git:<tag>`) and by what |
+| `createdBy` | REST takes it from your bearer; pass it on the CLI |
+
+- **`publishedAt` vs `createdAt`.** Putting the publication year in `createdAt`
+  makes a source that arrived today look years old to `knowledgeGraphRecent` and
+  `knowledgeGraphStale` and leaves "when was this published?" unanswerable. A
+  24-chapter ingest got this wrong on all 24.
+- **Provenance is built when any of** `url`, `author`, `publishedAt`, `method`,
+  `tool` is present (since 2026-09-17; older reducers dropped `method`/`tool`
+  alone).
+- **Re-ingesting resets the status to `INBOX`**, unconditionally — an `EXTRACTED`
+  source reverts to the backlog and `/health` reports it stranded. Walk it back
+  in two steps, `EXTRACTING` then `EXTRACTED`: the transition table rejects
+  `INBOX → EXTRACTED` (`InvalidSourceStatusTransitionError`).
+- Dates are UTC `Z` strings; an offset form (`+02:00`) is dropped by the reducer,
+  leaving the field null.
+
+### No duplicates — check the title in state, not the node name
+
+`POST sources` does not detect duplicates and the drive does not reject the
+second copy; it **renames** it (`… (copy) 1`). Two copies mean two tasks, two
+extractions and two sets of notes citing different ids. Before a bulk ingest,
+list `/sources` and compare on the source **title in state**. Cleaning one up
+takes both halves: `switchboard docs delete <id> -y` (CLI only) **and**
+`FAIL_TASK` on its queue task, or the task holds an `activeCount` slot forever.
+
+### One origin, many sources → a folder
+
+Every operation stores a full copy of the document's state, so each
+`ADD_EXTRACTED_CLAIM` on a book-sized source re-serialises the whole book: split
+long sources into chapters. When one origin yields **three or more** sources,
+mint a folder first so they stay one thing:
+
 ```bash
-cat > /tmp/ingest-action.json << 'EOF'
-[{
-  "type": "INGEST_SOURCE",
-  "input": {
-    "title": "...",
-    "content": "...",
-    "sourceType": "ARTICLE",
-    "createdAt": "2026-03-30T12:00:00.000Z"
-  },
-  "scope": "global"
-}]
-EOF
-switchboard docs apply <doc-id> --file /tmp/ingest-action.json
+curl -s -H "$AUTH" -H 'content-type: application/json' -X POST "$BASE/sources/folders" \
+  -d '{"drive":"<drive-uuid>","name":"<the book or series>"}'           # idempotent on name within /sources
+# then each chapter names the id it returned
+curl … -X POST "$BASE/sources" -d '{ …, "parentFolder": "<folder-id>" }'
 ```
 
-3. **Queue for processing** — add a pipeline task:
-```bash
-# Find the PipelineQueue singleton
-switchboard docs tree <drive-slug> --format json
-# Find: kind="file", documentType="bai/pipeline-queue"
+`parentFolder` takes the folder **id**, never a name. The folder must be
+`/sources` or inside it (`FOLDER_OUTSIDE_VAULT_PATH` otherwise); a drive never
+opened in the app gives `FOLDER_UNRESOLVED`. Grouping is navigation only.
+Sources are not batched: `POST notes` with `documentType: "bai/source"` creates
+documents that are neither ingested, queued nor placeable — one `POST sources`
+per source even for a whole book.
 
-switchboard docs mutate <pipeline-queue-id> --op addTask --input '{
-  "id": "<generate-unique-id>",
-  "taskType": "claim",
-  "target": "<source title>",
-  "documentRef": "<source-doc-id>",
-  "createdAt": "<ISO timestamp>"
-}'
+<details><summary>Without the REST surface (CLI, six commands, signed as you)</summary>
+
+```bash
+switchboard docs tree <drive-slug> --format json                                   # sources folder + queue id
+switchboard docs create --type bai/source --name "<title>" --drive <drive-slug> --parent-folder <sources-folder-uuid> --format json
+switchboard docs apply <source-id> --file /tmp/ingest.json                         # one INGEST_SOURCE action with every field above, "scope":"global"
+switchboard docs mutate <pipeline-queue-id> --op addTask --input '{"id":"<fresh uuid>","taskType":"claim","target":"<title>","documentRef":"<source-id>","createdAt":"<ISO>"}'
+switchboard docs mutate <source-id> --op setSourceStatus --input '{"status":"EXTRACTING"}'
+switchboard docs tree <drive-slug> --format json | grep <source-id>                # exists
 ```
 
-**Important:** Check if a pipeline task already exists for this `documentRef` before creating a duplicate. If one exists and isn't DONE/FAILED, skip creating a new task. Generate a fresh UUID for the task `id` — a reused id creates an unreachable ghost task (see the pipeline skill).
-
-Then mark the source as queued. `INGEST_SOURCE` leaves it in `INBOX`; the app's own "Queue for Processing" button moves it to `EXTRACTING` at the same time it adds the task, and `/health` reports a source left in `INBOX` with a task or notes behind it as stranded:
-```bash
-switchboard docs mutate <source-doc-id> --op setSourceStatus --input '{"status":"EXTRACTING"}'
-```
-The lifecycle is `INBOX → EXTRACTING → EXTRACTED → ARCHIVED`; the extract skill sets `EXTRACTED` when the notes exist.
+Check the queue for an existing non-DONE task on this `documentRef` before
+`addTask`; a reused id is rejected with `DuplicateTaskIdError`. The lifecycle is
+`INBOX → EXTRACTING → EXTRACTED → ARCHIVED`; extract sets `EXTRACTED`.
 
 </details>
 
-3. **Suggest next steps**:
-   - Run `/powerhouse-knowledge:extract` to extract atomic claims from this source
-   - Or run `/powerhouse-knowledge:pipeline` for the full extract → connect → reweave → verify flow — which also places the new notes in the MoC hierarchy (TOPIC → DOMAIN → HUB) so they are explorable by cluster
+## Then
 
-**Length limits:** none on a source's title, description or content. (The only hard length limit in any model is a knowledge note's description, ≤ 200 characters.)
+Run `/powerhouse-knowledge:pipeline` (or `/extract` alone) on the new source.
+Every source ends the pipeline `EXTRACTED` or `ARCHIVED` with its notes placed
+in the MoC hierarchy; a source left `EXTRACTING` reads as unprocessed forever.
 
-## Source types
+## Checklist
 
-- **ARTICLE** — web articles, blog posts
-- **PAPER** — academic papers, research
-- **TRANSCRIPT** — conversation transcripts, meeting notes
-- **DOCUMENTATION** — technical docs, API references
-- **CONVERSATION** — chat logs, session transcripts
-- **WEB_PAGE** — general web content
-- **BOOK_CHAPTER** — book excerpts
-- **MANUAL_ENTRY** — manually typed content
-
-## Quality checklist
-
-- [ ] Source title is descriptive
-- [ ] Full content is preserved (not truncated)
-- [ ] Source type is set correctly
-- [ ] Provenance records the origin (author, URL)
-- [ ] No duplicate source exists (search first)
-- [ ] Pipeline task created for processing (fresh UUID, `taskType: "claim"`)
-- [ ] Source status set to `EXTRACTING` once queued
+- [ ] Title names the parent work for a part; full content preserved; correct `sourceType`
+- [ ] `description` says what it covers and why it is here
+- [ ] `author`, `url`, `publishedAt`, `method`, `tool` filled from the original; `createdAt` is the ingest time
+- [ ] No existing source with this title in state
+- [ ] 3+ sources from one origin share a `/sources` folder
+- [ ] Status `EXTRACTING` and one `claim` task with `documentRef` set, read back
 
 If "$ARGUMENTS" is provided, treat it as the source material or URL to seed.

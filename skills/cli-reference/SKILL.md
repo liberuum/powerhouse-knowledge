@@ -196,7 +196,7 @@ Content mutations require `updatedAt: DateTime!`:
 ```bash
 switchboard docs mutate <id> --op setTitle --input '{"title":"...","updatedAt":"2026-03-30T15:00:00.000Z"}'
 switchboard docs mutate <id> --op setDescription --input '{"description":"...","updatedAt":"2026-03-30T15:00:00.000Z"}'
-switchboard docs mutate <id> --op setNoteType --input '{"noteType":"concept","updatedAt":"2026-03-30T15:00:00.000Z"}'
+switchboard docs mutate <id> --op setNoteType --input '{"noteType":"CONCEPT","updatedAt":"2026-03-30T15:00:00.000Z"}'
 switchboard docs mutate <id> --op setContent --input '{"content":"...","updatedAt":"2026-03-30T15:00:00.000Z"}'
 ```
 
@@ -301,7 +301,7 @@ NOTE_ID=$(switchboard docs create --type bai/knowledge-note --name "Claim title"
 # Content batch
 switchboard docs mutate $NOTE_ID --op setTitle --input '{"title":"...","updatedAt":"..."}'
 switchboard docs mutate $NOTE_ID --op setDescription --input '{"description":"...","updatedAt":"..."}'
-switchboard docs mutate $NOTE_ID --op setNoteType --input '{"noteType":"concept","updatedAt":"..."}'
+switchboard docs mutate $NOTE_ID --op setNoteType --input '{"noteType":"CONCEPT","updatedAt":"..."}'
 switchboard docs mutate $NOTE_ID --op setContent --input '{"content":"...","updatedAt":"..."}'
 switchboard docs mutate $NOTE_ID --op addTopic --input '{"id":"t1","name":"topic"}'
 
