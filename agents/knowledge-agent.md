@@ -11,7 +11,7 @@ tools:
   - WebFetch
   - Agent
 ---
-<!-- GENERATED from AGENT.md (sha256:fea46e436322d15d) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:2bf71c4f181d2fcc) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -500,6 +500,7 @@ next action in `recommendations`, and tell the user what it would take.
 8. **GraphQL identifier arguments take UUIDs, not slugs**: `sourceIdentifier`, `targetIdentifier`, `parentIdentifier`, `documentIdentifier` take document UUIDs. Drive slugs are CLI-only (`--drive <slug>` is fine — the CLI resolves them). A slug passed to GraphQL `createDocument` makes the containment job fail and the create hangs forever.
 9. **Re-run health after every fix.** The dashboard shows the LAST report; a repair after a run leaves the UI showing stale problems.
 10. **Line breaks: the string must hold real newlines *before* it is JSON-encoded — encode once, then read back.** The failure is double encoding: a bash `"\n"` is two characters, and a script that then JSON-encodes that argument escapes the backslash again, so the note is stored with the text `\n` between paragraphs. The write reports success. Put the body in a file or heredoc (or build it inside Python), serialize once, `docs apply --file`, then read `content` back and confirm it contains real newlines. The CLI (≥ 1.0.32) refuses payloads whose strings carry a literal `\n`/`\t`/`\r` and names the field — `--allow-literal-escapes` overrides for the rare legitimate case.
+11. **Writes replay history through the current reducers; reads show stored state.** The reactor rebuilds a document from its full operation log when it writes, so an operation that was valid when recorded but is rejected by today's reducer vanishes from the state on that document's next write — while `docs get` still shows the old value and the stored operation still says `error: null`. After any reducer tightening (an enum, a transition guard) run `node scripts/audit-replay-drift.mjs --drive <id>` in the model repo before trusting a drive, and re-assert harmful drift with `node scripts/reassert-drift.mjs --drift <json> --apply` (legal new operations; last write wins). New drives are unaffected.
 
 
 
