@@ -171,10 +171,14 @@ The bundled scripts under `scripts/` (`sync-skills.mjs`, `sync-repo-docs.mjs`,
 `timestampUtcMs` themselves — they are the one sanctioned exception to the read-only rule, and
 `envelope()` in `scripts/sync-skills.mjs` is the pattern they use.
 
-**GraphQL identifier arguments** (`sourceIdentifier`, `targetIdentifier`, `parentIdentifier`,
-`documentIdentifier`) take document **UUIDs**. Drive **slugs are CLI-only** (`--drive <slug>` is
-fine — the CLI resolves them). A slug passed to GraphQL `createDocument`/`createEmptyDocument`
-makes the containment job fail and the create hang forever.
+**GraphQL document arguments** are named `…IdOrSlug` from reactor 6.2.3-dev.35 on
+(`idOrSlug`, `documentIdOrSlug`, `parentIdOrSlug`, `sourceIdOrSlug`, `targetIdOrSlug`) and take a
+**UUID or a slug**: creates, relationship writes and deletes resolve a slug before they touch the
+drive. The old names (`identifier`, `documentIdentifier`, `parentIdentifier`, `sourceIdentifier`,
+`targetIdentifier`, per-model `docId`, `documentId` on the access queries) remain as deprecated
+aliases. On an older Switchboard only the old names exist, and a slug passed to
+`createDocument`/`createEmptyDocument` makes the containment job fail and the create hang forever —
+resolve the UUID first there.
 
 
 ### Mode 0: REST HTTP surface (reads and all writes)
@@ -208,7 +212,7 @@ do not retry, poll `jobId` or re-read. A `400` means nothing was dispatched. A
 ### Writing over raw GraphQL — don't
 
 GraphQL is read-only for vault work. It cannot place a document in a folder
-(`createEmptyDocument(parentIdentifier:)` takes a document, and a folder is not
+(`createEmptyDocument(parentIdOrSlug:)` takes a document, and a folder is not
 one), and `addRelationship` cannot set a link's `reason` or `confidence`.
 
 If you write raw anyway, for anything, these still hold:
@@ -377,7 +381,7 @@ switchboard drives fix <drive> -y
 
 ### Known Issues and Workarounds
 
-**Document creation and Connect sync:** The CLI uses `Model { createDocument(parentIdentifier: driveId) }` which goes through the reactor's proper creation pipeline. Documents created this way are visible in Connect immediately. Do NOT use `createEmptyDocument` + manual `ADD_FILE` — Connect's PGLite won't sync those documents.
+**Document creation and Connect sync:** The CLI uses `Model { createDocument }` with the drive as parent, which goes through the reactor's proper creation pipeline. Documents created this way are visible in Connect immediately. Do NOT use `createEmptyDocument` + manual `ADD_FILE` — Connect's PGLite won't sync those documents.
 
 **Server restart after errors:** If the reactor shows `RevisionMismatchError` after a failed operation, restart the server. The retry loop will block all subsequent operations on that document until cleared.
 

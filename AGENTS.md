@@ -5,7 +5,7 @@ and skills for working with a Powerhouse Knowledge Vault. There is nothing to
 build or test here. Read the instructions below, then read the skill you need
 from `skills/<name>/SKILL.md`.
 
-<!-- GENERATED from AGENT.md (sha256:2bf71c4f181d2fcc) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:5a32ca7c57f923be) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -485,13 +485,13 @@ next action in `recommendations`, and tell the user what it would take.
    switchboard query '{ jobStatus(jobId: "<id>") { status result } }'
    ```
 
-   On an older stack, read the operation log instead — every operation carries an `error` field: `document(identifier){ document{ operations(filter:{scopes:["global"], sinceRevision: <rev before your batch>}){ items{ index error action{ type } } } } }`. **Either way this runs automatically:** the plugin's `PostToolUse` hook checks after every `docs apply` / `docs mutate` you issue and prints any rejection with its reason. A state check of the fields you care about is still worth doing when the shape matters.
+   On an older stack, read the operation log instead — every operation carries an `error` field: `document(idOrSlug){ document{ operations(filter:{scopes:["global"], sinceRevision: <rev before your batch>}){ items{ index error action{ type } } } } }`. **Either way this runs automatically:** the plugin's `PostToolUse` hook checks after every `docs apply` / `docs mutate` you issue and prints any rejection with its reason. A state check of the fields you care about is still worth doing when the shape matters.
 3. **Limits: compute, never estimate — and lint before you dispatch.** Across all twelve models the reducers enforce exactly **one** hard length limit: a knowledge note's `description` must be **≤ 200 characters**, counted the way JavaScript counts (`.length`, UTF-16 units — an emoji is 2; Python's `len()` says 1, which is how an agent "checks" 200 and still fails). Titles have no limit; nothing on MoC, source, tension, observation, scope of work or WBS is length-limited (keep descriptions readable, ~150–200). An over-long description is rejected with `DescriptionTooLongError` while the rest of the batch applies, so the note ends up with *no* description (rule 2 is how you find out). Do not count by eye and do not try-fail-adjust: run `node scripts/lint-actions.mjs <actions.json>` before every `docs apply` — it checks the 200 limit the reactor's way, every enum the reactor drops silently (`noteType`, `sourceOrigin`, `SourceStatus`, `taskType`, `HealthCategory`, `MocTier`, …), and double-encoded line breaks, and exits non-zero with the JSON path of each problem. **This runs automatically:** the plugin's `PreToolUse` hook lints every `switchboard docs apply` / `docs mutate` you issue and blocks the command if the payload would be rejected — you will see the finding instead of a silent partial write.
 4. **Always verify after creating**: `switchboard docs tree <drive> --format json` to confirm the node exists. CLI bugs and network blips cause silent failures.
 5. **Generate a fresh UUID for every `ADD_TASK`.** Since 2026-09-14 the reducer throws `DuplicateTaskIdError` on a repeated id, so a collision is now a clean rejection rather than the unrecoverable ghost it used to be — but it is still a rejection that costs you the task. Every other queue op resolves via `tasks.find(t => t.id === taskId)` and there is no `REMOVE_TASK`, so if a dispatch times out, read the queue back before re-sending rather than assuming it failed.
 6. **Know which "enums" the model actually enforces.** Genuinely enum-typed inputs — `SET_SOURCE_STATUS.status`, `sourceOrigin`, `HealthCategory`, `MocTier` — are zod-validated and a bad value is **rejected**, so the action is skipped and you see it in the job result. The dangerous ones are the fields typed as a free `String`: `noteType` and `relationshipType` accept anything, report success, and write a record nothing will ever match. Lint before dispatch and read those two back.
 7. **The CLI auto-injects timestamps and action IDs** — never generate them manually for CLI writes.
-8. **GraphQL identifier arguments take UUIDs, not slugs**: `sourceIdentifier`, `targetIdentifier`, `parentIdentifier`, `documentIdentifier` take document UUIDs. Drive slugs are CLI-only (`--drive <slug>` is fine — the CLI resolves them). A slug passed to GraphQL `createDocument` makes the containment job fail and the create hangs forever.
+8. **GraphQL document arguments are `…IdOrSlug`** (reactor ≥ 6.2.3-dev.35): `idOrSlug`, `documentIdOrSlug`, `parentIdOrSlug`, `sourceIdOrSlug`, `targetIdOrSlug` take a UUID or a slug, and creates, relationship writes and deletes resolve a slug before they touch the drive. The old names (`identifier`, `documentIdentifier`, `parentIdentifier`, `sourceIdentifier`, `targetIdentifier`, per-model `docId`, and `documentId` on the access queries) are deprecated aliases; the `identifiers` search filter is ignored. On a Switchboard older than dev.35 only the old names exist and a slug passed to `createDocument` makes the containment job fail and the create hang forever — resolve the UUID first there. Our own `knowledgeGraph*(documentId:)` arguments are unchanged.
 9. **Re-run health after every fix.** The dashboard shows the LAST report; a repair after a run leaves the UI showing stale problems.
 10. **Line breaks: the string must hold real newlines *before* it is JSON-encoded — encode once, then read back.** The failure is double encoding: a bash `"\n"` is two characters, and a script that then JSON-encodes that argument escapes the backslash again, so the note is stored with the text `\n` between paragraphs. The write reports success. Put the body in a file or heredoc (or build it inside Python), serialize once, `docs apply --file`, then read `content` back and confirm it contains real newlines. The CLI (≥ 1.0.32) refuses payloads whose strings carry a literal `\n`/`\t`/`\r` and names the field — `--allow-literal-escapes` overrides for the rare legitimate case.
 11. **Writes replay history through the current reducers; reads show stored state.** The reactor rebuilds a document from its full operation log when it writes, so an operation that was valid when recorded but is rejected by today's reducer vanishes from the state on that document's next write — while `docs get` still shows the old value and the stored operation still says `error: null`. After any reducer tightening (an enum, a transition guard) run `node scripts/audit-replay-drift.mjs --drive <id>` in the model repo before trusting a drive, and re-assert harmful drift with `node scripts/reassert-drift.mjs --drift <json> --apply` (legal new operations; last write wins). New drives are unaffected.
@@ -737,7 +737,7 @@ enforced rather than hoped for.
 Check before writing, as the identity you will write with:
 
 ```bash
-switchboard query '{ canExecuteOperation(documentId: "<drive-uuid>", operationType: "ADD_FILE") }'   # true → you may create documents in the drive
+switchboard query '{ canExecuteOperation(documentIdOrSlug: "<drive-uuid>", operationType: "ADD_FILE") }'   # true → you may create documents in the drive
 switchboard query '{ userDocumentPermissions { documentId permission grantedBy } }'                    # every explicit grant for your address
 switchboard docs get <drive-uuid> --state --format json > /dev/null && echo READ ok                    # can you even read it?
 ```
@@ -770,10 +770,10 @@ subgraph, not on a document — no `id`/`timestampUtcMs` envelope — so
 **drive**, `WRITE` unless asked for more, and read the list back afterwards.
 
 ```bash
-switchboard query 'mutation { grantDocumentPermission(documentId: "<drive-uuid>", userAddress: "0x…", permission: WRITE) { userAddress permission grantedBy } }'
-switchboard query '{ documentAccess(documentId: "<drive-uuid>") { permissions { userAddress permission grantedBy createdAt } } }'
-switchboard query 'mutation { revokeDocumentPermission(documentId: "<drive-uuid>", userAddress: "0x…") }'
-switchboard query 'mutation { grantOperationPermission(documentId: "<drive-uuid>", operationType: "APPROVE_NOTE", userAddress: "0x…") { userAddress operationType } }'
+switchboard query 'mutation { grantDocumentPermission(documentIdOrSlug: "<drive-uuid>", userAddress: "0x…", permission: WRITE) { userAddress permission grantedBy } }'
+switchboard query '{ documentAccess(documentIdOrSlug: "<drive-uuid>") { permissions { userAddress permission grantedBy createdAt } } }'
+switchboard query 'mutation { revokeDocumentPermission(documentIdOrSlug: "<drive-uuid>", userAddress: "0x…") }'
+switchboard query 'mutation { grantOperationPermission(documentIdOrSlug: "<drive-uuid>", operationType: "APPROVE_NOTE", userAddress: "0x…") { userAddress operationType } }'
 ```
 
 In Connect the same controls are under the vault's gear menu → *Access*. The

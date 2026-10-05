@@ -97,7 +97,7 @@ Identity says who you are; a grant says what you may do. Ask the Switchboard,
 as the identity from step 2:
 
 ```bash
-switchboard query '{ canExecuteOperation(documentId: "<drive-uuid>", operationType: "ADD_FILE") }'
+switchboard query '{ canExecuteOperation(documentIdOrSlug: "<drive-uuid>", operationType: "ADD_FILE") }'
 ```
 
 | Answer | Meaning | Do |

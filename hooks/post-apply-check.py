@@ -72,7 +72,7 @@ def main():
         if not waited:
             for jid in job_ids[:3]:
                 subprocess.run(["switchboard", "jobs", "wait", jid, "--timeout", "60", "--quiet"], capture_output=True, text=True, timeout=90)
-        q = ('{ document(identifier:"%s"){ document{ operations(filter:{ scopes:["global"], timestampFrom:"%s" }, paging:{ limit:200 }){ items{ index error action{ type } } } } } }' % (doc_id, since))
+        q = ('{ document(idOrSlug:"%s"){ document{ operations(filter:{ scopes:["global"], timestampFrom:"%s" }, paging:{ limit:200 }){ items{ index error action{ type } } } } } }' % (doc_id, since))
         try:
             r = subprocess.run(["switchboard", "query", q, "--format", "json"], capture_output=True, text=True, timeout=60)
             data = json.loads(r.stdout)

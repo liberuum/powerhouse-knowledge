@@ -15,6 +15,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
+import { authHeaders } from "./lib/bearer.mjs";
 
 const args = process.argv.slice(2);
 const arg = (f) => { const i = args.indexOf(f); return i === -1 ? null : args[i + 1]; };
@@ -28,7 +29,7 @@ const READER = ENDPOINT.replace(/\/graphql\/?$/, "/graphql/r");
 const AUTHOR = "skill-add";
 
 async function gql(query, variables, endpoint = READER) {
-  const res = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query, variables }) });
+  const res = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify({ query, variables }) });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const body = await res.json();
   if (body.errors) throw new Error(body.errors[0].message);
@@ -39,10 +40,10 @@ const mutate = (id, actions) => gql(
   "mutation($id: String!, $actions: [JSONObject!]!){ mutateDocument(documentIdentifier: $id, actions: $actions){ documentType } }",
   { id, actions: actions.map((a) => ({ id: randomUUID(), timestampUtcMs: now(), scope: "global", ...a })) });
 const addRel = (s, t, r) => gql(
-  'mutation($s: String!, $t: String!, $r: String!){ addRelationship(sourceIdentifier: $s, targetIdentifier: $t, relationshipType: $r, branch: "main"){ documentType } }',
+  'mutation($s: String!, $t: String!, $r: String!){ addRelationship(sourceIdOrSlug: $s, targetIdOrSlug: $t, relationshipType: $r, branch: "main"){ documentType } }',
   { s, t, r });
 async function readState(id) {
-  const d = await gql("query($id: String!){ document(identifier: $id){ document { state } } }", { id });
+  const d = await gql("query($id: String!){ document(idOrSlug: $id){ document { state } } }", { id });
   let st = d.document?.document?.state;
   if (typeof st === "string") st = JSON.parse(st);
   return st?.global ?? st ?? {};
@@ -76,7 +77,7 @@ const hash = createHash("sha256").update(raw).digest("hex");
 console.log(`skill: ${name} (${raw.length} chars, sha256:${hash.slice(0, 12)}…) from ${origin}`);
 
 // ── vault discovery (by title convention) ──────────────────────────────
-const driveDoc = await gql("query($id: String!){ document(identifier: $id){ document { id state } } }", { id: DRIVE });
+const driveDoc = await gql("query($id: String!){ document(idOrSlug: $id){ document { id state } } }", { id: DRIVE });
 const driveId = driveDoc.document.document.id;
 let dst = driveDoc.document.document.state;
 if (typeof dst === "string") dst = JSON.parse(dst);
@@ -101,11 +102,11 @@ const FORCE = args.includes("--force");
 if (priorHash === hash && !FORCE) { console.log("unchanged — vault already has this exact content (--force regenerates the note anyway)"); process.exit(0); }
 
 async function createDoc(ns, docName) {
-  const d = await gql(`mutation($name: String!, $p: String) { ${ns} { createDocument(name: $name, parentIdentifier: $p) { id } } }`, { name: docName, p: driveId }, ENDPOINT);
+  const d = await gql(`mutation($name: String!, $p: String) { ${ns} { createDocument(name: $name, parentIdOrSlug: $p) { id } } }`, { name: docName, p: driveId }, ENDPOINT);
   return d[ns].createDocument.id;
 }
 const moveNode = (id, folder) => gql(
-  "mutation($docId: PHID!, $input: DocumentDrive_MoveNodeInput!){ DocumentDrive { moveNode(docId: $docId, input: $input) { id } } }",
+  "mutation($docId: String!, $input: DocumentDrive_MoveNodeInput!){ DocumentDrive { moveNode(documentIdOrSlug: $docId, input: $input) { id } } }",
   { docId: driveId, input: { srcFolder: id, targetParentFolder: folder } }, ENDPOINT);
 
 // ── source ──────────────────────────────────────────────────────────────

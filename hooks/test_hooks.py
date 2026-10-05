@@ -127,7 +127,7 @@ class IdentityHook(unittest.TestCase):
         self.assertIn("keypair missing", err)
 
     def test_steers_raw_relationship_mutations_to_docs_link(self):
-        cmd = "switchboard query 'mutation { addRelationship(sourceIdentifier:\"a\", targetIdentifier:\"b\", relationshipType:\"RELATES_TO\", branch:\"main\"){ documentType } }'"
+        cmd = "switchboard query 'mutation { addRelationship(sourceIdOrSlug:\"a\", targetIdOrSlug:\"b\", relationshipType:\"RELATES_TO\", branch:\"main\"){ documentType } }'"
         code, _, err = run_hook(self.HOOK, cmd, fake_status=self.SIGNING)
         self.assertEqual(code, 2)
         self.assertIn("docs link", err)

@@ -14,9 +14,9 @@ Two things stand between an agent and a vault write, and they fail differently
 
 The probe asks the Switchboard itself, as the active profile:
 
-  * `document(identifier: <drive>) { document { id } }`
+  * `document(idOrSlug: <drive>) { document { id } }`
       — can this identity READ the drive?
-  * `canExecuteOperation(documentId: <drive>, operationType: "ADD_FILE")`
+  * `canExecuteOperation(documentIdOrSlug: <drive>, operationType: "ADD_FILE")`
       — may it create documents in it? That is `canMutate`: the WRITE grant
         (or an explicit operation grant) — the exact check every write faces.
 
@@ -186,8 +186,8 @@ def main():
         return 0  # the pre-flight already says there is no vault drive on this profile
 
     did = drive["id"]
-    read = query(f'{{ document(identifier: "{did}") {{ document {{ id }} }} }}')
-    write = query(f'{{ canExecuteOperation(documentId: "{did}", operationType: "ADD_FILE") }}')
+    read = query(f'{{ document(idOrSlug: "{did}") {{ document {{ id }} }} }}')
+    write = query(f'{{ canExecuteOperation(documentIdOrSlug: "{did}", operationType: "ADD_FILE") }}')
     line = interpret(status, drive, read, write)
     if line:
         print(line)

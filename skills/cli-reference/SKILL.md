@@ -58,16 +58,16 @@ switchboard auth logout [--identity-only]             # drop the token and/or th
 SWITCHBOARD_TOKEN=<jwt> switchboard …                 # the environment overrides the profile's token
 
 # Access — ask the Switchboard what this identity may do
-switchboard query '{ canExecuteOperation(documentId: "<drive-uuid>", operationType: "ADD_FILE") }'   # true → may create documents in the drive
+switchboard query '{ canExecuteOperation(documentIdOrSlug: "<drive-uuid>", operationType: "ADD_FILE") }'   # true → may create documents in the drive
 switchboard query '{ userDocumentPermissions { documentId permission grantedBy } }'                    # explicit grants for this address
 
 # Administrators only (owner, ADMIN on the document, or the ADMINS list). Permission
 # mutations are not document actions — no envelope — so `query` is the right tool.
-switchboard query '{ documentAccess(documentId: "<drive-uuid>") { permissions { userAddress permission grantedBy } } }'
-switchboard query 'mutation { grantDocumentPermission(documentId: "<drive-uuid>", userAddress: "0x…", permission: WRITE) { userAddress permission } }'
-switchboard query 'mutation { revokeDocumentPermission(documentId: "<drive-uuid>", userAddress: "0x…") }'
-switchboard query '{ documentProtection(documentId: "<uuid>") { protected ownerAddress } }'
-switchboard query 'mutation { grantOperationPermission(documentId: "<drive-uuid>", operationType: "APPROVE_NOTE", userAddress: "0x…") { userAddress operationType } }'
+switchboard query '{ documentAccess(documentIdOrSlug: "<drive-uuid>") { permissions { userAddress permission grantedBy } } }'
+switchboard query 'mutation { grantDocumentPermission(documentIdOrSlug: "<drive-uuid>", userAddress: "0x…", permission: WRITE) { userAddress permission } }'
+switchboard query 'mutation { revokeDocumentPermission(documentIdOrSlug: "<drive-uuid>", userAddress: "0x…") }'
+switchboard query '{ documentProtection(documentIdOrSlug: "<uuid>") { protected ownerAddress } }'
+switchboard query 'mutation { grantOperationPermission(documentIdOrSlug: "<drive-uuid>", operationType: "APPROVE_NOTE", userAddress: "0x…") { userAddress operationType } }'
 ```
 
 `HTTP 401 … Authentication required` is identity (no or expired bearer);
@@ -104,7 +104,7 @@ switchboard drives delete <drive-slug> -y
 
 ## Document Creation
 
-The CLI uses `Model { createDocument(parentIdentifier) }` which goes through the reactor's proper creation pipeline — documents are visible in Connect immediately.
+The CLI uses `Model { createDocument }` with the drive as parent, which goes through the reactor's proper creation pipeline — documents are visible in Connect immediately.
 
 ```bash
 # Create document in a drive

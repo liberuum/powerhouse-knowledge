@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "fs";
 import path from "path";
+import { authHeaders } from "./lib/bearer.mjs";
 
 function getArg(flag, fallback) {
   const idx = process.argv.indexOf(flag);
@@ -32,7 +33,7 @@ if (!ENDPOINT || !DRIVE_ID || !SOURCES_FOLDER_ID || !FILE_PATH) {
 async function gql(query, variables) {
   const res = await fetch(ENDPOINT, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ query, variables }),
   });
   const json = await res.json();
@@ -77,19 +78,19 @@ async function main() {
   console.log(`Content: ${content.length} chars`);
   console.log();
 
-  // Resolve the drive identifier to its canonical UUID — GraphQL identifier
-  // arguments (parentIdentifier below) require UUIDs. A slug passed straight
-  // through makes createDocument's containment job fail and the create hang
-  // forever. Same resolution pattern as scripts/sync-skills.mjs:166-170.
+  // Resolve the drive identifier to its canonical UUID. Reactor ≥ 6.2.3-dev.35
+  // resolves a slug in parentIdOrSlug itself, but the UUID is also what the
+  // drive's MOVE_NODE and the queue's documentRef need, and on an older
+  // Switchboard a slug there makes the create hang forever.
   const driveIdRes = await gql(
-    `query($id: String!){ document(identifier: $id){ document { id } } }`,
+    `query($id: String!){ document(idOrSlug: $id){ document { id } } }`,
     { id: DRIVE_ID },
   );
   const driveId = driveIdRes.document.document.id;
 
   // Find PipelineQueue
   const driveRes = await gql(
-    `query($id: String!){ document(identifier: $id){ document { state } } }`,
+    `query($id: String!){ document(idOrSlug: $id){ document { state } } }`,
     { id: driveId },
   );
   const nodes = driveRes.document.document.state.global.nodes;
@@ -100,7 +101,7 @@ async function main() {
   // createEmptyDocument + ADD_FILE dance is unnecessary.
   console.log("1. Creating source document...");
   const r1 = await gql(
-    `mutation($name: String!, $p: String) { Source { createDocument(name: $name, parentIdentifier: $p) { id } } }`,
+    `mutation($name: String!, $p: String) { Source { createDocument(name: $name, parentIdOrSlug: $p) { id } } }`,
     { name: title, p: driveId },
   );
   const sourceId = r1.Source.createDocument.id;
@@ -109,7 +110,7 @@ async function main() {
   // 2. Move into /sources/ folder
   console.log("2. Moving into sources folder...");
   await gql(
-    `mutation($docId: PHID!, $input: DocumentDrive_MoveNodeInput!){ DocumentDrive { moveNode(docId: $docId, input: $input) { id } } }`,
+    `mutation($docId: String!, $input: DocumentDrive_MoveNodeInput!){ DocumentDrive { moveNode(documentIdOrSlug: $docId, input: $input) { id } } }`,
     { docId: driveId, input: { srcFolder: sourceId, targetParentFolder: SOURCES_FOLDER_ID } },
   );
 
@@ -162,7 +163,7 @@ async function main() {
 
   // 5. Verify
   const verifyRes = await gql(
-    `{ document(identifier: "${sourceId}") { document { state } } }`,
+    `{ document(idOrSlug: "${sourceId}") { document { state } } }`,
   );
   const state = verifyRes.document.document.state.global;
 

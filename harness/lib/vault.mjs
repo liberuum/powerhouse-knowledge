@@ -232,7 +232,7 @@ export function applyWithVerify(docId, batch, { tmpDir, log } = {}) {
     });
 
     // 4. operation-log rejection check (hooks/post-apply-check.py pattern)
-    const q = `{ document(identifier:"${docId}"){ document{ operations(filter:{ scopes:["global"], timestampFrom:"${before}" }, paging:{ limit:200 }){ items{ index error action{ type input } } } } } }`;
+    const q = `{ document(idOrSlug:"${docId}"){ document{ operations(filter:{ scopes:["global"], timestampFrom:"${before}" }, paging:{ limit:200 }){ items{ index error action{ type input } } } } } }`;
     const data = query(q);
     const ops = data?.document?.document?.operations?.items || [];
     const ours = new Map(list.map((a) => [JSON.stringify({ type: a.type, input: a.input }), a]));

@@ -47,6 +47,7 @@ import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
+import { authHeaders } from "./lib/bearer.mjs";
 
 // ── args ────────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -118,14 +119,14 @@ function link(source, target, type, reason, confidence) {
 
 // ── reads (GraphQL reader) ──────────────────────────────────────────────
 async function gql(query, variables) {
-  const res = await fetch(READER, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query, variables }) });
+  const res = await fetch(READER, { method: "POST", headers: { "content-type": "application/json", ...authHeaders(PROFILE) }, body: JSON.stringify({ query, variables }) });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const body = await res.json();
   if (body.errors) throw new Error(body.errors[0].message);
   return body.data;
 }
 async function readState(id) {
-  const d = await gql("query($id: String!){ document(identifier: $id){ document { state } } }", { id });
+  const d = await gql("query($id: String!){ document(idOrSlug: $id){ document { state } } }", { id });
   let st = d.document?.document?.state;
   if (typeof st === "string") st = JSON.parse(st);
   return st?.global ?? st ?? {};
@@ -137,7 +138,7 @@ async function pmap(items, n, fn) {
 }
 
 // ── vault discovery ─────────────────────────────────────────────────────
-const driveId = (await gql("query($id: String!){ document(identifier: $id){ document { id } } }", { id: DRIVE })).document.document.id;
+const driveId = (await gql("query($id: String!){ document(idOrSlug: $id){ document { id } } }", { id: DRIVE })).document.document.id;
 const tree = await readState(driveId);
 const nodes = tree.nodes ?? [];
 const sourcesFolder = nodes.find((n) => n.kind === "folder" && n.name === "sources" && !n.parentFolder)?.id;

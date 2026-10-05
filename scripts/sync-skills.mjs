@@ -32,6 +32,7 @@ import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { authHeaders } from "./lib/bearer.mjs";
 
 // ── args ────────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -104,7 +105,7 @@ if (PROFILE && !DRY) {
 async function gql(query, variables, endpoint = READER) {
   const res = await fetch(endpoint, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...authHeaders(PROFILE) },
     body: JSON.stringify({ query, variables }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -152,7 +153,7 @@ async function createDoc(ns, name, folder) {
     return id;
   }
   const d = await gql(
-    `mutation($name: String!, $p: String) { ${ns} { createDocument(name: $name, parentIdentifier: $p) { id } } }`,
+    `mutation($name: String!, $p: String) { ${ns} { createDocument(name: $name, parentIdOrSlug: $p) { id } } }`,
     { name, p: driveId },
     ENDPOINT,
   );
@@ -163,7 +164,7 @@ async function createDoc(ns, name, folder) {
 async function moveNode(id, folder) {
   // `srcFolder` is the reactor's name for the moved node, folder OR file.
   await gql(
-    "mutation($docId: PHID!, $input: DocumentDrive_MoveNodeInput!){ DocumentDrive { moveNode(docId: $docId, input: $input) { id } } }",
+    "mutation($docId: String!, $input: DocumentDrive_MoveNodeInput!){ DocumentDrive { moveNode(documentIdOrSlug: $docId, input: $input) { id } } }",
     { docId: driveId, input: { srcFolder: id, targetParentFolder: folder } },
     ENDPOINT,
   );
@@ -176,13 +177,13 @@ async function addRel(source, target, type, reason) {
     return;
   }
   await gql(
-    "mutation($s: String!, $t: String!, $r: String!){ addRelationship(sourceIdentifier: $s, targetIdentifier: $t, relationshipType: $r, branch: \"main\"){ documentType } }",
+    "mutation($s: String!, $t: String!, $r: String!){ addRelationship(sourceIdOrSlug: $s, targetIdOrSlug: $t, relationshipType: $r, branch: \"main\"){ documentType } }",
     { s: source, t: target, r: type },
   );
 }
 async function readState(id) {
   const d = await gql(
-    "query($id: String!){ document(identifier: $id){ document { state } } }",
+    "query($id: String!){ document(idOrSlug: $id){ document { state } } }",
     { id },
   );
   let st = d.document?.document?.state;
@@ -247,7 +248,7 @@ console.log(`found ${skills.length} skills in ${dirs.length} dir(s)`);
 // ── vault discovery ─────────────────────────────────────────────────────
 let driveId = DRIVE;
 {
-  const d = await gql("query($id: String!){ document(identifier: $id){ document { id } } }", { id: DRIVE });
+  const d = await gql("query($id: String!){ document(idOrSlug: $id){ document { id } } }", { id: DRIVE });
   driveId = d.document.document.id;
 }
 const treeState = await readState(driveId);
