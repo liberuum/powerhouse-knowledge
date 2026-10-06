@@ -5,7 +5,7 @@ and skills for working with a Powerhouse Knowledge Vault. There is nothing to
 build or test here. Read the instructions below, then read the skill you need
 from `skills/<name>/SKILL.md`.
 
-<!-- GENERATED from AGENT.md (sha256:5a32ca7c57f923be) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:875e4fd9e3bc3120) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -552,7 +552,7 @@ The drive app scaffolds 12 folders on first open: `knowledge/{notes,inbox,insigh
 
 **Metadata is where a note stops being prose.** 18 whitelisted string fields (`scope`, `confidence`, `severity`, `editor`, `modelId`, `version`, `filePath`, `computes`, `context`, `decisionStatus`, `model`, `sourceType`, `targetType`, `relationType`, `cardinality`, `errorMessage`, `rootCause`, `correctPattern`) and 9 list fields (`models`, `modules`, `hooksUsed`, `dispatchTargets`, `inputs`, `outputs`, `consumedBy`, `alternatives`, `consequences`). Which ones a note should carry depends on its `noteType` — the table is in [skills/extract/SKILL.md](skills/extract/SKILL.md) § *Metadata by noteType*. Fill what the source supports; leave the rest empty.
 
-`noteType` — the `NoteType` enum: `CONCEPT`, `DECISION`, `PATTERN`, `OBSERVATION`, `PROCEDURE`, `ARCHITECTURE`, `BUG_PATTERN`, `INTEGRATION`, `WORKFLOW`, `REFERENCE`. The reducer rejects anything else at dispatch (a rejected action is recorded with its error and skipped, so the note simply has no type). Before the enum this was a free `String`, and real drives ended up with four spellings of one value; `node scripts/migrate-note-type.mjs --drive <uuid>` in the model repo normalises an existing drive.
+`noteType` — the `NoteType` enum: `CONCEPT`, `DECISION`, `PATTERN`, `OBSERVATION`, `PROCEDURE`, `ARCHITECTURE`, `BUG_PATTERN`, `INTEGRATION`, `WORKFLOW`, `REFERENCE`. The reducer rejects anything else at dispatch (a rejected action is recorded with its error and skipped, so the note simply has no type). Before the enum this was a free `String`; drives that held other spellings were normalised, and the model's v2 upgrade (`upgrade-documents.mjs` in the model repo) maps any it meets.
 
 Content: `SET_TITLE { title, updatedAt }` · `SET_DESCRIPTION { description, updatedAt }` · `SET_NOTE_TYPE { noteType, updatedAt }` · `SET_CONTENT { content, updatedAt }` · `PATCH_CONTENT { offset, removeCount, insert, updatedAt }` · `SET_METADATA_FIELD { field, value, updatedAt }` · `SET_METADATA_LIST_FIELD { field, values[], updatedAt }` (the only way to write list metadata such as `models`, `inputs`, `outputs`, `modules`, `alternatives`, `consequences`)
 
