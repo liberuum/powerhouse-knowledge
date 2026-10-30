@@ -274,7 +274,7 @@ Content mutations require `updatedAt: DateTime!`:
 # setTitle, setDescription, setNoteType, setContent all need updatedAt
 switchboard docs mutate <id> --op setTitle --input '{"title":"My Claim","updatedAt":"2026-03-30T15:00:00.000Z"}'
 switchboard docs mutate <id> --op setDescription --input '{"description":"Summary","updatedAt":"2026-03-30T15:00:00.000Z"}'
-switchboard docs mutate <id> --op setNoteType --input '{"noteType":"concept","updatedAt":"2026-03-30T15:00:00.000Z"}'
+switchboard docs mutate <id> --op setNoteType --input '{"noteType":"CONCEPT","updatedAt":"2026-03-30T15:00:00.000Z"}'
 switchboard docs mutate <id> --op setContent --input '{"content":"Full body","updatedAt":"2026-03-30T15:00:00.000Z"}'
 ```
 

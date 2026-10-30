@@ -343,8 +343,8 @@ The six R names are the vocabulary. The **pipeline-queue task** underneath has f
 `create → reflect → reweave → verify` for a `claim` task (`enrich → reflect → reweave → verify`
 for `enrichment`). Advance it with `ADVANCE_PHASE` and a handoff per phase; the final advance
 completes the task by itself. Every note the pipeline creates must end with: title, description
-(≤ 200 chars, adds information beyond the title), lowercase `noteType`, topics, provenance
-(dispatched separately), ≥ 2 typed relationships, a MoC `CORE_IDEA` edge, and a walk to
+(≤ 200 chars, adds information beyond the title), a `NoteType` enum value (`CONCEPT`, `BUG_PATTERN`,
+…), topics, provenance (dispatched separately), ≥ 2 typed relationships, a MoC `CORE_IDEA` edge, and a walk to
 `CANONICAL`.
 
 ## Architecture
