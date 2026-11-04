@@ -95,7 +95,7 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 | `DELETE` | `relationships` | `{ source, target, type }` | same |
 | `POST` | `tasks/:id/claim` | `drive`; `{ assignedTo? }` | `{ taskId, assignedTo }`; `409` if already assigned |
 | `POST` | `admin/reindex` | `drive`; needs `canManage` | `{ indexedNodes, indexedEdges, errors }` |
-| `POST` | `admin/backfill-source-history` | `drive`; needs `canManage` | `{ sources, inserted, skipped, errors }` — once per vault indexed before source history was recorded; idempotent |
+| `POST` | `admin/backfill-source-history` | `drive`, `scope` (`sources` default, or `all`); needs `canManage` | `{ sources, documents, inserted, skipped, errors }` — once per vault indexed before change history; `scope=all` also refills every indexed document's global history; idempotent |
 
 ## Search returns the graph around its results
 
@@ -143,15 +143,21 @@ time. Any reader of the drive may call it.
   child maps, their notes and those notes' sources), `topic=`, `q=<words>`
   (top 10 semantic hits plus their one-hop neighbours) or `documentIds=` — and
   the answer adds `events`, most significant first, paged by `limit` and
-  `cursor=<nextCursor>`.
+  `cursor=<nextCursor>`. A cursor keeps its window: pass it with the same
+  `since`; leaving `until` out then continues the same window, not one ending
+  "now". A cursor the endpoint did not issue is a 400.
 - **Events.** `created` (with `derivedFrom`), `revised` (`fields.title` /
   `fields.description` as `before → after`, `before: null` when not set
-  before; `fields.content` as diff `hunks` with `added`/`removed` line counts;
+  before; `fields.content` as diff `hunks` with `added`/`removed` line counts
+  and the earlier text's first 400 characters in `before`;
   `revisionNotes` from a `## Revision history` section), `superseded`
   (`supersededBy { documentId, title, reason }`), `archived`, `restored`,
   `approved`, `reverified` (a `version` stamp with no claim change),
   `source-added`, `source-revised` (`source { refBefore, refAfter, added,
-  removed, hunks, noteIds }` — the git refs come from the source's `method`),
+  removed, hunks, noteIds, noteCount }` — the git refs come from the source's
+  `method`; `noteIds` lists the first 20 of `noteCount` notes; `added` and
+  `removed` are `null` when the earlier text was never recorded — say "earlier
+  version not recorded", never "unchanged"),
   `source-archived`. Other operations are counted in `folded`, not listed.
 - **Empty.** `totals.documents: 0` and `groups: []` means nothing changed in
   that window — say so; do not fill the gap from search.
@@ -168,8 +174,12 @@ curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01&q=processors&lim
 ```
 
 Source revisions enter the history from the release that records them. On a
-vault indexed before that, a manager runs `POST admin/backfill-source-history?drive=$DRIVE`
-once; until then re-ingested sources show without their earlier ref.
+vault indexed before that, a manager runs
+`POST admin/backfill-source-history?drive=$DRIVE&scope=all` once: it records
+each source's ingestions and refills the first operations of every note the
+older index dropped (without them a revision reads its earlier title as "not
+set before"). Until then re-ingested sources show without their earlier ref
+and line counts.
 
 ## Examples
 
