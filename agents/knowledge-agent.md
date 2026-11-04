@@ -11,7 +11,7 @@ tools:
   - WebFetch
   - Agent
 ---
-<!-- GENERATED from AGENT.md (sha256:e6e3d65237d9c9bc) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:7f9daacaf21e8391) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -389,8 +389,9 @@ For "what changed in X since Y", call REST `GET changes?drive=<UUID>&since=<date
 reader: how the vault grew, what is new per main area, what is now understood
 differently (then → now, because …), where to look next — no ids or operation
 counts in the prose, claims cited as `[[documentId]]`. "How did X work then vs
-now" → `&q=<X>` and answer from `thenVsNow`. Drill into an area with
-`&moc=<area id>` for its events. `totals.documents: 0` means nothing changed.
+now" → `&q=<X>` and answer from `thenVsNow` (`then`, `now`, and `unchanged`
+for what held). Drill into an area with `&moc=<area id>` for its events
+(Elsewhere has no map: use `&q=`). `totals.documents: 0` means nothing changed.
 Details: **rest-api** § *What changed*.
 
 ## Read a document

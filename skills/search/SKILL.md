@@ -165,16 +165,19 @@ cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
    used, then `GET changes?drive=<UUID>&since=<date>[&until=<date>]` and answer
    from `story`, for a non-technical reader, in four parts: **how the vault
    grew** (`growth`: live notes then → now, new areas and maps), **what is new**
-   (each area's `newClaims`, in plain sentences), **what we now understand
+   (each area's `newClaims`, in plain sentences; `newCount` and friends say how
+   many more there are), **what we now understand
    differently** (each `changedClaims` entry as then → now, because its `why`),
    **where to look next** (the areas as follow-ups). No ids, no operation
    counts, no "superseded"/"revised" jargon in the prose; cite claims as
    `[[documentId]]`. `totals` is the plumbing, not the answer.
 2. **Then vs now.** For "how did X work then, and how does it work now", call
-   `&q=<X>` and answer from `thenVsNow` (then: the claims at `since`; now: the
-   claims today) and the scoped story's shifts, citing both sides.
+   `&q=<X>` and answer from `thenVsNow` (then: the claims at `since` that read
+   differently today; now: today's claims that read differently then;
+   unchanged: what held throughout) and the scoped story's shifts, citing both
+   sides.
 3. **Drill down** on the area the person picks: `&moc=<area id>` (or
-   `&q=<words>` for a subject no map names) returns that area's story plus its
+   `&q=<words>` for a subject no map names, and for Elsewhere, which has no map) returns that area's story plus its
    `events` for detail — before → after of a revised claim, a replacement and
    its reason, the refs a source moved between. Follow `nextCursor` for more.
 4. `totals.documents: 0` means nothing changed in that window — say so.

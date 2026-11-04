@@ -139,17 +139,26 @@ time. Any reader of the drive may call it.
   `newMaps` (`{ id, title, area }`). `story.areas`: the hub's main areas (its
   `CHILD_MOC` maps; a note belongs to an area when the area's map tree holds it
   as a `CORE_IDEA`) with any change, most changed first, `id: null` =
-  Elsewhere last — each with `notesThen`/`notesNow`, `newClaims` (≤ 8, most
-  connected first), `changedClaims` (≤ 8: `{ documentId, then { claim, gist },
+  Elsewhere last — each with `notesThen`/`notesNow`, the uncapped counts
+  `newCount`, `changedCount`, `retiredCount` (the lists below are capped: say
+  "and N more" from these), `newClaims` (≤ 8, most connected first; a note
+  that replaced another is that shift's `now`, never also new), `changedClaims` (≤ 8: `{ documentId, then { claim, gist },
   now { claim, gist }, why, replacedBy? }` — a revised title/description with
   its `## Revision history` line as `why`, or a superseded note with its
   replacement and the SUPERSEDES reason; a version stamp alone is never a
-  shift) and `retiredClaims` (≤ 5, archived with no replacement). A claim is
+  shift) and `retiredClaims` (≤ 5: archived in the window, still archived,
+  never replaced). A shift whose `then.claim` equals `now.claim` changed its
+  description: tell it by the gists. A claim is
   `{ documentId, claim (the title), gist (the description) }`.
 - **Then vs now.** With `q=` or `topic=` the answer adds `thenVsNow { then,
-  now }` (≤ 12 each): the scope's claims as they stood at `since` (notes that
-  existed and were not archived or superseded then, with their then-titles)
-  versus now. That answers "how did X work then, and how does it work now".
+  now, unchanged }` (≤ 12 each): `then` — the scope's claims as they stood at
+  `since` (notes that existed and were not archived or superseded then, with
+  their then-titles) that read differently now or are gone; `now` — today's
+  claims that read differently at `since` or are new; `unchanged` — claims held
+  in the same words throughout, listed once. That answers "how did X work then,
+  and how does it work now". "Now" is always the current state, even with a
+  past `until`: for two past dates, answer from `events`.
+- **Cursor pages** carry no `story` and no `thenVsNow` — the first page did.
 - **Writing the answer.** Lead with the story, for a reader who is not
   technical: how the vault grew, what is new per area, what is now understood
   differently (then → now, because …), where to look next. Keep ids and
@@ -159,7 +168,9 @@ time. Any reader of the drive may call it.
   `sourcesAdded`; `documents`, `operations`) and `groups` — one per map of
   content (else topic, else `unplaced`), each with its own totals and up to
   five `highlights`. Groups are never paged.
-- **Drill down.** Add a scope — `moc=<map id>` (a group's `id`; includes its
+- **Drill down.** Add a scope — `moc=<map id>` (an area's `id` from
+  `story.areas`, or a group's `id`; Elsewhere, `id: null`, is no map — use
+  `q=` for it; the scope includes its
   child maps, their notes and those notes' sources), `topic=`, `q=<words>`
   (top 10 semantic hits plus their one-hop neighbours) or `documentIds=` — and
   the answer adds `events`, most significant first, paged by `limit` and
