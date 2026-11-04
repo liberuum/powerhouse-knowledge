@@ -134,6 +134,13 @@ time. Any reader of the drive may call it.
 
 - **Window.** `since` is required; `until` defaults to now. ISO dates, UTC: a
   date alone for `since` starts at 00:00Z, for `until` covers that whole day.
+  A month or season without a year is its **most recent past** occurrence:
+  asked on 2026-11-04, "since September" is 2026-09-01 and "since summer"
+  2026-06-01 — never a year earlier. `window.vaultStart` is the vault's first
+  recorded activity (earliest operation or note creation).
+- **Before the vault began.** When `since` predates `vaultStart`,
+  `story.growth.from` is `vaultStart` and growth counts from it: say "the
+  vault began on <date>" and how much it holds now — never "0 notes then".
 - **The story leads.** `story` says what the vault knows now that it did not
   before. `story.growth`: live notes `notesThen → notesNow`, `newAreas`,
   `newMaps` (`{ id, title, area }`). `story.areas`: the hub's main areas (its
@@ -144,11 +151,12 @@ time. Any reader of the drive may call it.
   "and N more" from these), `mergedCount` (supersessions that merged twin
   notes: a reason that starts "same claim" / "same point" or says "already
   makes this claim", "twin", "duplicate of/note/claim", "identical claim",
-  "redundant with", "merged into/with the newer/older/surviving/twin" — or no
+  "redundant with", "merged into/with the newer/older/surviving/twin",
+  "states the same", "same floor/rule/limit/default" — or no
   reason, titles ≥ 0.8 token Jaccard, and no negation, digit or version among
   the words that differ; a reason that merely mentions duplicates is a real
   change. Housekeeping: counted, never listed as changed, new or in
-  `thenVsNow`),
+  `thenVsNow` — and never mentioned in an answer),
   `versions { first, now }` when the area's sources carry `git:` refs (the ref
   standing at `since`, else first ingested → the latest: "first recorded at
   v6.2.2-dev.74, now v6.2.3-dev.91+e0f277d"), `newClaims` (≤ 8, most connected first; a note
@@ -158,11 +166,14 @@ time. Any reader of the drive may call it.
   superseded note with its replacement and the SUPERSEDES reason; a note
   *created* in the window and revised after its creating batch is a shift
   from its **first recorded** state (title/description as last written within
-  an hour of its creation), `thenAt` saying when — and it is also listed as
-  new; a version stamp alone is never a shift) and `retiredClaims` (≤ 5: archived in the window, still archived,
+  an hour of its creation), `thenAt` saying when — every such shift has one:
+  when the note's creation row was lost, its creation time (`added_at`) — and
+  it is also listed as new; a version stamp alone is never a shift) and `retiredClaims` (≤ 5: archived in the window, still archived,
   never replaced). A shift whose `then.claim` equals `now.claim` changed its
   description: tell it by the gists. A claim is
-  `{ documentId, claim (the title), gist (the description) }`.
+  `{ documentId, claim (the title), gist (the description) }`. Describe an
+  area only through its claims: an area, new area or map the answer only
+  names may be named and counted, never characterised.
 - **Then vs now.** With `q=` or `topic=` the answer adds `thenVsNow { then,
   now, unchanged }` (≤ 12 each): `then` — the scope's claims as they stood at
   `since` (notes that existed and were not archived or superseded then, with
@@ -191,15 +202,18 @@ time. Any reader of the drive may call it.
   `q=` for it; the scope includes its
   child maps, their notes and those notes' sources), `topic=`, `q=<words>`
   (whole words, case-insensitive, plurals folded, question filler like "what
-  changed" / "how does … work now" ignored: a `q` that names the hub or the
-  drive is the whole vault — answered as the unscoped call; one that names a
-  main area or a map below it scopes to that map — its title holds the
-  query's words, or the query holds the title's and they cover at least half
-  of it, or it is the only map sharing a word; two equally good maps mean
-  neither; otherwise the top 25 semantic hits plus their one-hop neighbours;
+  changed" / "how does … work now", months and seasons ignored: a `q` that
+  names the hub or the drive is the whole vault — answered as the unscoped
+  call; any other `q` means **the main areas about it**: the hub's areas and
+  the maps below them ranked by similarity to the query (their embeddings —
+  title, description, orientation — or their words when the server cannot
+  embed), every area within 0.9 of the best and above a floor, at most 12,
+  their subtrees together; a map below an area that matches far better
+  stands in for it ("attachments" → the Attachments map); only when no area
+  clears the floor, the top 25 semantic hits plus their one-hop neighbours;
   `scope.resolved` says which: `{ kind: "vault", title }`,
-  `{ kind: "moc", id, title }` or `{ kind: "search", query, hits }` — say what
-  you covered) or `documentIds=` (always narrows what `q` resolves to) — and
+  `{ kind: "areas", areas: [{ id, title }] }`, `{ kind: "moc", id, title }`
+  (one map) or `{ kind: "search", query, hits }` — say what you covered) or `documentIds=` (always narrows what `q` resolves to) — and
   the answer adds `events`, most significant first, paged by `limit` and
   `cursor=<nextCursor>`. A cursor keeps its window: pass it with the same
   `since`; leaving `until` out then continues the same window, not one ending

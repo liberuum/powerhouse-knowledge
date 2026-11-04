@@ -162,7 +162,8 @@ cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
 (rest-api § *What changed*):
 
 1. **Lead with the story.** Resolve the period to dates and say which you
-   used, then `GET changes?drive=<UUID>&since=<date>[&until=<date>]` — with no
+   used (a month or season without a year is its most recent past
+   occurrence: "since September" asked in November 2026 is 2026-09-01), then `GET changes?drive=<UUID>&since=<date>[&until=<date>]` — with no
    `moc`/`topic`/`q` when the subject is the vault as a whole or its main
    subject (the hub's title, e.g. "the Powerhouse stack") — and answer
    from `story`, for a non-technical reader, in four parts: **how the vault
@@ -172,7 +173,9 @@ cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
    differently** (each `changedClaims` entry as then → now, because its `why`;
    with `thenAt`, "first recorded on <date> as …, now …"; an area's `versions`
    give the source versions it spans; `mergedCount` is housekeeping — twin
-   notes folded together — never a change in understanding),
+   notes folded together — never mention it), describing an area only through
+   its claims (one the story only names is named, never characterised), and
+   when `growth.from` is set, "the vault began on <date>", never "0 notes then";
    **where to look next** (the areas as follow-ups). No ids, no operation
    counts, no "superseded"/"revised" jargon in the prose; cite claims as
    `[[documentId]]`. `totals` is the plumbing, not the answer.
@@ -182,8 +185,9 @@ cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
    unchanged: what held throughout) and the scoped story's shifts, citing both
    sides.
 3. **Drill down** on the area the person picks: `&moc=<area id>` (or
-   `&q=<words>`: it scopes to the map its words name, the whole vault when
-   they name the hub or the drive, else to a semantic search —
+   `&q=<words>`: it scopes to the main areas about it — or the one map
+   below an area that matches far better — the whole vault when they name
+   the hub or the drive, else to a semantic search —
    `scope.resolved` says which, so say what you covered; use it for
    Elsewhere, which has no map) returns that area's story plus its
    `events` for detail — before → after of a revised claim, a replacement and

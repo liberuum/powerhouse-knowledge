@@ -5,7 +5,7 @@ and skills for working with a Powerhouse Knowledge Vault. There is nothing to
 build or test here. Read the instructions below, then read the skill you need
 from `skills/<name>/SKILL.md`.
 
-<!-- GENERATED from AGENT.md (sha256:6ca2fa2dd67a913e) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:1d0b06787654eb34) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -387,12 +387,14 @@ counts in the prose, claims cited as `[[documentId]]`. "How did X work then vs
 now" → `&q=<X>` and answer from `thenVsNow` (`then`, `now`, and `unchanged`
 for what held; a note created in the window and revised since shows its first
 recorded claim, `thenAt`). A `q` that names the hub or the drive is the whole
-vault; one that names a map (covering at least half the question's words, or
-the only map sharing one) scopes to it, else to a 25-hit search —
-`scope.resolved` says which (`vault`, `moc`, `search`). Areas carry `versions`
-(source git refs then → now) and `mergedCount` (twin merges — only an explicit
-duplicate reason, or no reason and near-identical titles: housekeeping, not
-change).
+vault; any other `q` means the main areas about it (the hub's areas ranked by
+similarity to it, or the one map below an area that matches far better), else
+a 25-hit search — `scope.resolved` says which (`vault`, `areas`, `moc`,
+`search`). A month or season without a year is its most recent past
+occurrence; when `since` predates the vault (`growth.from`), say when the vault
+began, never "0 notes then". Areas carry `versions` (source git refs then →
+now) and `mergedCount` (twin merges — housekeeping: never mention it). Describe
+an area only through its claims; one only named is never characterised.
 Drill into an area with `&moc=<area id>` for its events (Elsewhere has no map:
 use `&q=`). `totals.documents: 0` means nothing changed.
 Details: **rest-api** § *What changed*.
