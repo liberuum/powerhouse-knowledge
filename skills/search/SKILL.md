@@ -164,8 +164,15 @@ cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
 1. **Lead with the story.** Resolve the period to dates and say which you
    used (a month or season without a year is its most recent past
    occurrence: "since September" asked in November 2026 is 2026-09-01), then `GET changes?drive=<UUID>&since=<date>[&until=<date>]` — with no
-   `moc`/`topic`/`q` when the subject is the vault as a whole or its main
-   subject (the hub's title, e.g. "the Powerhouse stack") — and answer
+   scope when the subject is the vault as a whole (its name, the hub's
+   title). Pick the scope by the kind of subject: a **broad subject** ("the
+   stack", "the technical side", "the business side") → call unscoped, pick
+   the areas by their titles from `story.areas` / `story.otherAreas`, then
+   call again with `&areas=<title>` repeated (titles not found come back in
+   `scope.resolved.unknown` — never guess); "what changed in <a repo /
+   document set / book / meeting series>" → `&source=<text>` (title,
+   provenance URL or folder path, e.g. `powerhouse-inc/powerhouse`); a
+   **specific term** ("the reactor", "attachments") → `&q=<term>` — and answer
    from `story`, for a non-technical reader, in four parts: **how the vault
    grew** (`growth`: live notes then → now, new areas and maps), **what is new**
    (each area's `newClaims`, in plain sentences; `newCount` and friends say how
@@ -185,10 +192,10 @@ cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
    unchanged: what held throughout) and the scoped story's shifts, citing both
    sides.
 3. **Drill down** on the area the person picks: `&moc=<area id>` (or
-   `&q=<words>`: it scopes to the main areas about it — or the one map
-   below an area that matches far better — the whole vault when they name
-   the hub or the drive, else to a semantic search —
-   `scope.resolved` says which, so say what you covered; use it for
+   `&q=<words>`: the areas holding most of its top note hits — or the one map
+   below them holding most — the whole vault when they name the hub or the
+   drive, else a semantic search; `&areas=` / `&source=` as above —
+   `scope.resolved` says which, so say what you covered; use `q` for
    Elsewhere, which has no map) returns that area's story plus its
    `events` for detail — before → after of a revised claim, a replacement and
    its reason, the refs a source moved between. Follow `nextCursor` for more.

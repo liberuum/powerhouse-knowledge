@@ -200,20 +200,31 @@ time. Any reader of the drive may call it.
 - **Drill down.** Add a scope — `moc=<map id>` (an area's `id` from
   `story.areas`, or a group's `id`; Elsewhere, `id: null`, is no map — use
   `q=` for it; the scope includes its
-  child maps, their notes and those notes' sources), `topic=`, `q=<words>`
-  (whole words, case-insensitive, plurals folded, question filler like "what
-  changed" / "how does … work now", months and seasons ignored: a `q` that
-  names the hub or the drive is the whole vault — answered as the unscoped
-  call; any other `q` means **the main areas about it**: the hub's areas and
-  the maps below them ranked by similarity to the query (their embeddings —
-  title, description, orientation — or their words when the server cannot
-  embed), every area within 0.9 of the best and above a floor, at most 12,
-  their subtrees together; a map below an area that matches far better
-  stands in for it ("attachments" → the Attachments map); only when no area
-  clears the floor, the top 25 semantic hits plus their one-hop neighbours;
-  `scope.resolved` says which: `{ kind: "vault", title }`,
-  `{ kind: "areas", areas: [{ id, title }] }`, `{ kind: "moc", id, title }`
-  (one map) or `{ kind: "search", query, hits }` — say what you covered) or `documentIds=` (always narrows what `q` resolves to) — and
+  child maps, their notes and those notes' sources), `topic=`,
+  `areas=<id or exact title>` (repeat it, one area each — a title may hold a
+  comma; case is ignored; for a **broad subject** that is not the whole vault —
+  "the stack", "the technical side", "the business side" — first call
+  unscoped, pick the areas from `story.areas` / `story.otherAreas` **by their
+  titles**, then call again with them; the scope is their subtrees together; a
+  title no map has comes back in `scope.resolved.unknown` — correct it from the
+  list, never guess), `source=<text>` (for "what changed in <a repo / document
+  set / book / meeting series>": the sources whose title, provenance URL or
+  folder path contains the text, case-insensitive — `source=powerhouse-inc/powerhouse`
+  is the repo-derived set — and the notes derived from them), `q=<words>`
+  (for a **specific term** — "the reactor", "attachments"; whole words,
+  case-insensitive, plurals folded, question filler like "what changed" /
+  "how does … work now", months and seasons ignored: a `q` that names the hub
+  or the drive is the whole vault — answered as the unscoped call; any other
+  `q` counts its top 200 semantic note hits per area: the areas holding ≥ 10%
+  of them, at most 8, their subtrees together; one map below them holding
+  ≥ 60% of their hits stands in for them ("attachments" → the Attachments
+  map); when no area holds 10%, the top 25 hits plus their one-hop
+  neighbours; with `moc`, `areas` or `source`, `q` searches within them)
+  — `scope.resolved` says what was covered: `{ kind: "areas", areas: [{ id,
+  title }], unknown? }`, `{ kind: "source", match, sources }`,
+  `{ kind: "vault", title }`, `{ kind: "moc", id, title }` (one map) or
+  `{ kind: "search", query, hits }` — say what you covered — or
+  `documentIds=` (always narrows what the other keys resolve to) — and
   the answer adds `events`, most significant first, paged by `limit` and
   `cursor=<nextCursor>`. A cursor keeps its window: pass it with the same
   `since`; leaving `until` out then continues the same window, not one ending
@@ -244,8 +255,15 @@ curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01&q=processor%20de
 # one map, as a readable report
 curl -s -H "$AUTH" -H 'accept: text/markdown' "$BASE/changes?drive=$DRIVE&since=2026-09-01&moc=$MOC"
 
-# a subject in words: what did it resolve to?
+# a specific term: which areas did it resolve to?
 curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01&q=processors&limit=20" | jq '.scope.resolved'
+
+# a broad subject: areas picked by title from an unscoped call (unknown titles come back)
+curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01" | jq '[.story.areas[].title]'
+curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01&areas=Reactor%20and%20Drives&areas=Deployment%20and%20Operations" | jq '.scope.resolved'
+
+# a repo or document set: by source
+curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-06-01&source=powerhouse-inc/powerhouse" | jq '.scope.resolved'
 ```
 
 Source revisions enter the history from the release that records them. On a

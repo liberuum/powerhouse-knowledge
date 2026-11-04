@@ -11,7 +11,7 @@ tools:
   - WebFetch
   - Agent
 ---
-<!-- GENERATED from AGENT.md (sha256:1d0b06787654eb34) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:0ef775d1481a1779) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -385,17 +385,22 @@ Embeddings are computed server-side by the graph-indexer processor; `knowledgeGr
 ## What changed
 
 For "what changed in X since Y", call REST `GET changes?drive=<UUID>&since=<date>`
-— never search, which ignores time — unscoped when X is the vault as a whole or
-its main subject (the hub's title). Lead with `story`, for a non-technical
+— never search, which ignores time — unscoped when X is the vault as a whole
+(its name, the hub's title). A broad subject ("the stack", "the technical
+side", "the business side") → unscoped first, then `&areas=<title>` repeated
+with the areas picked by their titles from the story (unknown titles come back
+in `scope.resolved.unknown` — never guess); a repo, document set, book or
+meeting series → `&source=<text>` (source title, provenance URL or folder
+path, e.g. `powerhouse-inc/powerhouse`); a specific term → `&q=`. Lead with `story`, for a non-technical
 reader: how the vault grew, what is new per main area, what is now understood
 differently (then → now, because …), where to look next — no ids or operation
 counts in the prose, claims cited as `[[documentId]]`. "How did X work then vs
 now" → `&q=<X>` and answer from `thenVsNow` (`then`, `now`, and `unchanged`
 for what held; a note created in the window and revised since shows its first
 recorded claim, `thenAt`). A `q` that names the hub or the drive is the whole
-vault; any other `q` means the main areas about it (the hub's areas ranked by
-similarity to it, or the one map below an area that matches far better), else
-a 25-hit search — `scope.resolved` says which (`vault`, `areas`, `moc`,
+vault; any other `q` means the areas holding ≥ 10% of its top 200 note hits
+(at most 8; one map below them holding ≥ 60% of their hits stands in), else a
+25-hit search — `scope.resolved` says which (`areas`, `source`, `vault`, `moc`,
 `search`). A month or season without a year is its most recent past
 occurrence; when `since` predates the vault (`growth.from`), say when the vault
 began, never "0 notes then". Areas carry `versions` (source git refs then →
