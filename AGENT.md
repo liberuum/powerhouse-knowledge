@@ -377,9 +377,13 @@ differently (then → now, because …), where to look next — no ids or operat
 counts in the prose, claims cited as `[[documentId]]`. "How did X work then vs
 now" → `&q=<X>` and answer from `thenVsNow` (`then`, `now`, and `unchanged`
 for what held; a note created in the window and revised since shows its first
-recorded claim, `thenAt`). A `q` that names a map scopes to it, else to a
-25-hit search — `scope.resolved` says which. Areas carry `versions` (source git
-refs then → now) and `mergedCount` (twin merges: housekeeping, not change).
+recorded claim, `thenAt`). A `q` that names the hub or the drive is the whole
+vault; one that names a map (covering at least half the question's words, or
+the only map sharing one) scopes to it, else to a 25-hit search —
+`scope.resolved` says which (`vault`, `moc`, `search`). Areas carry `versions`
+(source git refs then → now) and `mergedCount` (twin merges — only an explicit
+duplicate reason, or no reason and near-identical titles: housekeeping, not
+change).
 Drill into an area with `&moc=<area id>` for its events (Elsewhere has no map:
 use `&q=`). `totals.documents: 0` means nothing changed.
 Details: **rest-api** § *What changed*.

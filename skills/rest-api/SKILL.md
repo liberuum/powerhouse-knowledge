@@ -142,8 +142,13 @@ time. Any reader of the drive may call it.
   Elsewhere last — each with `notesThen`/`notesNow`, the uncapped counts
   `newCount`, `changedCount`, `retiredCount` (the lists below are capped: say
   "and N more" from these), `mergedCount` (supersessions that merged twin
-  notes — near-identical titles, or a reason saying twin / duplicate / same
-  claim / merged: housekeeping, counted and never listed as changed),
+  notes: a reason that starts "same claim" / "same point" or says "already
+  makes this claim", "twin", "duplicate of/note/claim", "identical claim",
+  "redundant with", "merged into/with the newer/older/surviving/twin" — or no
+  reason, titles ≥ 0.8 token Jaccard, and no negation, digit or version among
+  the words that differ; a reason that merely mentions duplicates is a real
+  change. Housekeeping: counted, never listed as changed, new or in
+  `thenVsNow`),
   `versions { first, now }` when the area's sources carry `git:` refs (the ref
   standing at `since`, else first ingested → the latest: "first recorded at
   v6.2.2-dev.74, now v6.2.3-dev.91+e0f277d"), `newClaims` (≤ 8, most connected first; a note
@@ -185,11 +190,16 @@ time. Any reader of the drive may call it.
   `story.areas`, or a group's `id`; Elsewhere, `id: null`, is no map — use
   `q=` for it; the scope includes its
   child maps, their notes and those notes' sources), `topic=`, `q=<words>`
-  (a `q` that names a main area or a map below it — whole words,
-  case-insensitive, plurals folded — scopes to that map; otherwise the top 25
-  semantic hits plus their one-hop neighbours; `scope.resolved` says which:
+  (whole words, case-insensitive, plurals folded, question filler like "what
+  changed" / "how does … work now" ignored: a `q` that names the hub or the
+  drive is the whole vault — answered as the unscoped call; one that names a
+  main area or a map below it scopes to that map — its title holds the
+  query's words, or the query holds the title's and they cover at least half
+  of it, or it is the only map sharing a word; two equally good maps mean
+  neither; otherwise the top 25 semantic hits plus their one-hop neighbours;
+  `scope.resolved` says which: `{ kind: "vault", title }`,
   `{ kind: "moc", id, title }` or `{ kind: "search", query, hits }` — say what
-  you covered) or `documentIds=` — and
+  you covered) or `documentIds=` (always narrows what `q` resolves to) — and
   the answer adds `events`, most significant first, paged by `limit` and
   `cursor=<nextCursor>`. A cursor keeps its window: pass it with the same
   `since`; leaving `until` out then continues the same window, not one ending

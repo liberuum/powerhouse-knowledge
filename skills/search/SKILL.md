@@ -182,8 +182,9 @@ cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
    unchanged: what held throughout) and the scoped story's shifts, citing both
    sides.
 3. **Drill down** on the area the person picks: `&moc=<area id>` (or
-   `&q=<words>`: it scopes to the map its words name, else to a semantic
-   search — `scope.resolved` says which, so say what you covered; use it for
+   `&q=<words>`: it scopes to the map its words name, the whole vault when
+   they name the hub or the drive, else to a semantic search —
+   `scope.resolved` says which, so say what you covered; use it for
    Elsewhere, which has no map) returns that area's story plus its
    `events` for detail — before → after of a revised claim, a replacement and
    its reason, the refs a source moved between. Follow `nextCursor` for more.
