@@ -161,19 +161,27 @@ the stack change since the last release" are questions about time, and search
 cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
 (rest-api § *What changed*):
 
-1. **Summary first.** Resolve the period to dates and say which you used, then
-   `GET changes?drive=<UUID>&since=<date>[&until=<date>]`. Answer with an
-   executive summary from `totals` and each group's `highlights`, and offer
-   the groups as topics to explore.
-2. **Drill down** on the topic the person picks: `&moc=<group id>` for a map
-   group, `&q=<words>` for a subject no map names. Walk through `events`:
-   quote `before → after` for a revised claim, name the replacement of a
-   superseded note and why, give the refs a source moved between. Cite every
-   document by id. Follow `nextCursor` for more.
-3. `totals.documents: 0` means nothing changed in that window — say so.
+1. **Lead with the story.** Resolve the period to dates and say which you
+   used, then `GET changes?drive=<UUID>&since=<date>[&until=<date>]` and answer
+   from `story`, for a non-technical reader, in four parts: **how the vault
+   grew** (`growth`: live notes then → now, new areas and maps), **what is new**
+   (each area's `newClaims`, in plain sentences), **what we now understand
+   differently** (each `changedClaims` entry as then → now, because its `why`),
+   **where to look next** (the areas as follow-ups). No ids, no operation
+   counts, no "superseded"/"revised" jargon in the prose; cite claims as
+   `[[documentId]]`. `totals` is the plumbing, not the answer.
+2. **Then vs now.** For "how did X work then, and how does it work now", call
+   `&q=<X>` and answer from `thenVsNow` (then: the claims at `since`; now: the
+   claims today) and the scoped story's shifts, citing both sides.
+3. **Drill down** on the area the person picks: `&moc=<area id>` (or
+   `&q=<words>` for a subject no map names) returns that area's story plus its
+   `events` for detail — before → after of a revised claim, a replacement and
+   its reason, the refs a source moved between. Follow `nextCursor` for more.
+4. `totals.documents: 0` means nothing changed in that window — say so.
 
 ```bash
-curl -s -H "$AUTH" "$BASE/changes?drive=<UUID>&since=2026-09-01" | jq '{totals, groups: [.groups[] | {title, id, totals}]}'
+curl -s -H "$AUTH" "$BASE/changes?drive=<UUID>&since=2026-09-01" | jq '.story'
+curl -s -H "$AUTH" "$BASE/changes?drive=<UUID>&since=2026-09-01&q=processor%20delivery" | jq '.thenVsNow'
 curl -s -H "$AUTH" -H 'accept: text/markdown' "$BASE/changes?drive=<UUID>&since=2026-09-01&moc=<map id>"
 ```
 

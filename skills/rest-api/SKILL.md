@@ -62,7 +62,7 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 | `GET` | `triangles` | `drive`, `limit` (≤100, default 20) | synthesis opportunities |
 | `GET` | `graph.json` | `drive` | `{ nodes, edges }` — the whole graph |
 | `GET` | `embeddings/missing` | `drive` | ids with no embedding; should be `[]` |
-| `GET` | `changes` | `drive`, `since` (required), `until`, `moc`, `topic`, `q`, `documentIds`, `types` (comma-separated), `limit` (default 50, max 200), `cursor` | what changed over a window: `{ window, scope, totals, groups, events?, nextCursor? }`; `Accept: text/markdown` for a report. See [What changed](#what-changed) |
+| `GET` | `changes` | `drive`, `since` (required), `until`, `moc`, `topic`, `q`, `documentIds`, `types` (comma-separated), `limit` (default 50, max 200), `cursor` | what changed over a window: `{ window, scope, story, thenVsNow?, totals, groups, events?, nextCursor? }` — `story` leads; `Accept: text/markdown` for a report that opens with it. See [What changed](#what-changed) |
 
 ### Read — whole vault and status
 
@@ -134,11 +134,31 @@ time. Any reader of the drive may call it.
 
 - **Window.** `since` is required; `until` defaults to now. ISO dates, UTC: a
   date alone for `since` starts at 00:00Z, for `until` covers that whole day.
-- **Summary first.** Without a scope the answer is `totals` (created, revised,
-  superseded, archived, reverified notes; `sourcesRevised`, `sourcesAdded`;
-  `documents`, `operations`) and `groups` — one per map of content (else
-  topic, else `unplaced`), each with its own totals and up to five
-  `highlights`. Groups are never paged.
+- **The story leads.** `story` says what the vault knows now that it did not
+  before. `story.growth`: live notes `notesThen → notesNow`, `newAreas`,
+  `newMaps` (`{ id, title, area }`). `story.areas`: the hub's main areas (its
+  `CHILD_MOC` maps; a note belongs to an area when the area's map tree holds it
+  as a `CORE_IDEA`) with any change, most changed first, `id: null` =
+  Elsewhere last — each with `notesThen`/`notesNow`, `newClaims` (≤ 8, most
+  connected first), `changedClaims` (≤ 8: `{ documentId, then { claim, gist },
+  now { claim, gist }, why, replacedBy? }` — a revised title/description with
+  its `## Revision history` line as `why`, or a superseded note with its
+  replacement and the SUPERSEDES reason; a version stamp alone is never a
+  shift) and `retiredClaims` (≤ 5, archived with no replacement). A claim is
+  `{ documentId, claim (the title), gist (the description) }`.
+- **Then vs now.** With `q=` or `topic=` the answer adds `thenVsNow { then,
+  now }` (≤ 12 each): the scope's claims as they stood at `since` (notes that
+  existed and were not archived or superseded then, with their then-titles)
+  versus now. That answers "how did X work then, and how does it work now".
+- **Writing the answer.** Lead with the story, for a reader who is not
+  technical: how the vault grew, what is new per area, what is now understood
+  differently (then → now, because …), where to look next. Keep ids and
+  operation counts out of the prose — cite claims as `[[documentId]]`.
+- **Totals and groups** are the plumbing beneath it: `totals` (created,
+  revised, superseded, archived, reverified notes; `sourcesRevised`,
+  `sourcesAdded`; `documents`, `operations`) and `groups` — one per map of
+  content (else topic, else `unplaced`), each with its own totals and up to
+  five `highlights`. Groups are never paged.
 - **Drill down.** Add a scope — `moc=<map id>` (a group's `id`; includes its
   child maps, their notes and those notes' sources), `topic=`, `q=<words>`
   (top 10 semantic hits plus their one-hop neighbours) or `documentIds=` — and
@@ -163,8 +183,11 @@ time. Any reader of the drive may call it.
   that window — say so; do not fill the gap from search.
 
 ```bash
-# the executive summary since a date
-curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01" | jq '{totals, groups: [.groups[] | {title, id, totals}]}'
+# the story since a date
+curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01" | jq '.story'
+
+# then vs now for a subject
+curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01&q=processor%20delivery" | jq '{thenVsNow, shifts: [.story.areas[].changedClaims[]]}'
 
 # one map, as a readable report
 curl -s -H "$AUTH" -H 'accept: text/markdown' "$BASE/changes?drive=$DRIVE&since=2026-09-01&moc=$MOC"

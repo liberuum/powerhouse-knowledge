@@ -5,7 +5,7 @@ and skills for working with a Powerhouse Knowledge Vault. There is nothing to
 build or test here. Read the instructions below, then read the skill you need
 from `skills/<name>/SKILL.md`.
 
-<!-- GENERATED from AGENT.md (sha256:66e572030296620c) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:e6e3d65237d9c9bc) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -93,7 +93,7 @@ Use its `id` as `?drive=<UUID>` on every other route.
 | Task                                                              | Use                                              |
 | ----------------------------------------------------------------- | ------------------------------------------------ |
 | Search, stats, topics, orphans, activity                          | REST, GraphQL or CLI                             |
-| What changed in X since Y (summary, then drill down)              | REST `GET changes` — never search                |
+| What changed in X since Y (the story, then drill down)            | REST `GET changes` — never search                |
 | A note with its links                                             | REST `GET notes/:id`                             |
 | Selected fields from a large result                               | GraphQL                                          |
 | Markdown, `llms.txt`, `llms-full.txt`, `health.json`, `badge.svg` | REST                                             |
@@ -379,12 +379,13 @@ Embeddings are computed server-side by the graph-indexer processor; `knowledgeGr
 ## What changed
 
 For "what changed in X since Y", call REST `GET changes?drive=<UUID>&since=<date>`
-— never search, which ignores time. Answer the summary first (`totals`, each
-group's `highlights`), then drill into the group the person picks with
-`&moc=<group id>` (or `&q=<words>`) and walk its `events`: before → after for
-revised claims, the replacement for superseded notes, the refs a source moved
-between. `totals.documents: 0` means nothing changed. Details: **rest-api** §
-*What changed*.
+— never search, which ignores time. Lead with `story`, for a non-technical
+reader: how the vault grew, what is new per main area, what is now understood
+differently (then → now, because …), where to look next — no ids or operation
+counts in the prose, claims cited as `[[documentId]]`. "How did X work then vs
+now" → `&q=<X>` and answer from `thenVsNow`. Drill into an area with
+`&moc=<area id>` for its events. `totals.documents: 0` means nothing changed.
+Details: **rest-api** § *What changed*.
 
 ## Read a document
 
