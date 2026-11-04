@@ -5,7 +5,7 @@ and skills for working with a Powerhouse Knowledge Vault. There is nothing to
 build or test here. Read the instructions below, then read the skill you need
 from `skills/<name>/SKILL.md`.
 
-<!-- GENERATED from AGENT.md (sha256:7f9daacaf21e8391) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:1543fd67ef30ae55) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -379,13 +379,18 @@ Embeddings are computed server-side by the graph-indexer processor; `knowledgeGr
 ## What changed
 
 For "what changed in X since Y", call REST `GET changes?drive=<UUID>&since=<date>`
-— never search, which ignores time. Lead with `story`, for a non-technical
+— never search, which ignores time — unscoped when X is the vault as a whole or
+its main subject (the hub's title). Lead with `story`, for a non-technical
 reader: how the vault grew, what is new per main area, what is now understood
 differently (then → now, because …), where to look next — no ids or operation
 counts in the prose, claims cited as `[[documentId]]`. "How did X work then vs
 now" → `&q=<X>` and answer from `thenVsNow` (`then`, `now`, and `unchanged`
-for what held). Drill into an area with `&moc=<area id>` for its events
-(Elsewhere has no map: use `&q=`). `totals.documents: 0` means nothing changed.
+for what held; a note created in the window and revised since shows its first
+recorded claim, `thenAt`). A `q` that names a map scopes to it, else to a
+25-hit search — `scope.resolved` says which. Areas carry `versions` (source git
+refs then → now) and `mergedCount` (twin merges: housekeeping, not change).
+Drill into an area with `&moc=<area id>` for its events (Elsewhere has no map:
+use `&q=`). `totals.documents: 0` means nothing changed.
 Details: **rest-api** § *What changed*.
 
 ## Read a document

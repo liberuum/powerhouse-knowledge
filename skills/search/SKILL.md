@@ -162,12 +162,17 @@ cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
 (rest-api § *What changed*):
 
 1. **Lead with the story.** Resolve the period to dates and say which you
-   used, then `GET changes?drive=<UUID>&since=<date>[&until=<date>]` and answer
+   used, then `GET changes?drive=<UUID>&since=<date>[&until=<date>]` — with no
+   `moc`/`topic`/`q` when the subject is the vault as a whole or its main
+   subject (the hub's title, e.g. "the Powerhouse stack") — and answer
    from `story`, for a non-technical reader, in four parts: **how the vault
    grew** (`growth`: live notes then → now, new areas and maps), **what is new**
    (each area's `newClaims`, in plain sentences; `newCount` and friends say how
    many more there are), **what we now understand
-   differently** (each `changedClaims` entry as then → now, because its `why`),
+   differently** (each `changedClaims` entry as then → now, because its `why`;
+   with `thenAt`, "first recorded on <date> as …, now …"; an area's `versions`
+   give the source versions it spans; `mergedCount` is housekeeping — twin
+   notes folded together — never a change in understanding),
    **where to look next** (the areas as follow-ups). No ids, no operation
    counts, no "superseded"/"revised" jargon in the prose; cite claims as
    `[[documentId]]`. `totals` is the plumbing, not the answer.
@@ -177,7 +182,9 @@ cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
    unchanged: what held throughout) and the scoped story's shifts, citing both
    sides.
 3. **Drill down** on the area the person picks: `&moc=<area id>` (or
-   `&q=<words>` for a subject no map names, and for Elsewhere, which has no map) returns that area's story plus its
+   `&q=<words>`: it scopes to the map its words name, else to a semantic
+   search — `scope.resolved` says which, so say what you covered; use it for
+   Elsewhere, which has no map) returns that area's story plus its
    `events` for detail — before → after of a revised claim, a replacement and
    its reason, the refs a source moved between. Follow `nextCursor` for more.
 4. `totals.documents: 0` means nothing changed in that window — say so.

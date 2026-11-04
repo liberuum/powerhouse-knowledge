@@ -141,12 +141,20 @@ time. Any reader of the drive may call it.
   as a `CORE_IDEA`) with any change, most changed first, `id: null` =
   Elsewhere last — each with `notesThen`/`notesNow`, the uncapped counts
   `newCount`, `changedCount`, `retiredCount` (the lists below are capped: say
-  "and N more" from these), `newClaims` (≤ 8, most connected first; a note
+  "and N more" from these), `mergedCount` (supersessions that merged twin
+  notes — near-identical titles, or a reason saying twin / duplicate / same
+  claim / merged: housekeeping, counted and never listed as changed),
+  `versions { first, now }` when the area's sources carry `git:` refs (the ref
+  standing at `since`, else first ingested → the latest: "first recorded at
+  v6.2.2-dev.74, now v6.2.3-dev.91+e0f277d"), `newClaims` (≤ 8, most connected first; a note
   that replaced another is that shift's `now`, never also new), `changedClaims` (≤ 8: `{ documentId, then { claim, gist },
-  now { claim, gist }, why, replacedBy? }` — a revised title/description with
-  its `## Revision history` line as `why`, or a superseded note with its
-  replacement and the SUPERSEDES reason; a version stamp alone is never a
-  shift) and `retiredClaims` (≤ 5: archived in the window, still archived,
+  now { claim, gist }, why, replacedBy?, thenAt? }` — a revised
+  title/description with its `## Revision history` line as `why`, or a
+  superseded note with its replacement and the SUPERSEDES reason; a note
+  *created* in the window and revised after its creating batch is a shift
+  from its **first recorded** state (title/description as last written within
+  an hour of its creation), `thenAt` saying when — and it is also listed as
+  new; a version stamp alone is never a shift) and `retiredClaims` (≤ 5: archived in the window, still archived,
   never replaced). A shift whose `then.claim` equals `now.claim` changed its
   description: tell it by the gists. A claim is
   `{ documentId, claim (the title), gist (the description) }`.
@@ -155,10 +163,15 @@ time. Any reader of the drive may call it.
   `since` (notes that existed and were not archived or superseded then, with
   their then-titles) that read differently now or are gone; `now` — today's
   claims that read differently at `since` or are new; `unchanged` — claims held
-  in the same words throughout, listed once. That answers "how did X work then,
+  in the same words throughout, listed once. A note created in the window and
+  revised since puts its first recorded claim on `then`, with `thenAt`. That answers "how did X work then,
   and how does it work now". "Now" is always the current state, even with a
   past `until`: for two past dates, answer from `events`.
 - **Cursor pages** carry no `story` and no `thenVsNow` — the first page did.
+- **Scope the whole vault unscoped.** When the subject is the vault as a whole
+  or its main subject (the hub's title — "the Powerhouse stack" in a
+  Powerhouse vault), call without `moc`, `topic` or `q`: a `q` cuts it down to
+  a handful of notes.
 - **Writing the answer.** Lead with the story, for a reader who is not
   technical: how the vault grew, what is new per area, what is now understood
   differently (then → now, because …), where to look next. Keep ids and
@@ -172,7 +185,11 @@ time. Any reader of the drive may call it.
   `story.areas`, or a group's `id`; Elsewhere, `id: null`, is no map — use
   `q=` for it; the scope includes its
   child maps, their notes and those notes' sources), `topic=`, `q=<words>`
-  (top 10 semantic hits plus their one-hop neighbours) or `documentIds=` — and
+  (a `q` that names a main area or a map below it — whole words,
+  case-insensitive, plurals folded — scopes to that map; otherwise the top 25
+  semantic hits plus their one-hop neighbours; `scope.resolved` says which:
+  `{ kind: "moc", id, title }` or `{ kind: "search", query, hits }` — say what
+  you covered) or `documentIds=` — and
   the answer adds `events`, most significant first, paged by `limit` and
   `cursor=<nextCursor>`. A cursor keeps its window: pass it with the same
   `since`; leaving `until` out then continues the same window, not one ending
@@ -203,8 +220,8 @@ curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01&q=processor%20de
 # one map, as a readable report
 curl -s -H "$AUTH" -H 'accept: text/markdown' "$BASE/changes?drive=$DRIVE&since=2026-09-01&moc=$MOC"
 
-# a subject no map names
-curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01&q=processors&limit=20"
+# a subject in words: what did it resolve to?
+curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01&q=processors&limit=20" | jq '.scope.resolved'
 ```
 
 Source revisions enter the history from the release that records them. On a
