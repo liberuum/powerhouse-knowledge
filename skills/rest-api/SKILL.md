@@ -139,8 +139,11 @@ time. Any reader of the drive may call it.
   2026-06-01 — never a year earlier. `window.vaultStart` is the vault's first
   recorded activity (earliest operation or note creation).
 - **Before the vault began.** When `since` predates `vaultStart`,
-  `story.growth.from` is `vaultStart` and growth counts from it: say "the
-  vault began on <date>" and how much it holds now — never "0 notes then".
+  `story.growth.from` is `vaultStart` and growth counts from the vault's
+  **first recorded state**: `growth.notesAtStart` and each area's
+  `notesAtStart` are the live notes at the end of its first import day
+  (`vaultStart` + 24 h). Say "first recorded on <date>: N notes → now M" —
+  never "0 → M", never "0 notes then".
 - **The story leads.** `story` says what the vault knows now that it did not
   before. `story.growth`: live notes `notesThen → notesNow`, `newAreas`,
   `newMaps` (`{ id, title, area }`). `story.areas`: the hub's main areas (its
@@ -157,11 +160,13 @@ time. Any reader of the drive may call it.
   the words that differ; a reason that merely mentions duplicates is a real
   change. Housekeeping: counted, never listed as changed, new or in
   `thenVsNow` — and never mentioned in an answer),
-  `versions { first, now }` when the area's sources carry `git:` refs (the ref
+  `versions { first, now }` when at least half of the area's sources carry
+  `git:` refs — otherwise absent, and then state no version range for the
+  whole answer unless every area you report has one (the ref
   standing at `since`, else first ingested → the latest: "first recorded at
   v6.2.2-dev.74, now v6.2.3-dev.91+e0f277d"), `newClaims` (≤ 8, most connected first; a note
   that replaced another is that shift's `now`, never also new), `changedClaims` (≤ 8: `{ documentId, then { claim, gist },
-  now { claim, gist }, why, replacedBy?, thenAt? }` — a revised
+  now { claim, gist }, why, replacedBy?, thenAt?, gistDiff? }` — a revised
   title/description with its `## Revision history` line as `why`, or a
   superseded note with its replacement and the SUPERSEDES reason; a note
   *created* in the window and revised after its creating batch is a shift
@@ -169,8 +174,13 @@ time. Any reader of the drive may call it.
   an hour of its creation), `thenAt` saying when — every such shift has one:
   when the note's creation row was lost, its creation time (`added_at`) — and
   it is also listed as new; a version stamp alone is never a shift) and `retiredClaims` (≤ 5: archived in the window, still archived,
-  never replaced). A shift whose `then.claim` equals `now.claim` changed its
-  description: tell it by the gists. A claim is
+  never replaced). Claims and gists are compared ignoring case, whitespace
+  and trailing punctuation ("drive" and "drive." are no shift); a gist
+  rewritten under the same claim at ≥ 0.9 token Jaccard (no negation, digit
+  or version among the differing words) is a rewording, not a shift. A
+  description-only shift carries `gistDiff { then, now }` — the differing span
+  of each gist with three words of context, ≤ 160 characters a side: tell it
+  by those spans, not by the whole gists. A claim is
   `{ documentId, claim (the title), gist (the description) }`. Describe an
   area only through its claims: an area, new area or map the answer only
   names may be named and counted, never characterised.
@@ -183,6 +193,11 @@ time. Any reader of the drive may call it.
   revised since puts its first recorded claim on `then`, with `thenAt`. That answers "how did X work then,
   and how does it work now". "Now" is always the current state, even with a
   past `until`: for two past dates, answer from `events`.
+- **Relevance inside a question's scope.** When `q` searches (alone, or
+  within `moc` / `areas` / `source`), its top 200 hits order `newClaims`,
+  `changedClaims` and each side of `thenVsNow`: claims that matched lead, in
+  hit order, and the rest take at most half the slots (≤ 4 of 8, ≤ 6 of 12).
+  Without `q` the order is the usual one (most connected first).
 - **Cursor pages** carry no `story` and no `thenVsNow` — the first page did.
 - **Scope the whole vault unscoped.** When the subject is the vault as a whole
   or its main subject (the hub's title — "the Powerhouse stack" in a
@@ -191,7 +206,10 @@ time. Any reader of the drive may call it.
 - **Writing the answer.** Lead with the story, for a reader who is not
   technical: how the vault grew, what is new per area, what is now understood
   differently (then → now, because …), where to look next. Keep ids and
-  operation counts out of the prose — cite claims as `[[documentId]]`.
+  operation counts out of the prose — cite claims as `[[documentId]]`. Never
+  narrate your calls, retries or errors in the answer ("I called …", "one call
+  returned an error"). A follow-up that names no period keeps the earlier
+  question's `since`/`until`; with none, ask from the vault's start.
 - **Totals and groups** are the plumbing beneath it: `totals` (created,
   revised, superseded, archived, reverified notes; `sourcesRevised`,
   `sourcesAdded`; `documents`, `operations`) and `groups` — one per map of

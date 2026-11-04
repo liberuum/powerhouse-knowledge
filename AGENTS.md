@@ -5,7 +5,7 @@ and skills for working with a Powerhouse Knowledge Vault. There is nothing to
 build or test here. Read the instructions below, then read the skill you need
 from `skills/<name>/SKILL.md`.
 
-<!-- GENERATED from AGENT.md (sha256:0ef775d1481a1779) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:7e3967a86b19c9e7) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -396,9 +396,15 @@ vault; any other `q` means the areas holding ≥ 10% of its top 200 note hits
 (at most 8; one map below them holding ≥ 60% of their hits stands in), else a
 25-hit search — `scope.resolved` says which (`areas`, `source`, `vault`, `moc`,
 `search`). A month or season without a year is its most recent past
-occurrence; when `since` predates the vault (`growth.from`), say when the vault
-began, never "0 notes then". Areas carry `versions` (source git refs then →
-now) and `mergedCount` (twin merges — housekeeping: never mention it). Describe
+occurrence; when `since` predates the vault (`growth.from`), count from its
+first recorded state — "first recorded on <date>: `notesAtStart` → now M",
+never "0 → M". A follow-up naming no period reuses the earlier one. With `q`,
+claims that matched it lead, in hit order. Areas carry `versions` (source git
+refs then → now) only when half their sources are versioned — never state one
+range for the whole answer unless every area has it — and `mergedCount` (twin
+merges — housekeeping: never mention it). A description-only shift carries
+`gistDiff`: the part of the description that changed. Never narrate calls,
+retries or errors in the answer. Describe
 an area only through its claims; one only named is never characterised.
 Drill into an area with `&moc=<area id>` for its events (Elsewhere has no map:
 use `&q=`). `totals.documents: 0` means nothing changed.

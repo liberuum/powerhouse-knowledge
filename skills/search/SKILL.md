@@ -178,11 +178,15 @@ cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
    (each area's `newClaims`, in plain sentences; `newCount` and friends say how
    many more there are), **what we now understand
    differently** (each `changedClaims` entry as then → now, because its `why`;
-   with `thenAt`, "first recorded on <date> as …, now …"; an area's `versions`
-   give the source versions it spans; `mergedCount` is housekeeping — twin
+   with `thenAt`, "first recorded on <date> as …, now …"; with `gistDiff`, only
+   the part of the description that changed; an area's `versions`
+   give the source versions it spans — never state one range for the whole
+   answer unless every area you report has `versions`; `mergedCount` is housekeeping — twin
    notes folded together — never mention it), describing an area only through
    its claims (one the story only names is named, never characterised), and
-   when `growth.from` is set, "the vault began on <date>", never "0 notes then";
+   when `growth.from` is set, "first recorded on <date>: `notesAtStart` notes
+   → now `notesNow`", never "0 → M"; never narrate your calls or their errors;
+   a follow-up naming no period reuses the earlier question's;
    **where to look next** (the areas as follow-ups). No ids, no operation
    counts, no "superseded"/"revised" jargon in the prose; cite claims as
    `[[documentId]]`. `totals` is the plumbing, not the answer.
