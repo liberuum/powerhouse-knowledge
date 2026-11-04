@@ -154,6 +154,29 @@ Reach for this only when `related` did not answer the gap:
 `topics` is a per-node resolver (one server-side query per row): one
 whole-vault fetch per run is fine, but do not select it inside a per-hit loop.
 
+## What changed — time questions
+
+"What changed in X since Y", "what is new in processors this month", "how did
+the stack change since the last release" are questions about time, and search
+cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
+(rest-api § *What changed*):
+
+1. **Summary first.** Resolve the period to dates and say which you used, then
+   `GET changes?drive=<UUID>&since=<date>[&until=<date>]`. Answer with an
+   executive summary from `totals` and each group's `highlights`, and offer
+   the groups as topics to explore.
+2. **Drill down** on the topic the person picks: `&moc=<group id>` for a map
+   group, `&q=<words>` for a subject no map names. Walk through `events`:
+   quote `before → after` for a revised claim, name the replacement of a
+   superseded note and why, give the refs a source moved between. Cite every
+   document by id. Follow `nextCursor` for more.
+3. `totals.documents: 0` means nothing changed in that window — say so.
+
+```bash
+curl -s -H "$AUTH" "$BASE/changes?drive=<UUID>&since=2026-09-01" | jq '{totals, groups: [.groups[] | {title, id, totals}]}'
+curl -s -H "$AUTH" -H 'accept: text/markdown' "$BASE/changes?drive=<UUID>&since=2026-09-01&moc=<map id>"
+```
+
 ## Search tiers (try in order)
 
 ### 1. Semantic search (best for natural language)

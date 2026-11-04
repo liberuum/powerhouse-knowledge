@@ -62,6 +62,7 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 | `GET` | `triangles` | `drive`, `limit` (≤100, default 20) | synthesis opportunities |
 | `GET` | `graph.json` | `drive` | `{ nodes, edges }` — the whole graph |
 | `GET` | `embeddings/missing` | `drive` | ids with no embedding; should be `[]` |
+| `GET` | `changes` | `drive`, `since` (required), `until`, `moc`, `topic`, `q`, `documentIds`, `types` (comma-separated), `limit` (default 50, max 200), `cursor` | what changed over a window: `{ window, scope, totals, groups, events?, nextCursor? }`; `Accept: text/markdown` for a report. See [What changed](#what-changed) |
 
 ### Read — whole vault and status
 
@@ -94,6 +95,7 @@ Every route except `ping`, `drives` and `badge.svg` takes `?drive=$DRIVE`.
 | `DELETE` | `relationships` | `{ source, target, type }` | same |
 | `POST` | `tasks/:id/claim` | `drive`; `{ assignedTo? }` | `{ taskId, assignedTo }`; `409` if already assigned |
 | `POST` | `admin/reindex` | `drive`; needs `canManage` | `{ indexedNodes, indexedEdges, errors }` |
+| `POST` | `admin/backfill-source-history` | `drive`; needs `canManage` | `{ sources, inserted, skipped, errors }` — once per vault indexed before source history was recorded; idempotent |
 
 ## Search returns the graph around its results
 
@@ -123,6 +125,51 @@ of what the vault knows about a question is in the edges, not the ranking.
 - `Accept: text/markdown` renders the whole thing — hits, how they connect to
   each other, and the related notes with the edge that reached each one — as
   a digest meant to be read directly.
+
+## What changed
+
+`GET changes` answers "what changed in X since Y" from the vault's operation
+history — never answer that with search, which ranks by meaning and ignores
+time. Any reader of the drive may call it.
+
+- **Window.** `since` is required; `until` defaults to now. ISO dates, UTC: a
+  date alone for `since` starts at 00:00Z, for `until` covers that whole day.
+- **Summary first.** Without a scope the answer is `totals` (created, revised,
+  superseded, archived, reverified notes; `sourcesRevised`, `sourcesAdded`;
+  `documents`, `operations`) and `groups` — one per map of content (else
+  topic, else `unplaced`), each with its own totals and up to five
+  `highlights`. Groups are never paged.
+- **Drill down.** Add a scope — `moc=<map id>` (a group's `id`; includes its
+  child maps, their notes and those notes' sources), `topic=`, `q=<words>`
+  (top 10 semantic hits plus their one-hop neighbours) or `documentIds=` — and
+  the answer adds `events`, most significant first, paged by `limit` and
+  `cursor=<nextCursor>`.
+- **Events.** `created` (with `derivedFrom`), `revised` (`fields.title` /
+  `fields.description` as `before → after`, `before: null` when not set
+  before; `fields.content` as diff `hunks` with `added`/`removed` line counts;
+  `revisionNotes` from a `## Revision history` section), `superseded`
+  (`supersededBy { documentId, title, reason }`), `archived`, `restored`,
+  `approved`, `reverified` (a `version` stamp with no claim change),
+  `source-added`, `source-revised` (`source { refBefore, refAfter, added,
+  removed, hunks, noteIds }` — the git refs come from the source's `method`),
+  `source-archived`. Other operations are counted in `folded`, not listed.
+- **Empty.** `totals.documents: 0` and `groups: []` means nothing changed in
+  that window — say so; do not fill the gap from search.
+
+```bash
+# the executive summary since a date
+curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01" | jq '{totals, groups: [.groups[] | {title, id, totals}]}'
+
+# one map, as a readable report
+curl -s -H "$AUTH" -H 'accept: text/markdown' "$BASE/changes?drive=$DRIVE&since=2026-09-01&moc=$MOC"
+
+# a subject no map names
+curl -s -H "$AUTH" "$BASE/changes?drive=$DRIVE&since=2026-09-01&q=processors&limit=20"
+```
+
+Source revisions enter the history from the release that records them. On a
+vault indexed before that, a manager runs `POST admin/backfill-source-history?drive=$DRIVE`
+once; until then re-ingested sources show without their earlier ref.
 
 ## Examples
 
