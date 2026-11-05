@@ -5,7 +5,7 @@ and skills for working with a Powerhouse Knowledge Vault. There is nothing to
 build or test here. Read the instructions below, then read the skill you need
 from `skills/<name>/SKILL.md`.
 
-<!-- GENERATED from AGENT.md (sha256:7e3967a86b19c9e7) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
+<!-- GENERATED from AGENT.md (sha256:c6b21ff1ce88c2cd) by scripts/build-agent.mjs — edit AGENT.md, not this file -->
 
 # For AI Agents
 
@@ -392,8 +392,9 @@ counts in the prose, claims cited as `[[documentId]]`. "How did X work then vs
 now" → `&q=<X>` and answer from `thenVsNow` (`then`, `now`, and `unchanged`
 for what held; a note created in the window and revised since shows its first
 recorded claim, `thenAt`). A `q` that names the hub or the drive is the whole
-vault; any other `q` means the areas holding ≥ 10% of its top 200 note hits
-(at most 8; one map below them holding ≥ 60% of their hits stands in), else a
+vault; any other `q` means the areas holding ≥ 10% of its top 200 note hits,
+two of them among the top 25 (at most 8; one map below them holding ≥ 60% of
+their hits stands in), else a
 25-hit search — `scope.resolved` says which (`areas`, `source`, `vault`, `moc`,
 `search`). A month or season without a year is its most recent past
 occurrence; when `since` predates the vault (`growth.from`), count from its

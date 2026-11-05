@@ -234,7 +234,8 @@ time. Any reader of the drive may call it.
   "how does … work now", months and seasons ignored: a `q` that names the hub
   or the drive is the whole vault — answered as the unscoped call; any other
   `q` counts its top 200 semantic note hits per area: the areas holding ≥ 10%
-  of them, at most 8, their subtrees together; one map below them holding
+  of them, two of those among the top 25 (an area met only in the tail of the
+  ranking is noise), at most 8, their subtrees together; one map below them holding
   ≥ 60% of their hits stands in for them ("attachments" → the Attachments
   map); when no area holds 10%, the top 25 hits plus their one-hop
   neighbours; with `moc`, `areas` or `source`, `q` searches within them)

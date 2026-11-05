@@ -174,7 +174,11 @@ cannot answer them: it ranks by meaning and ignores when. Use `GET changes`
    provenance URL or folder path, e.g. `powerhouse-inc/powerhouse`); a
    **specific term** ("the reactor", "attachments") → `&q=<term>` — and answer
    from `story`, for a non-technical reader, in four parts: **how the vault
-   grew** (`growth`: live notes then → now, new areas and maps), **what is new**
+   grew** (`growth`: live notes then → now, new areas and maps — the whole
+   scope's, every area in it together: name the subject with it, never one area,
+   whose own count is its `notesThen → notesNow`; for a broad subject take it
+   from the `&areas=` call, never from the unscoped call you picked the areas
+   from), **what is new**
    (each area's `newClaims`, in plain sentences; `newCount` and friends say how
    many more there are), **what we now understand
    differently** (each `changedClaims` entry as then → now, because its `why`;
